@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import GlobalInput from "../../components/GlobalInputs";
+import GlobalInput from "../../shared/GlobalInputs";
 import { IoIosEyeOff, IoMdEye } from "react-icons/io";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -136,11 +136,11 @@ const UserLogin = () => {
 
         // ✅ Simplified Routing - Navigate to unified dashboard
         const userRole = data.user.role?.toLowerCase() || "unknown";
-        
+
         // Check if user is a requester
         if (userRole === "requester") {
           navigate("/requester/dashboard");
-        } 
+        }
         // Check if user is a manager (including vessel manager, fleet manager, etc.)
         else if (
           userRole === "vessel manager" ||
@@ -168,13 +168,18 @@ const UserLogin = () => {
         else if (userRole === "delivery jetty") navigate("/jetty/dashboard");
         else if (userRole === "delivery vessel") navigate("/vessel/dashboard");
         else if (userRole === "it officer") navigate("/it/officer/dashboard");
-        else if (userRole === "marine officer") navigate("/marine/officer/dashboard");
+        else if (userRole === "marine officer")
+          navigate("/marine/officer/dashboard");
         else if (userRole === "director of it") navigate("/director/dashboard");
-        else if (userRole === "request handler") navigate("/marine/handler/dashboard");
-        else if (userRole === "head of procurement") navigate("/procurement/m/dashboard");
+        else if (userRole === "request handler")
+          navigate("/marine/handler/dashboard");
+        else if (userRole === "head of procurement")
+          navigate("/procurement/m/dashboard");
         else if (userRole === "cfo") navigate("/cfo/dashboard");
-        else if (userRole === "director of operations") navigate("/op/director/dashboard");
-        else if (userRole === "head of project") navigate("/headOfProject/dashboard");
+        else if (userRole === "director of operations")
+          navigate("/op/director/dashboard");
+        else if (userRole === "head of project")
+          navigate("/headOfProject/dashboard");
         else {
           console.error("❌ Unknown user role:", userRole);
           setError("Unauthorized access");
@@ -189,97 +194,156 @@ const UserLogin = () => {
   };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-gray-200 bg-cover blurred-bg">
-      <div className="absolute top-0 left-0 w-full h-full bg-white/30 opacity-30 backdrop-blur-l overflow-hidden"></div>
-      <div className="relative z-10 flex items-center justify-center h-full overflow-hidden">
+    <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
+      {/* Animated gradient orbs */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute -top-40 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl animate-pulse"
+          style={{ animationDuration: "4s" }}
+        />
+        <div
+          className="absolute top-1/3 -right-40 w-96 h-96 bg-purple-500/15 rounded-full blur-3xl animate-pulse"
+          style={{ animationDuration: "6s", animationDelay: "1s" }}
+        />
+        <div
+          className="absolute -bottom-40 left-1/4 w-72 h-72 bg-indigo-500/20 rounded-full blur-3xl animate-pulse"
+          style={{ animationDuration: "5s", animationDelay: "2s" }}
+        />
+      </div>
+
+      {/* Grid pattern background - light mode */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px)
+          `,
+          backgroundSize: "80px 80px",
+        }}
+      />
+
+      {/* Radial gradient fade for grid */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(circle at center, transparent 0%, rgba(255, 255, 255, 0.7) 60%, rgba(255, 255, 255, 0.95) 100%)",
+        }}
+      />
+
+      <div className="relative z-10 flex items-center justify-center h-full px-4">
         <form
           onSubmit={handleSubmit}
-          className="bg-white/20 backdrop-blur-xl p-10 rounded-xl shadow-2xl w-[650px] min-h-[550px] text-center border border-white/20 flex flex-col justify-center"
+          className="relative bg-[#1a1a1a] p-12 rounded-3xl w-full max-w-[660px] flex flex-col border border-gray-800/50"
+          style={{
+            boxShadow:
+              "0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.03)",
+          }}
         >
-          <h1 className="text-3xl font-bold mb-6 tracking-wider text-black">
-            LOGIN
-          </h1>
-          {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-          
-          <GlobalInput
-            label="Email"
-            name="id"
-            value={form.id}
-            placeholder="Enter your Email"
-            onChange={handleChange}
-            onFocus={handleFocus}
-            className="text-black placeholder-white/70 border-b border-white/50 bg-transparent focus:border-white outline-none mt-4 text-center"
-            inputHeight="h-14 py-3"
-          />
-          
-          <div className="relative mt-8">
-            <GlobalInput
-              label="Password"
-              type={showPassword ? "text" : "password"}
-              name="password"
-              value={form.password}
-              placeholder="Enter your password"
-              onChange={handleChange}
-              onFocus={handleFocus}
-              className="text-black placeholder-white/70 border-b border-white/50 bg-transparent focus:border-white outline-none text-center"
-              inputHeight="h-14 py-3"
-            />
-            <span
-              className="absolute right-3 top-[2.4rem] text-black cursor-pointer"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? <IoMdEye /> : <IoIosEyeOff />}
-            </span>
+          {/* Header Section */}
+          <div className="mb-10 text-center">
+            <h1 className="text-[2rem] font-semibold text-white mb-2 tracking-tight leading-tight">
+              Welcome Back
+            </h1>
+            <p className="text-[0.9375rem] text-gray-400 font-normal">
+              Ready to continue? Let's sign you in
+            </p>
           </div>
-          
-          <div className="flex items-center justify-start mt-6 text-black text-sm">
-            <label className="flex items-center cursor-pointer select-none">
+
+          {error && (
+            <div className="mb-6 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl">
+              <p className="text-red-400 text-[0.8125rem] font-medium flex items-center">
+                <svg
+                  className="w-4 h-4 mr-2 flex-shrink-0"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                {error}
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-5">
+            <div className="relative">
+              <label className="block text-[0.6875rem] font-semibold text-gray-400 mb-2.5 uppercase tracking-[0.08em] pl-0.5">
+                Username
+              </label>
               <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={() => setRememberMe(!rememberMe)}
-                className="mr-2 accent-blue-500"
+                name="id"
+                value={form.id}
+                placeholder="username"
+                onChange={handleChange}
+                onFocus={handleFocus}
+                className="w-full h-[2.875rem] px-4 text-[0.9375rem] text-white placeholder-gray-500 bg-[#0f0f0f] border border-gray-700/50 rounded-xl focus:outline-none focus:border-gray-600 hover:border-gray-600/70 transition-all duration-200"
               />
-              Remember me
-            </label>
+            </div>
+
+            <div className="relative">
+              <label className="block text-[0.6875rem] font-semibold text-gray-400 mb-2.5 uppercase tracking-[0.08em] pl-0.5">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={form.password}
+                  placeholder="password"
+                  onChange={handleChange}
+                  onFocus={handleFocus}
+                  className="w-full h-[2.875rem] px-4 pr-12 text-[0.9375rem] text-white placeholder-gray-500 bg-[#0f0f0f] border border-gray-700/50 rounded-xl focus:outline-none focus:border-gray-600 hover:border-gray-600/70 transition-all duration-200"
+                />
+                <button
+                  type="button"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors duration-200 focus:outline-none p-1"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <IoMdEye className="w-[1.125rem] h-[1.125rem]" />
+                  ) : (
+                    <IoIosEyeOff className="w-[1.125rem] h-[1.125rem]" />
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-          
+
           <button
             type="submit"
             disabled={loading}
-            className={`relative w-full mt-4 px-6 py-3 text-lg font-semibold group transition-all duration-200 ease-out rounded-xl overflow-hidden ${
-              loading ? "cursor-not-allowed" : ""
+            className={`w-full mt-7 h-[2.875rem] px-6 text-[0.9375rem] font-semibold text-[#0a0a0a] bg-white rounded-xl transition-all duration-200 shadow-sm ${
+              loading
+                ? "cursor-not-allowed opacity-60"
+                : "hover:bg-gray-50 active:scale-[0.98] hover:shadow-md"
             }`}
           >
-            <div
-              className={`absolute inset-0 w-full h-full transition duration-200 ease-out transform translate-x-1 translate-y-1 bg-black rounded-xl ${
-                loading
-                  ? ""
-                  : "group-hover:-translate-x-0 group-hover:-translate-y-0"
-              }`}
-            ></div>
-            <div
-              className={`absolute inset-0 w-full h-full bg-white border-2 border-black rounded-xl ${
-                loading ? "" : "group-hover:bg-black"
-              }`}
-            ></div>
-            <div
-              className={`relative z-10 flex items-center justify-center ${
-                loading ? "text-black" : "text-black group-hover:text-white"
-              }`}
-            >
-              {loading ? <div className="loader"></div> : "Sign In"}
-            </div>
+            {loading ? (
+              <div className="flex items-center justify-center space-x-2.5">
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-800 rounded-full animate-spin"></div>
+                <span>Signing in...</span>
+              </div>
+            ) : (
+              <span>Sign In</span>
+            )}
           </button>
-          
-          <p className="mt-4 text-black">
-            <a
-              onClick={() => navigate("/admin")}
-              className="hover:underline cursor-pointer"
-            >
-              Admin Login
-            </a>
-          </p>
+
+          <div className="mt-7 pt-7 border-t border-gray-800/60">
+            <p className="text-center text-[0.875rem] text-gray-500">
+              Don't have an account?{" "}
+              <a
+                onClick={() => navigate("/admin")}
+                className="font-medium text-blue-400 hover:text-blue-300 cursor-pointer transition-colors duration-200 hover:underline underline-offset-2"
+              >
+                Sign Up
+              </a>
+            </p>
+          </div>
         </form>
       </div>
     </div>

@@ -1,11 +1,18 @@
-// src/App.jsx
-
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { useAuth } from "./context/AuthContext";
-import UserLogin from "./pages/auth/UserLogin";
-import ManagerDashboard from "./pages/dashboards/ManagerDashboard";
-import RequesterDashboard from "./pages/dashboards/RequesterDashboard";
-import { isRequester } from "./utils/roles";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+// { changed code }
+import { useAuth } from "./components/context/AuthContext";
+import UserLogin from "./components/pages/auth/UserLogin";
+import ManagerDashboard from "./components/pages/dashboards/ManagerDashboard";
+import RequesterDashboard from "./components/pages/dashboards/RequesterDashboard";
+import NewDashboard from "./components/pages/NewDashboard";
+import NewDashboard2 from "./components/pages/NewDashboard2";
+import RequestDetailDemo from "./components/pages/RequestDetailDemo";
+import { isRequester } from "./components/utils/roles";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -47,8 +54,11 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Public Route */}
+        {/* Public Routes */}
         <Route path="/login" element={<UserLogin />} />
+        <Route path="/ndb" element={<NewDashboard />} />
+        <Route path="/ndb2" element={<NewDashboard2 />} />
+        <Route path="/request-demo" element={<RequestDetailDemo />} />
 
         {/* Protected Dashboard Route - Automatically routes to correct dashboard */}
         <Route
