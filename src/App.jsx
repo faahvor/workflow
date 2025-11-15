@@ -1,16 +1,11 @@
-// src/App.jsx (or src/components/App.jsx)
+// src/App.jsx
 
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  Navigate,
-} from "react-router-dom";
-import { useAuth } from "./components/context/AuthContext";
-import UserLogin from "./components/pages/auth/UserLogin";
-import ManagerDashboard from "./components/pages/dashboards/ManagerDashboard";
-import RequesterDashboard from "./components/pages/dashboards/RequesterDashboard";
-import { isRequester, isManager, isDirector } from "./components/utils/roles";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
+import UserLogin from "./pages/auth/UserLogin";
+import ManagerDashboard from "./pages/dashboards/ManagerDashboard";
+import RequesterDashboard from "./pages/dashboards/RequesterDashboard";
+import { isRequester } from "./utils/roles";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -19,7 +14,7 @@ const ProtectedRoute = ({ children }) => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        Loading...
+        <p className="text-xl">Loading...</p>
       </div>
     );
   }
@@ -31,7 +26,7 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// Dashboard Router - Redirects to appropriate dashboard based on role
+// Smart Dashboard Router - Determines which dashboard to show
 const DashboardRouter = () => {
   const { user } = useAuth();
 
@@ -39,18 +34,12 @@ const DashboardRouter = () => {
     return <Navigate to="/login" replace />;
   }
 
-  // Check if user is a requester
+  // If user is a requester, show RequesterDashboard
   if (isRequester(user.role)) {
     return <RequesterDashboard />;
   }
 
-  // Check if user is a manager or director (all use ManagerDashboard)
-  if (isManager(user.role) || isDirector(user.role)) {
-    return <ManagerDashboard />;
-  }
-
-  // For specialized roles (Procurement, Shipping, Accounting, etc.)
-  // They also use ManagerDashboard
+  // Otherwise, show ManagerDashboard (for all managers, directors, etc.)
   return <ManagerDashboard />;
 };
 
@@ -61,7 +50,7 @@ function App() {
         {/* Public Route */}
         <Route path="/login" element={<UserLogin />} />
 
-        {/* Protected Routes */}
+        {/* Protected Dashboard Route - Automatically routes to correct dashboard */}
         <Route
           path="/dashboard"
           element={
@@ -71,10 +60,8 @@ function App() {
           }
         />
 
-        {/* Redirect root to dashboard */}
+        {/* Default Routes */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-        {/* 404 - Redirect to dashboard */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Router>
