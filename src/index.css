@@ -2,7 +2,5 @@
 @import "tailwindcss";
 
 :root {
- 
-   --font-space: "Space Grotesk", sans-serif;
-
+  --font-space: "Space Grotesk", sans-serif;
 }
