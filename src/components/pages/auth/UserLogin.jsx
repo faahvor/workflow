@@ -7,7 +7,7 @@ import Cookies from "js-cookie";
 import { useAuth } from "../../context/AuthContext"; // ✅ Import AuthContext
 
 const UserLogin = () => {
-  const [form, setForm] = useState({ id: "", password: "" });
+  const [form, setForm] = useState({ username: "", password: "" });
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -33,7 +33,7 @@ const UserLogin = () => {
       if (cookies.rememberMe === "true") {
         setRememberMe(true);
         setForm({
-          id: cookies.id || "",
+          username: cookies.username || "",
           password: cookies.password || "",
         });
       }
@@ -47,7 +47,7 @@ const UserLogin = () => {
 
     try {
       const policyResponse = await axios.get(
-        "https://hwfp-backend-s3.onrender.com/api/password-change-time"
+        "https://hdp-backend-1vcl.onrender.com/api/password-change-time"
       );
       const requiredDays = policyResponse.data.days;
 
@@ -75,17 +75,17 @@ const UserLogin = () => {
     setLoading(true);
     setError("");
 
-    if (!form.id || !form.password) {
-      setError("Please enter both ID and Password");
+    if (!form.username || !form.password) {
+      setError("Please enter both Username and Password");
       setLoading(false);
       return;
     }
 
     try {
       const response = await axios.post(
-        "https://hwfp-backend-s3.onrender.com/api/auth/login",
+        "https://hdp-backend-1vcl.onrender.com/api/auth/user/login",
         {
-          id: form.id.toLowerCase(),
+          username: form.username.toLowerCase(),
           password: form.password,
         }
       );
@@ -126,11 +126,11 @@ const UserLogin = () => {
         // Handle Remember Me
         if (rememberMe) {
           Cookies.set("rememberMe", "true", { expires: 7 });
-          Cookies.set("id", form.id, { expires: 7 });
+          Cookies.set("username", form.username, { expires: 7 });
           Cookies.set("password", form.password, { expires: 7 });
         } else {
           Cookies.remove("rememberMe");
-          Cookies.remove("id");
+          Cookies.remove("username");
           Cookies.remove("password");
         }
 
@@ -276,8 +276,8 @@ const UserLogin = () => {
                 Username
               </label>
               <input
-                name="id"
-                value={form.id}
+                name="username"
+                value={form.username}
                 placeholder="username"
                 onChange={handleChange}
                 onFocus={handleFocus}
@@ -313,7 +313,17 @@ const UserLogin = () => {
               </div>
             </div>
           </div>
-
+  <div className="flex items-center justify-start mt-6 text-white text-sm">
+            <label className="flex items-center cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={() => setRememberMe(!rememberMe)}
+                className="mr-2 accent-blue-500"
+              />
+              Remember me
+            </label>
+          </div>
           <button
             type="submit"
             disabled={loading}
@@ -333,16 +343,13 @@ const UserLogin = () => {
             )}
           </button>
 
-          <div className="mt-7 pt-7 border-t border-gray-800/60">
-            <p className="text-center text-[0.875rem] text-gray-500">
-              Don't have an account?{" "}
-              <a
-                onClick={() => navigate("/admin")}
-                className="font-medium text-blue-400 hover:text-blue-300 cursor-pointer transition-colors duration-200 hover:underline underline-offset-2"
-              >
-                Sign Up
-              </a>
-            </p>
+            <div className="mt-4 text-white  flex justify-center items-center">
+            <a
+              onClick={() => navigate("/admin")}
+              className="hover:underline cursor-pointer"
+            >
+              Admin Login
+            </a>
           </div>
         </form>
       </div>
