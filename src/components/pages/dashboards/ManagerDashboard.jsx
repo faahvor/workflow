@@ -5,23 +5,39 @@ import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { hasDoubleApproval } from "../../utils/roles";
+import { IoMdSearch } from "react-icons/io";
+import {
+  MdArrowForward,
+  MdPriorityHigh,
+  MdDirectionsBoat,
+  MdFilterList,
+  MdExpandMore,
+  MdPendingActions,
+  MdShoppingCart,
+  MdAttachMoney,
+  MdCheckCircle,
+} from "react-icons/md";
+import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
+import RequestDetailView from "./RequestDetailView";
 
 const ManagerDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
   
   const [activeView, setActiveView] = useState("overview");
+  const [view, setView] = useState("list"); // "list" or "detail"
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedRequest, setSelectedRequest] = useState(null);
-  const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState("all");
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-  // Fetch pending requests for the current user
+  // Fetch pending requests
   const fetchPendingRequests = async () => {
     try {
       setLoading(true);
@@ -88,8 +104,9 @@ const ManagerDashboard = () => {
       console.log("✅ Request Approved:", response.data);
       alert("Request approved successfully!");
       
+      setView("list");
+      setSelectedRequest(null);
       fetchPendingRequests();
-      setShowModal(false);
     } catch (err) {
       console.error("❌ Error approving request:", err);
       alert(err.response?.data?.message || "Failed to approve request");
@@ -119,8 +136,9 @@ const ManagerDashboard = () => {
       console.log("✅ Request Rejected:", response.data);
       alert("Request rejected successfully!");
       
+      setView("list");
+      setSelectedRequest(null);
       fetchPendingRequests();
-      setShowModal(false);
     } catch (err) {
       console.error("❌ Error rejecting request:", err);
       alert(err.response?.data?.message || "Failed to reject request");
@@ -150,8 +168,9 @@ const ManagerDashboard = () => {
       console.log("✅ Request Queried:", response.data);
       alert("Request queried and sent back to requester!");
       
+      setView("list");
+      setSelectedRequest(null);
       fetchPendingRequests();
-      setShowModal(false);
     } catch (err) {
       console.error("❌ Error querying request:", err);
       alert(err.response?.data?.message || "Failed to query request");
@@ -164,8 +183,57 @@ const ManagerDashboard = () => {
   const handleViewDetails = async (request) => {
     const flow = await fetchRequestFlow(request.requestId);
     setSelectedRequest({ ...request, flow });
-    setShowModal(true);
+    setView("detail");
   };
+
+  // Helper functions
+  const getTypeColor = (type) => {
+    switch (type) {
+      case "purchaseOrder":
+        return "bg-emerald-100 text-emerald-600 border-emerald-200";
+      case "quotation":
+        return "bg-teal-100 text-teal-600 border-teal-200";
+      default:
+        return "bg-slate-100 text-slate-600 border-slate-200";
+    }
+  };
+
+  const getTypeIcon = (type) => {
+    switch (type) {
+      case "purchaseOrder":
+        return <MdShoppingCart className="text-sm" />;
+      case "quotation":
+        return <MdAttachMoney className="text-sm" />;
+      default:
+        return null;
+    }
+  };
+
+  const getTypeLabel = (type) => {
+    switch (type) {
+      case "purchaseOrder":
+        return "Purchase Order";
+      case "quotation":
+        return "Quotation";
+      default:
+        return type;
+    }
+  };
+
+  // Filter requests
+// Around line 229
+const filteredRequests = pendingRequests.filter((req) => {
+  const matchesSearch =
+    req.requestId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    req.requester?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    req.department?.toLowerCase().includes(searchQuery.toLowerCase());
+  
+  const matchesFilter = 
+    filterType === "all" || 
+    req.requestType?.toLowerCase() === filterType.toLowerCase(); // Made case-insensitive
+  
+  return matchesSearch && matchesFilter;
+});
 
   // Load pending requests on mount
   useEffect(() => {
@@ -174,14 +242,55 @@ const ManagerDashboard = () => {
     }
   }, [user]);
 
+  // If viewing detail, show RequestDetailView
+  if (view === "detail" && selectedRequest) {
+    return (
+      <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
+        <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "1s"}} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "0.5s"}} />
+
+        <div
+          className="absolute inset-0 opacity-[0.015]"
+          style={{
+            backgroundImage: `linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)`,
+            backgroundSize: "50px 50px",
+          }}
+        />
+
+        <div className="relative z-10 flex h-full">
+          <Sidebar
+            activeView={activeView}
+            setActiveView={setActiveView}
+            pendingCount={pendingRequests.length}
+            isRequester={false}
+          />
+
+          <div className="flex-1 overflow-auto">
+            <RequestDetailView
+              request={selectedRequest}
+              onBack={() => {
+                setView("list");
+                setSelectedRequest(null);
+              }}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onQuery={handleQuery}
+              actionLoading={actionLoading}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Main list view
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
-      {/* Animated gradient orbs */}
       <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
       <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "1s"}} />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "0.5s"}} />
 
-      {/* Grid pattern overlay */}
       <div
         className="absolute inset-0 opacity-[0.015]"
         style={{
@@ -191,7 +300,6 @@ const ManagerDashboard = () => {
       />
 
       <div className="relative z-10 flex h-full">
-        {/* Sidebar */}
         <Sidebar 
           activeView={activeView}
           setActiveView={setActiveView}
@@ -199,20 +307,31 @@ const ManagerDashboard = () => {
           isRequester={false}
         />
 
-        {/* Main Content */}
         <div className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
             {/* Header */}
             <div className="mb-6 md:mb-8">
               <h1 className="text-3xl md:text-4xl font-bold text-[#0a0a0a] mb-2">
-                {user?.role} Dashboard
+                {activeView === "overview"
+                  ? `${user?.role} Dashboard`
+                  : activeView === "pending"
+                  ? "Pending Requests"
+                  : activeView === "approved"
+                  ? "Approved Requests"
+                  : "Request History"}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
-                {user?.displayName} | {user?.department} Department
+                {activeView === "overview"
+                  ? "Manage and process requests efficiently"
+                  : activeView === "pending"
+                  ? "Review and process pending requests"
+                  : activeView === "approved"
+                  ? "View all approved requests"
+                  : "Complete history of all requests"}
               </p>
             </div>
 
-            {/* Special Note for Vessel Manager & Fleet Manager */}
+            {/* Special Note for Double Approval Roles */}
             {hasDoubleApproval(user?.role) && (
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
                 <p className="text-blue-800 font-semibold text-sm md:text-base">
@@ -238,75 +357,181 @@ const ManagerDashboard = () => {
               </div>
             ) : (
               <>
-                {/* Pending Requests Table */}
-                <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg">
-                  <div className="px-4 md:px-6 py-4 border-b border-gray-200">
-                    <h2 className="text-lg md:text-xl font-semibold text-gray-900">
-                      Pending Requests ({pendingRequests.length})
-                    </h2>
-                  </div>
-
-                  {pendingRequests.length === 0 ? (
-                    <div className="px-6 py-12 text-center">
-                      <p className="text-gray-500">No pending requests at the moment</p>
+                {/* Stats Cards - Only show in overview */}
+                {activeView === "overview" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+                          <MdPendingActions className="text-2xl text-white" />
+                        </div>
+                        {pendingRequests.length > 0 && (
+                          <span className="text-orange-600 text-xs font-bold bg-orange-100 px-3 py-1.5 rounded-full border border-orange-200">
+                            URGENT
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-500 text-sm mb-1 font-semibold">
+                        Pending Requests
+                      </p>
+                      <p className="text-slate-900 text-3xl font-bold">
+                        {pendingRequests.length}
+                      </p>
                     </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Request ID
-                            </th>
-                            <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
-                              Requester
-                            </th>
-                            <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
-                              Department
-                            </th>
-                            <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Status
-                            </th>
-                            <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
-                              Date
-                            </th>
-                            <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Actions
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {pendingRequests.map((request) => (
-                            <tr key={request.requestId} className="hover:bg-gray-50">
-                              <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm font-medium text-gray-900">
-                                {request.requestId}
-                              </td>
-                              <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm text-gray-500 hidden md:table-cell">
-                                {request.requester?.displayName || "N/A"}
-                              </td>
-                              <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm text-gray-500 hidden lg:table-cell">
+
+                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                          <MdShoppingCart className="text-2xl text-white" />
+                        </div>
+                      </div>
+                      <p className="text-slate-500 text-sm mb-1 font-semibold">
+                        Purchase Orders
+                      </p>
+                      <p className="text-slate-900 text-3xl font-bold">
+                        {pendingRequests.filter((r) => r.requestType === "purchaseOrder").length}
+                      </p>
+                    </div>
+
+                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-teal-500 rounded-xl flex items-center justify-center shadow-lg shadow-teal-500/20">
+                          <MdAttachMoney className="text-2xl text-white" />
+                        </div>
+                      </div>
+                      <p className="text-slate-500 text-sm mb-1 font-semibold">
+                        Other Requests
+                      </p>
+                      <p className="text-slate-900 text-3xl font-bold">
+                        {pendingRequests.filter((r) => r.requestType !== "purchaseOrder").length}
+                      </p>
+                    </div>
+
+                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+                          <MdCheckCircle className="text-2xl text-white" />
+                        </div>
+                      </div>
+                      <p className="text-slate-500 text-sm mb-1 font-semibold">
+                        Approved Today
+                      </p>
+                      <p className="text-slate-900 text-3xl font-bold">0</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Search and Filter Bar */}
+                <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div className="flex-1 relative">
+                      <IoMdSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl" />
+                      <input
+                        type="text"
+                        placeholder="Search by request ID, requester, or department..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
+                      />
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value)}
+                        className="h-12 pl-12 pr-10 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none cursor-pointer"
+                      >
+                        <option value="all">All Types</option>
+                        <option value="purchaseOrder">Purchase Orders</option>
+                        <option value="pettycash">PettyCash</option>
+                      </select>
+                      <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
+                      <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Requests Cards */}
+                <div className="space-y-4">
+                  {filteredRequests.map((request) => (
+                    <div
+                      key={request.requestId}
+                      className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200 cursor-pointer group"
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                        {/* Left Section */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className="text-slate-500 text-xs font-mono font-semibold">
+                              {request.requestId}
+                            </span>
+                            <span
+                              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
+                                request.requestType
+                              )}`}
+                            >
+                              {getTypeIcon(request.requestType)}
+                              <span>{getTypeLabel(request.requestType)}</span>
+                            </span>
+                          </div>
+                          
+                          <p className="text-slate-600 text-sm mb-3">
+                            Requested by{" "}
+                            <span className="text-slate-900 font-semibold">
+                              {request.requester?.displayName || "N/A"}
+                            </span>
+                          </p>
+
+                          <div className="flex flex-wrap items-center gap-3 md:gap-4 text-sm">
+                            <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
+                              <span className="text-slate-900 font-semibold text-xs md:text-sm">
                                 {request.department}
-                              </td>
-                              <td className="px-4 md:px-6 py-4 whitespace-nowrap">
-                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                  Pending
+                              </span>
+                              <MdArrowForward className="text-emerald-500" />
+                              <span className="text-slate-900 font-semibold text-xs md:text-sm">
+                                {request.destination}
+                              </span>
+                            </div>
+                            {request.vesselId && (
+                              <div className="flex items-center gap-1.5 text-slate-600">
+                                <MdDirectionsBoat className="text-base" />
+                                <span className="text-xs md:text-sm font-medium">
+                                  {request.vesselId}
                                 </span>
-                              </td>
-                              <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm text-gray-500 hidden sm:table-cell">
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 text-slate-600">
+                              <HiClock className="text-base" />
+                              <span className="text-xs md:text-sm font-medium">
                                 {new Date(request.createdAt).toLocaleDateString()}
-                              </td>
-                              <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm">
-                                <button
-                                  onClick={() => handleViewDetails(request)}
-                                  className="text-blue-600 hover:text-blue-900 font-medium"
-                                >
-                                  View
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right Section - Action Button */}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleViewDetails(request)}
+                            className="w-full lg:w-auto px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-sm font-bold rounded-lg hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-200"
+                          >
+                            View Details
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {filteredRequests.length === 0 && (
+                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-12 text-center shadow-lg">
+                      <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <MdPendingActions className="text-4xl text-slate-400" />
+                      </div>
+                      <p className="text-slate-700 text-lg font-semibold">
+                        No requests found
+                      </p>
+                      <p className="text-slate-500 text-sm mt-2">
+                        Try adjusting your search or filter criteria
+                      </p>
                     </div>
                   )}
                 </div>
@@ -315,62 +540,6 @@ const ManagerDashboard = () => {
           </div>
         </div>
       </div>
-
-      {/* Request Details Modal - Keeping your existing modal code */}
-      {showModal && selectedRequest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal content - keeping your existing implementation */}
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-xl font-semibold text-gray-900">
-                Request Details: {selectedRequest.requestId}
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Rest of modal content */}
-            <div className="px-6 py-4">
-              <p className="text-gray-700">Request details will be displayed here...</p>
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
-                disabled={actionLoading}
-              >
-                Close
-              </button>
-              <button
-                onClick={() => handleQuery(selectedRequest.requestId)}
-                className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:opacity-50"
-                disabled={actionLoading}
-              >
-                {actionLoading ? "Processing..." : "Query"}
-              </button>
-              <button
-                onClick={() => handleReject(selectedRequest.requestId)}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
-                disabled={actionLoading}
-              >
-                {actionLoading ? "Processing..." : "Reject"}
-              </button>
-              <button
-                onClick={() => handleApprove(selectedRequest.requestId)}
-                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
-                disabled={actionLoading}
-              >
-                {actionLoading ? "Processing..." : "Approve"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
