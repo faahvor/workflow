@@ -431,9 +431,7 @@ const NewDashboard2 = () => {
                               </span>
                             )}
                           </div>
-                          <h3 className="text-slate-900 text-lg font-bold mb-1 group-hover:text-emerald-600 transition-colors">
-                            {request.title}
-                          </h3>
+                          
                           <p className="text-slate-600 text-sm">
                             Requested by{" "}
                             <span className="text-slate-900 font-semibold">

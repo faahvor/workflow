@@ -4,12 +4,13 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import Sidebar from "../../shared/layout/Sidebar";
 
 const RequesterDashboard = () => {
-  const { user, getToken, logout } = useAuth();
+  const { user, getToken } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState("myRequests"); // "myRequests" or "createNew"
+  const [activeView, setActiveView] = useState("overview");
   const [myRequests, setMyRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -51,11 +52,6 @@ const RequesterDashboard = () => {
     } catch (err) {
       console.error("❌ Error fetching requests:", err);
       setError(err.response?.data?.message || "Failed to fetch requests");
-
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        logout();
-        navigate("/login");
-      }
     } finally {
       setLoading(false);
     }
@@ -167,8 +163,8 @@ const RequesterDashboard = () => {
         items: [{ name: "", quantity: 1 }],
       });
 
-      // Switch to "My Requests" tab
-      setActiveTab("myRequests");
+      // Switch to "My Requests" view
+      setActiveView("pending");
       fetchMyRequests();
     } catch (err) {
       console.error("❌ Error creating request:", err);
@@ -185,317 +181,353 @@ const RequesterDashboard = () => {
     setShowModal(true);
   };
 
-  // Load requests on mount
+  // Load requests when switching to pending view
   useEffect(() => {
-    if (user && activeTab === "myRequests") {
+    if (user && activeView === "pending") {
       fetchMyRequests();
     }
-  }, [user, activeTab]);
+  }, [user, activeView]);
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Requester Dashboard
-            </h1>
-            <p className="text-sm text-gray-600">
-              {user?.displayName} | {user?.department} Department
-            </p>
-          </div>
-          <button
-            onClick={logout}
-            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-          >
-            Logout
-          </button>
-        </div>
-      </header>
+    <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
+      {/* Animated gradient orbs */}
+      <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
+      <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "1s"}} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "0.5s"}} />
 
-      {/* Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="border-b border-gray-200 mb-6">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab("myRequests")}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "myRequests"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              My Requests
-            </button>
-            <button
-              onClick={() => setActiveTab("createNew")}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "createNew"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              Create New Request
-            </button>
-          </nav>
-        </div>
+      {/* Grid pattern overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.015]"
+        style={{
+          backgroundImage: `linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)`,
+          backgroundSize: "50px 50px",
+        }}
+      />
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded">
-            <p className="text-red-800">{error}</p>
-          </div>
-        )}
+      <div className="relative z-10 flex h-full">
+        {/* Sidebar */}
+        <Sidebar
+          activeView={activeView}
+          setActiveView={setActiveView}
+          pendingCount={myRequests.length}
+          isRequester={true}
+        />
 
-        {/* Tab Content */}
-        {activeTab === "myRequests" && (
-          <div className="bg-white shadow rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">
-                My Requests ({myRequests.length})
-              </h2>
+        {/* Main Content */}
+        <div className="flex-1 overflow-auto">
+          <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
+            {/* Header */}
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-3xl md:text-4xl font-bold text-[#0a0a0a] mb-2">
+                {activeView === "overview" 
+                  ? "Dashboard" 
+                  : activeView === "createNew" 
+                  ? "Create New Request"
+                  : activeView === "pending"
+                  ? "My Requests"
+                  : activeView === "approved"
+                  ? "Approved Requests"
+                  : "Request History"}
+              </h1>
+              <p className="text-sm md:text-base text-gray-600">
+                {user?.displayName} | {user?.department} Department
+              </p>
             </div>
 
-            {loading ? (
-              <div className="px-6 py-12 text-center">
-                <p className="text-gray-500">Loading requests...</p>
+            {/* Error Message */}
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+                <p className="text-red-800 text-sm md:text-base">{error}</p>
               </div>
-            ) : myRequests.length === 0 ? (
-              <div className="px-6 py-12 text-center">
-                <p className="text-gray-500">No requests found</p>
-                <button
-                  onClick={() => setActiveTab("createNew")}
-                  className="mt-4 text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  Create your first request →
-                </button>
+            )}
+
+            {/* Overview - Welcome Message */}
+            {activeView === "overview" && (
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 md:p-8 shadow-lg">
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
+                  Welcome, {user?.displayName}! 👋
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  You can create new requests, track your submissions, and view your request history from here.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setActiveView("createNew")}
+                    className="p-6 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:shadow-xl transition-all duration-200 text-left"
+                  >
+                    <h3 className="text-xl font-bold mb-2">Create New Request</h3>
+                    <p className="text-emerald-100 text-sm">Start a new procurement request</p>
+                  </button>
+                  
+                  <button
+                    onClick={() => setActiveView("pending")}
+                    className="p-6 bg-white border-2 border-slate-200 rounded-xl hover:border-slate-300 hover:shadow-lg transition-all duration-200 text-left"
+                  >
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">My Requests</h3>
+                    <p className="text-gray-600 text-sm">View all your submitted requests</p>
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Request ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Destination
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Created
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {myRequests.map((request) => (
-                      <tr key={request.requestId} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {request.requestId}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {request.requestType}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {request.destination}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            {request.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(request.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+            )}
+
+            {/* Create New Request Form */}
+            {activeView === "createNew" && (
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 lg:p-8 shadow-lg">
+                <form onSubmit={handleSubmitRequest} className="space-y-6">
+                  {/* Department */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Department *
+                    </label>
+                    <input
+                      type="text"
+                      name="department"
+                      value={formData.department}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md bg-gray-100"
+                      disabled
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Your department is automatically set
+                    </p>
+                  </div>
+
+                  {/* Destination */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Destination *
+                    </label>
+                    <input
+                      type="text"
+                      name="destination"
+                      value={formData.destination}
+                      onChange={handleInputChange}
+                      placeholder="e.g., Marine, IT, Operations"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500"
+                      required
+                    />
+                  </div>
+
+                  {/* Request Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Request Type *
+                    </label>
+                    <select
+                      name="requestType"
+                      value={formData.requestType}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500"
+                    >
+                      <option value="purchaseOrder">Purchase Order</option>
+                      <option value="quotation">Quotation</option>
+                      <option value="maintenance">Maintenance</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  {/* Vessel ID (Optional - for Marine department) */}
+                  {user?.department === "Marine" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Vessel ID (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        name="vesselId"
+                        value={formData.vesselId}
+                        onChange={handleInputChange}
+                        placeholder="e.g., V-47"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500"
+                      />
+                    </div>
+                  )}
+
+                  {/* Purpose */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Purpose *
+                    </label>
+                    <textarea
+                      name="purpose"
+                      value={formData.purpose}
+                      onChange={handleInputChange}
+                      placeholder="Describe the purpose of this request"
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500"
+                      required
+                    />
+                  </div>
+
+                  {/* Items */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Items *
+                    </label>
+                    <div className="space-y-3">
+                      {formData.items.map((item, index) => (
+                        <div key={index} className="flex gap-2 md:gap-3 items-start">
+                          <input
+                            type="text"
+                            placeholder="Item name"
+                            value={item.name}
+                            onChange={(e) =>
+                              handleItemChange(index, "name", e.target.value)
+                            }
+                            className="flex-1 px-3 md:px-4 py-2 border border-gray-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base"
+                            required
+                          />
+                          <input
+                            type="number"
+                            placeholder="Qty"
+                            value={item.quantity}
+                            onChange={(e) =>
+                              handleItemChange(index, "quantity", parseInt(e.target.value) || 1)
+                            }
+                            min="1"
+                            className="w-20 md:w-24 px-2 md:px-4 py-2 border border-gray-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base"
+                            required
+                          />
                           <button
-                            onClick={() => handleViewDetails(request)}
-                            className="text-blue-600 hover:text-blue-900 font-medium"
+                            type="button"
+                            onClick={() => removeItem(index)}
+                            className="px-2 md:px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 text-sm md:text-base"
                           >
-                            View Details
+                            Remove
                           </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addItem}
+                      className="mt-3 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
+                    >
+                      + Add Item
+                    </button>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="flex flex-col sm:flex-row justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("overview")}
+                      className="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="px-6 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-md hover:shadow-lg disabled:opacity-50"
+                    >
+                      {submitting ? "Submitting..." : "Submit Request"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* My Requests List */}
+            {activeView === "pending" && (
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg">
+                <div className="px-4 md:px-6 py-4 border-b border-gray-200">
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900">
+                    My Requests ({myRequests.length})
+                  </h2>
+                </div>
+
+                {loading ? (
+                  <div className="px-6 py-12 text-center">
+                    <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-500">Loading requests...</p>
+                  </div>
+                ) : myRequests.length === 0 ? (
+                  <div className="px-6 py-12 text-center">
+                    <p className="text-gray-500 mb-4">No requests found</p>
+                    <button
+                      onClick={() => setActiveView("createNew")}
+                      className="text-emerald-600 hover:text-emerald-800 font-medium"
+                    >
+                      Create your first request →
+                    </button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Request ID
+                          </th>
+                          <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">
+                            Type
+                          </th>
+                          <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">
+                            Destination
+                          </th>
+                          <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Status
+                          </th>
+                          <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">
+                            Created
+                          </th>
+                          <th className="px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {myRequests.map((request) => (
+                          <tr key={request.requestId} className="hover:bg-gray-50">
+                            <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm font-medium text-gray-900">
+                              {request.requestId}
+                            </td>
+                            <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm text-gray-500 hidden md:table-cell">
+                              {request.requestType}
+                            </td>
+                            <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm text-gray-500 hidden lg:table-cell">
+                              {request.destination}
+                            </td>
+                            <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                {request.status}
+                              </span>
+                            </td>
+                            <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm text-gray-500 hidden sm:table-cell">
+                              {new Date(request.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm">
+                              <button
+                                onClick={() => handleViewDetails(request)}
+                                className="text-emerald-600 hover:text-emerald-900 font-medium"
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Approved & History Views - Placeholder */}
+            {(activeView === "approved" || activeView === "history") && (
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-12 text-center shadow-lg">
+                <p className="text-gray-500 text-lg">
+                  {activeView === "approved" ? "Approved requests" : "Request history"} will be displayed here
+                </p>
               </div>
             )}
           </div>
-        )}
-
-        {activeTab === "createNew" && (
-          <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">
-              Create New Request
-            </h2>
-
-            <form onSubmit={handleSubmitRequest} className="space-y-6">
-              {/* Department */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Department *
-                </label>
-                <input
-                  type="text"
-                  name="department"
-                  value={formData.department}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md bg-gray-100"
-                  disabled
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Your department is automatically set
-                </p>
-              </div>
-
-              {/* Destination */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Destination *
-                </label>
-                <input
-                  type="text"
-                  name="destination"
-                  value={formData.destination}
-                  onChange={handleInputChange}
-                  placeholder="e.g., Marine, IT, Operations"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  required
-                />
-              </div>
-
-              {/* Request Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Request Type *
-                </label>
-                <select
-                  name="requestType"
-                  value={formData.requestType}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="purchaseOrder">Purchase Order</option>
-                  <option value="quotation">Quotation</option>
-                  <option value="maintenance">Maintenance</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              {/* Vessel ID (Optional - for Marine department) */}
-              {user?.department === "Marine" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Vessel ID (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    name="vesselId"
-                    value={formData.vesselId}
-                    onChange={handleInputChange}
-                    placeholder="e.g., V-47"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              )}
-
-              {/* Purpose */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Purpose *
-                </label>
-                <textarea
-                  name="purpose"
-                  value={formData.purpose}
-                  onChange={handleInputChange}
-                  placeholder="Describe the purpose of this request"
-                  rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  required
-                />
-              </div>
-
-              {/* Items */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Items *
-                </label>
-                <div className="space-y-3">
-                  {formData.items.map((item, index) => (
-                    <div key={index} className="flex gap-3 items-start">
-                      <input
-                        type="text"
-                        placeholder="Item name"
-                        value={item.name}
-                        onChange={(e) =>
-                          handleItemChange(index, "name", e.target.value)
-                        }
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                        required
-                      />
-                      <input
-                        type="number"
-                        placeholder="Qty"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          handleItemChange(index, "quantity", parseInt(e.target.value) || 1)
-                        }
-                        min="1"
-                        className="w-24 px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeItem(index)}
-                        className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={addItem}
-                  className="mt-3 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
-                >
-                  + Add Item
-                </button>
-              </div>
-
-              {/* Submit Button */}
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("myRequests")}
-                  className="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {submitting ? "Submitting..." : "Submit Request"}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Request Details Modal */}
+      {/* Request Details Modal - Same as ManagerDashboard */}
       {showModal && selectedRequest && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -511,116 +543,8 @@ const RequesterDashboard = () => {
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-6">
-              {/* Request Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600">Department</p>
-                  <p className="font-medium">{selectedRequest.department}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Destination</p>
-                  <p className="font-medium">{selectedRequest.destination}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Request Type</p>
-                  <p className="font-medium">{selectedRequest.requestType}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Status</p>
-                  <p className="font-medium">{selectedRequest.status}</p>
-                </div>
-                {selectedRequest.vesselId && (
-                  <div>
-                    <p className="text-sm text-gray-600">Vessel ID</p>
-                    <p className="font-medium">{selectedRequest.vesselId}</p>
-                  </div>
-                )}
-                {selectedRequest.purpose && (
-                  <div className="col-span-2">
-                    <p className="text-sm text-gray-600">Purpose</p>
-                    <p className="font-medium">{selectedRequest.purpose}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Items */}
-              {selectedRequest.items && selectedRequest.items.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-2">Items</h4>
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                          Name
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                          Quantity
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {selectedRequest.items.map((item, index) => (
-                        <tr key={index}>
-                          <td className="px-4 py-2 text-sm">{item.name}</td>
-                          <td className="px-4 py-2 text-sm">{item.quantity}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Workflow Flow */}
-              {selectedRequest.flow && (
-                <div>
-                  <h4 className="font-semibold mb-3">Request Progress</h4>
-                  <div className="space-y-3">
-                    {selectedRequest.flow.path?.map((step, index) => (
-                      <div
-                        key={index}
-                        className={`p-3 rounded border ${
-                          step.status === "completed"
-                            ? "bg-green-50 border-green-200"
-                            : step.status === "current"
-                            ? "bg-yellow-50 border-yellow-200"
-                            : "bg-gray-50 border-gray-200"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-sm">{step.state}</p>
-                            {step.user && (
-                              <p className="text-xs text-gray-600">
-                                {step.action} by {step.user.displayName} ({step.role})
-                              </p>
-                            )}
-                            {step.info && (
-                              <p className="text-xs text-gray-500">{step.info}</p>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            {step.status === "completed" && (
-                              <span className="text-xs font-semibold text-green-600">✓ Completed</span>
-                            )}
-                            {step.status === "current" && (
-                              <span className="text-xs font-semibold text-yellow-600">● In Progress</span>
-                            )}
-                            {step.status === "future" && (
-                              <span className="text-xs font-semibold text-gray-400">○ Upcoming</span>
-                            )}
-                            {step.timestamp && (
-                              <p className="text-xs text-gray-500">
-                                {new Date(step.timestamp).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="px-6 py-4">
+              <p className="text-gray-700">Request details will be displayed here...</p>
             </div>
 
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
