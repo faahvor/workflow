@@ -92,30 +92,19 @@ const handleSubmit = async (e) => {
     const data = response.data;
     console.log("✅ Login Response:", data);
 
-    if (data.user && data.token) {
+    // ✅ FIXED: Check for data.userId instead of data.user
+    if (data.userId && data.token) {
       // ✅ Store user info in AuthContext
       login({
-        userId: data.user.userId,
-        username: data.user.username,
-        displayName: data.user.displayName,
-        role: data.user.role,
-        department: data.user.department,
+        userId: data.userId,
+        username: data.username,
+        displayName: data.displayName,
+        role: data.role,
+        department: data.department,
         token: data.token,
       });
 
-      console.log("✅ User logged in:", data.user);
-
-      // Check password expiry
-      const passwordExpired = await checkPasswordExpiry(
-        data.user.lastPasswordChange
-      );
-
-      if (passwordExpired) {
-        alert("Your password has expired. Please change your password.");
-        navigate("/password");
-        setLoading(false);
-        return;
-      }
+      console.log("✅ User logged in:", data);
 
       // Handle Remember Me
       if (rememberMe) {
@@ -129,8 +118,13 @@ const handleSubmit = async (e) => {
       }
 
       // ✅✅✅ SIMPLIFIED ROUTING - Just redirect to /dashboard
-      // The DashboardRouter in App.jsx will determine which dashboard to show
+      console.log("🚀 About to navigate to /dashboard");
+      console.log("🚀 Current user:", data);
       navigate("/dashboard");
+      console.log("🚀 Navigate called");
+    } else {
+      console.log("❌ Login failed - missing userId or token");
+      setError("Invalid login response from server");
     }
   } catch (error) {
     console.error("❌ Login Error:", error.response?.data || error.message);
@@ -260,7 +254,7 @@ const handleSubmit = async (e) => {
               </div>
             </div>
           </div>
-  <div className="flex items-center justify-start mt-6 text-white text-sm">
+          <div className="flex items-center justify-start mt-6 text-white text-sm">
             <label className="flex items-center cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -290,7 +284,7 @@ const handleSubmit = async (e) => {
             )}
           </button>
 
-            <div className="mt-4 text-white  flex justify-center items-center">
+          <div className="mt-4 text-white  flex justify-center items-center">
             <a
               onClick={() => navigate("/admin")}
               className="hover:underline cursor-pointer"
