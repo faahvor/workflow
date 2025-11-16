@@ -17,7 +17,7 @@ const ManagerDashboard = () => {
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const API_BASE_URL = "https://hwfp-backend-s3.onrender.com/api";
+  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   // Fetch pending requests for the current user
   const fetchPendingRequests = async () => {

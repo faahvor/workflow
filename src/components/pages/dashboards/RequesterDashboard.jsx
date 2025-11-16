@@ -27,7 +27,7 @@ const RequesterDashboard = () => {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const API_BASE_URL = "https://hwfp-backend-s3.onrender.com/api";
+  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   // Fetch all requests created by this user
   const fetchMyRequests = async () => {

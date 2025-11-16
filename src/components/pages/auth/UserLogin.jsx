@@ -69,129 +69,76 @@ const UserLogin = () => {
     }
   };
 
-  // Handle Login Submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  setError("");
 
-    if (!form.username || !form.password) {
-      setError("Please enter both Username and Password");
-      setLoading(false);
-      return;
-    }
+  if (!form.username || !form.password) {
+    setError("Please enter both username and Password");
+    setLoading(false);
+    return;
+  }
 
-    try {
-      const response = await axios.post(
-        "https://hdp-backend-1vcl.onrender.com/api/auth/user/login",
-        {
-          username: form.username.toLowerCase(),
-          password: form.password,
-        }
+  try {
+    const response = await axios.post(
+      "https://hdp-backend-1vcl.onrender.com/api/auth/user/login",
+      {
+        username: form.username.toLowerCase(),
+        password: form.password,
+      }
+    );
+
+    const data = response.data;
+    console.log("✅ Login Response:", data);
+
+    if (data.user && data.token) {
+      // ✅ Store user info in AuthContext
+      login({
+        userId: data.user.userId,
+        username: data.user.username,
+        displayName: data.user.displayName,
+        role: data.user.role,
+        department: data.user.department,
+        token: data.token,
+      });
+
+      console.log("✅ User logged in:", data.user);
+
+      // Check password expiry
+      const passwordExpired = await checkPasswordExpiry(
+        data.user.lastPasswordChange
       );
 
-      const data = response.data;
-      console.log("✅ Login Response:", data);
-
-      if (data.user && data.token) {
-        // ✅ Store user info in AuthContext
-        login({
-          userId: data.user.userId,
-          username: data.user.username,
-          displayName: data.user.displayName,
-          role: data.user.role,
-          department: data.user.department,
-          token: data.token,
-        });
-
-        // Also store in sessionStorage for backward compatibility
-        sessionStorage.setItem("userToken", data.token);
-        sessionStorage.setItem("userId", data.user.userId);
-        sessionStorage.setItem("userData", JSON.stringify(data.user));
-
-        // Check if password needs to be changed
-        const passwordExpired = await checkPasswordExpiry(
-          data.user.lastPasswordChange
-        );
-
-        if (passwordExpired) {
-          alert(
-            "Your password has expired. Please change your password to continue."
-          );
-          navigate("/password");
-          setLoading(false);
-          return;
-        }
-
-        // Handle Remember Me
-        if (rememberMe) {
-          Cookies.set("rememberMe", "true", { expires: 7 });
-          Cookies.set("username", form.username, { expires: 7 });
-          Cookies.set("password", form.password, { expires: 7 });
-        } else {
-          Cookies.remove("rememberMe");
-          Cookies.remove("username");
-          Cookies.remove("password");
-        }
-
-        // ✅ Simplified Routing - Navigate to unified dashboard
-        const userRole = data.user.role?.toLowerCase() || "unknown";
-
-        // Check if user is a requester
-        if (userRole === "requester") {
-          navigate("/requester/dashboard");
-        }
-        // Check if user is a manager (including vessel manager, fleet manager, etc.)
-        else if (
-          userRole === "vessel manager" ||
-          userRole === "fleet manager" ||
-          userRole === "it manager" ||
-          userRole === "account manager" ||
-          userRole === "operations manager" ||
-          userRole === "equipment manager" ||
-          userRole === "lines manager" ||
-          userRole === "project manager" ||
-          userRole === "purchase manager"
-        ) {
-          navigate("/manager/dashboard");
-        }
-        // Admin
-        else if (userRole === "admin") {
-          navigate("/admin/dashboard");
-        }
-        // Other roles (keep existing routing for now)
-        else if (userRole === "procurement") navigate("/procurement");
-        else if (userRole === "managing director") navigate("/md/dashboard");
-        else if (userRole === "accounting") navigate("/account/dashboard");
-        else if (userRole === "shipping") navigate("/shipping/dashboard");
-        else if (userRole === "delivery base") navigate("/delivery/dashboard");
-        else if (userRole === "delivery jetty") navigate("/jetty/dashboard");
-        else if (userRole === "delivery vessel") navigate("/vessel/dashboard");
-        else if (userRole === "it officer") navigate("/it/officer/dashboard");
-        else if (userRole === "marine officer")
-          navigate("/marine/officer/dashboard");
-        else if (userRole === "director of it") navigate("/director/dashboard");
-        else if (userRole === "request handler")
-          navigate("/marine/handler/dashboard");
-        else if (userRole === "head of procurement")
-          navigate("/procurement/m/dashboard");
-        else if (userRole === "cfo") navigate("/cfo/dashboard");
-        else if (userRole === "director of operations")
-          navigate("/op/director/dashboard");
-        else if (userRole === "head of project")
-          navigate("/headOfProject/dashboard");
-        else {
-          console.error("❌ Unknown user role:", userRole);
-          setError("Unauthorized access");
-        }
+      if (passwordExpired) {
+        alert("Your password has expired. Please change your password.");
+        navigate("/password");
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error("❌ Login Error:", error.response?.data || error.message);
-      setError(error.response?.data?.message || "Invalid credentials");
-    } finally {
-      setLoading(false);
+
+      // Handle Remember Me
+      if (rememberMe) {
+        Cookies.set("rememberMe", "true", { expires: 7 });
+        Cookies.set("username", form.username, { expires: 7 });
+        Cookies.set("password", form.password, { expires: 7 });
+      } else {
+        Cookies.remove("rememberMe");
+        Cookies.remove("username");
+        Cookies.remove("password");
+      }
+
+      // ✅✅✅ SIMPLIFIED ROUTING - Just redirect to /dashboard
+      // The DashboardRouter in App.jsx will determine which dashboard to show
+      navigate("/dashboard");
     }
-  };
+  } catch (error) {
+    console.error("❌ Login Error:", error.response?.data || error.message);
+    setError(error.response?.data?.message || "Invalid credentials");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
