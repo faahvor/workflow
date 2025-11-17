@@ -484,6 +484,22 @@ const RequesterDashboard = () => {
                     </div>
                   </div>
 
+                  <div>
+  <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+    Request Type *
+  </label>
+  <select
+    name="requestType"
+    value={formData.requestType}
+    onChange={handleInputChange}
+    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
+    required
+  >
+    <option value="purchaseOrder">Purchase Order</option>
+    <option value="pettyCash">Petty Cash</option>
+  </select>
+</div>
+
                   {/* Row 2: Company & Vessel */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Company */}
