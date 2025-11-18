@@ -46,7 +46,7 @@ const RequestWorkflow = ({ workflowPath }) => {
     }
 
     const state = stage.state || "";
-    
+
     const rolePatterns = [
       { pattern: /VESSEL_MANAGER/i, role: "Vessel Manager" },
       { pattern: /FLEET_MANAGER/i, role: "Fleet Manager" },
@@ -62,6 +62,7 @@ const RequestWorkflow = ({ workflowPath }) => {
       { pattern: /MD/i, role: "Managing Director" },
       { pattern: /DELIVERY/i, role: "Delivery" },
       { pattern: /DRAFT/i, role: "Requester" },
+      { pattern: /COMPLETED/i, role: "Completed" },
     ];
 
     for (const { pattern, role } of rolePatterns) {
@@ -80,9 +81,7 @@ const RequestWorkflow = ({ workflowPath }) => {
       .join(" ");
   };
 
-  // Calculate progress percentage
-  const progressPercentage =
-    (workflowPath.filter((s) => s.status === "completed").length / workflowPath.length) * 100;
+
 
   // Check scroll position and update arrow visibility
   const checkScroll = () => {
@@ -90,7 +89,7 @@ const RequestWorkflow = ({ workflowPath }) => {
     if (!container) return;
 
     const { scrollLeft, scrollWidth, clientWidth } = container;
-    
+
     setShowLeftArrow(scrollLeft > 10);
     setShowRightArrow(scrollLeft < scrollWidth - clientWidth - 10);
   };
@@ -116,8 +115,8 @@ const RequestWorkflow = ({ workflowPath }) => {
       <h3 className="text-sm font-semibold text-slate-600 mb-6 uppercase tracking-wider">
         Request Workflow
       </h3>
-      
-      <div className={`relative ${shouldCenter ? 'px-4' : 'px-12'}`}>
+
+      <div className={`relative ${shouldCenter ? "px-4" : "px-12"}`}>
         {/* Left Scroll Arrow - Only show if not centered */}
         {!shouldCenter && showLeftArrow && (
           <button
@@ -145,7 +144,7 @@ const RequestWorkflow = ({ workflowPath }) => {
           ref={scrollContainerRef}
           onScroll={checkScroll}
           className={`relative ${
-            shouldCenter ? 'overflow-x-visible' : 'overflow-x-auto'
+            shouldCenter ? "overflow-x-visible" : "overflow-x-auto"
           } overflow-y-visible scrollbar-hide pb-4`}
           style={{
             scrollbarWidth: "none", // Firefox
@@ -159,24 +158,17 @@ const RequestWorkflow = ({ workflowPath }) => {
             }
           `}</style>
 
-          {/* Progress Line */}
-          <div className="absolute top-6 left-0 right-0 h-0.5 bg-slate-200 -z-10">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
-              style={{ width: `${progressPercentage}%` }}
-            />
-          </div>
-
+         
           {/* Stages - Centered if 8 or fewer, otherwise left-aligned */}
-          <div 
+          <div
             className={`relative flex items-start gap-2 ${
-              shouldCenter ? 'justify-center' : ''
+              shouldCenter ? "justify-center" : ""
             }`}
-            style={{ minWidth: shouldCenter ? 'auto' : 'max-content' }}
+            style={{ minWidth: shouldCenter ? "auto" : "max-content" }}
           >
             {workflowPath.map((stage, index) => {
               const roleName = getRoleFromState(stage);
-              
+
               return (
                 <div
                   key={index}
@@ -212,11 +204,13 @@ const RequestWorkflow = ({ workflowPath }) => {
                   )}
 
                   {/* User name */}
-                  {stage.user && (stage.status === "completed" || stage.status === "current") && (
-                    <p className="text-[9px] text-slate-500 mt-1 text-center truncate w-full px-1">
-                      {stage.user.displayName}
-                    </p>
-                  )}
+                  {stage.user &&
+                    (stage.status === "completed" ||
+                      stage.status === "current") && (
+                      <p className="text-[9px] text-slate-500 mt-1 text-center truncate w-full px-1">
+                        {stage.user.displayName}
+                      </p>
+                    )}
                 </div>
               );
             })}

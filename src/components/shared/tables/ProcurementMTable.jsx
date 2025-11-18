@@ -1,9 +1,9 @@
-// src/components/tables/FleetManagerTable.jsx
+// src/components/tables/ProcurementMTable.jsx
 
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const FleetManagerTable = ({ 
+const ProcurementMTable = ({ 
   items = [], 
   onEditItem,
   isReadOnly = false 
@@ -229,4 +229,4 @@ return (
 );
 };
 
-export default FleetManagerTable;
+export default ProcurementMTable;

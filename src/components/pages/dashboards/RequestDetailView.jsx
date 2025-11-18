@@ -12,12 +12,14 @@ import {
 } from "react-icons/md";
 import RequestWorkflow from "../../shared/RequestWorkflow";
 import FleetManagerTable from "../../shared/tables/FleetManagerTable";
-import DeliveryBaseTable from "../../shared/tables/DeliveryBaseTable";
-import DeliveryJettyTable from "../../shared/tables/DeliveryJettyTable";
-import DeliveryVesselTable from "../../shared/tables/DeliveryVesselTable";
 import { useAuth } from "../../context/AuthContext";
 import VesselManagerTable from "../../shared/tables/VesselManagerTable";
 import axios from "axios";
+import ProcurementTable from "../../shared/tables/ProcurementTable";
+import AccountTable from "../../shared/tables/AccountTable";
+import ProcurementMTable from "../../shared/tables/ProcurementMTable";
+import MDTable from "../../shared/tables/MDTable";
+import DeliveryTable from "../../shared/tables/DeliveryTable";
 
 const RequestDetailView = ({
   request,
@@ -29,10 +31,56 @@ const RequestDetailView = ({
 }) => {
   const { user } = useAuth();
   const [vessels, setVessels] = useState([]);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [vendors, setVendors] = useState([]);
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
   const { getToken } = useAuth();
+  const [canApproveDelivery, setCanApproveDelivery] = useState(true);
 
   if (!request) return null;
+
+  const handleDeliveryStatusChange = (allFullyDelivered) => {
+    setCanApproveDelivery(allFullyDelivered);
+  };
+
+  useEffect(() => {
+    const fetchVendors = async () => {
+      try {
+        const token = getToken(); // ✅ USE THIS INSTEAD
+        if (!token) {
+          console.error("❌ No token available");
+          return;
+        }
+        console.log("🔍 Fetching vendors...");
+        const response = await axios.get(
+          "https://hdp-backend-1vcl.onrender.com/api/vendors",
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        console.log("✅ Vendors fetched:", response.data);
+        setVendors(response.data.data || []);
+      } catch (error) {
+        console.error("❌ Error fetching vendors:", error);
+      }
+    };
+    fetchVendors();
+  }, []); // ✅ Add getToken to dependencies if needed
+
+  const fetchRequestDetails = async () => {
+    try {
+      const token = getToken(); // ✅ USE THIS
+      if (!token) {
+        console.error("❌ No token available");
+        return;
+      }
+      const response = await axios.get(
+        `https://hdp-backend-1vcl.onrender.com/api/requests/${request.requestId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSelectedRequest(response.data);
+    } catch (error) {
+      console.error("Error fetching request:", error);
+    }
+  };
 
   const fetchVessels = async () => {
     try {
@@ -61,8 +109,9 @@ const RequestDetailView = ({
     const userRole = user?.role?.toLowerCase(); // This converts to lowercase
     const items = request.items || [];
 
-    console.log("Current user role:", userRole); // Debug log
-    console.log("Request items:", items); // Debug log
+    console.log("Current user role:", userRole);
+    console.log("Request items:", items);
+    console.log("🔍 Current State:", request.currentState);
 
     // Role-based table selection
     switch (userRole) {
@@ -76,6 +125,7 @@ const RequestDetailView = ({
             onDeleteItem={handleDeleteItem}
             requestId={request.requestId}
             isReadOnly={actionLoading}
+            currentState={request.flow?.currentState}
           />
         );
 
@@ -89,80 +139,109 @@ const RequestDetailView = ({
           />
         );
 
+      case "managingdirector":
+      case "managing director": // Handle space variant
+        return (
+          <MDTable
+            items={items}
+            onEditItem={handleEditItem}
+            isReadOnly={actionLoading}
+          />
+        );
+      case "procurementmanager":
+      case "procurement manager": // Handle space variant
+        return (
+          <ProcurementMTable
+            items={items}
+            onEditItem={handleEditItem}
+            isReadOnly={actionLoading}
+          />
+        );
+      case "accountingofficer":
+      case "accounting officer": // Handle space variant
+        return (
+          <AccountTable
+            items={items}
+            onEditItem={handleEditItem}
+            isReadOnly={actionLoading}
+            showPaymentStatus={true}
+            allowPaymentEditing={true}
+          />
+        );
+
       case "deliverybase":
       case "delivery base": // Handle space variant
         return (
-          <DeliveryBaseTable
+          <DeliveryTable
             items={items}
             onEditItem={handleEditItem}
-            onDeliveryQuantityChange={handleDeliveryQuantityChange}
-            requestId={request.requestId}
             isReadOnly={actionLoading}
+            userRole="deliverybase"
+            requestId={request.requestId}
+            onDeliveryQuantityChange={handleDeliveryQuantityChange}
+            onDeliveryStatusChange={handleDeliveryStatusChange}
           />
         );
 
       case "deliveryjetty":
       case "delivery jetty": // Handle space variant
         return (
-          <DeliveryJettyTable
+          <DeliveryTable
             items={items}
             onEditItem={handleEditItem}
-            onDeliveryQuantityChange={handleDeliveryQuantityChange}
-            requestId={request.requestId}
             isReadOnly={actionLoading}
+            userRole="deliverybase"
+            requestId={request.requestId}
+            onDeliveryQuantityChange={handleDeliveryQuantityChange}
+            onDeliveryStatusChange={handleDeliveryStatusChange}
           />
         );
 
       case "deliveryvessel":
       case "delivery vessel": // Handle space variant
         return (
-          <DeliveryVesselTable
+          <DeliveryTable
             items={items}
             onEditItem={handleEditItem}
-            onDeliveryQuantityChange={handleDeliveryQuantityChange}
-            requestId={request.requestId}
             isReadOnly={actionLoading}
+            userRole="deliverybase"
+            requestId={request.requestId}
+            onDeliveryQuantityChange={handleDeliveryQuantityChange}
+            onDeliveryStatusChange={handleDeliveryStatusChange}
           />
         );
-
-      // Add more role-based tables here as we create them
-      default:
-        // Fallback: Show a simple table for roles without specific tables
-        console.warn("No specific table found for role:", userRole);
+      case "procurement":
+      case "procurement officer":
         return (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                    Item Name
-                  </th>
-                  <th className="px-4 md:px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                    Quantity
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {items.map((item, index) => (
-                  <tr
-                    key={index}
-                    className="hover:bg-slate-50 transition-colors"
-                  >
-                    <td className="px-4 md:px-6 py-4">
-                      <p className="text-sm font-medium text-slate-900">
-                        {item.name}
-                      </p>
-                    </td>
-                    <td className="px-4 md:px-6 py-4 text-center">
-                      <p className="text-sm text-slate-700 font-semibold">
-                        {item.quantity}
-                      </p>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ProcurementTable
+            requests={items}
+            selectedRequest={request}
+            vendors={vendors || []}
+            onEditItem={handleEditItem}
+            handleDeleteItem={handleDeleteItem}
+            handleVendorChange={handleVendorChange}
+            handleCreateVendor={handleCreateVendor}
+            // Boolean flags
+            showUnitPrice={true}
+            showVat={true}
+            showPRN={true}
+            showPON={false} // Only accounting can edit PON
+            showItemTypeAndDept={true}
+            allowPriceEditing={true}
+            allowEditing={true}
+            canEditPRN={true}
+            canEditPON={false}
+            allowVendorSelection={true}
+            allowItemTypeChange={true}
+            allowInStockChange={true}
+            allowLogisticsChange={true}
+            // Optional props
+            isPreview={false}
+            readOnly={actionLoading}
+            onSwitchInitiated={(itemId) => {
+              console.log("Item switched to petty cash:", itemId);
+            }}
+          />
         );
     }
   };
@@ -199,6 +278,62 @@ const RequestDetailView = ({
   const handleDeliveryQuantityChange = (requestId, itemId, quantity) => {
     console.log("Delivery quantity changed:", { requestId, itemId, quantity });
     // TODO: Implement API call to update delivery quantity
+  };
+
+  // ✅ ADD THIS - Handle Vendor Change
+  const handleVendorChange = async (itemId, selectedOption) => {
+    try {
+      const token = getToken();
+      const updatedItems = request.items.map((item) => {
+        if (item.itemId === itemId || item._id === itemId) {
+          return {
+            ...item,
+            vendor: selectedOption?.label || null,
+            vendorId: selectedOption?.value || null,
+          };
+        }
+        return item;
+      });
+
+      const response = await axios.patch(
+        `https://hdp-backend-1vcl.onrender.com/api/requests/${request.requestId}`,
+        { items: updatedItems },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.status === 200) {
+        console.log("✅ Vendor updated successfully");
+        fetchRequestDetails();
+      }
+    } catch (error) {
+      console.error("❌ Error updating vendor:", error);
+    }
+  };
+
+  const handleCreateVendor = async (vendorName, index) => {
+    try {
+      const token = getToken();
+      const response = await axios.post(
+        "https://hdp-backend-1vcl.onrender.com/api/vendors",
+        { name: vendorName },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.status === 201) {
+        const newVendor = response.data;
+        console.log("✅ Vendor created:", newVendor);
+
+        setVendors((prev) => [...prev, newVendor]);
+
+        return {
+          value: newVendor.vendorId,
+          label: newVendor.name,
+        };
+      }
+    } catch (error) {
+      console.error("❌ Error creating vendor:", error);
+      alert("Failed to create vendor. Please try again.");
+    }
   };
 
   return (
@@ -287,7 +422,7 @@ const RequestDetailView = ({
               {new Date(request.createdAt).toLocaleDateString()}
             </p>
           </div>
-          
+
           <div className="px-4 py-3 border-b border-r border-slate-200">
             <p className="text-xs text-slate-500 font-medium mb-0.5">
               Request Type
@@ -308,23 +443,18 @@ const RequestDetailView = ({
               {request.assetId || "N/A"}
             </p>
           </div>
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            
-          </div>
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            
-          </div>
+          <div className="px-4 py-3 border-b border-r border-slate-200"></div>
+          <div className="px-4 py-3 border-b border-r border-slate-200"></div>
           <div className="px-4 py-3 border-b border-r border-slate-200">
             <p className="text-xs text-slate-500 font-medium mb-0.5">
               Job Number{" "}
             </p>
             <p className="text-sm font-semibold">
               <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                              {request.jobNumber || "N/A"}
+                {request.jobNumber || "N/A"}
               </span>
             </p>
           </div>
-         
         </div>
       </div>
 
@@ -379,8 +509,20 @@ const RequestDetailView = ({
             </button>
             <button
               onClick={() => onApprove(request.requestId)}
-              disabled={actionLoading}
-              className="w-full sm:w-auto px-6 h-12 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl font-semibold hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+              disabled={
+                actionLoading ||
+                (["delivery base", "delivery jetty", "delivery vessel"].includes(
+                  user?.role?.toLowerCase()
+                ) &&
+                  !canApproveDelivery)
+              } // ✅ ADD CONDITION
+              className={`w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+                ["delivery base", "delivery jetty", "delivery vessel"].includes(
+                  user?.role?.toLowerCase()
+                ) && !canApproveDelivery
+                  ? "bg-gray-400 cursor-not-allowed opacity-50" // ✅ GREY WHEN DISABLED
+                  : "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
+              } disabled:opacity-50`}
             >
               <MdCheckCircle className="text-lg" />
               {actionLoading ? "Processing..." : "Approve Request"}

@@ -35,6 +35,7 @@ const ManagerDashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [vessels, setVessels] = useState([]);
+  
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -297,6 +298,7 @@ const ManagerDashboard = () => {
             setActiveView={setActiveView}
             pendingCount={pendingRequests.length}
             isRequester={false}
+            
           />
 
           <div className="flex-1 overflow-auto">
@@ -370,14 +372,7 @@ const ManagerDashboard = () => {
               </p>
             </div>
 
-            {/* Special Note for Double Approval Roles */}
-            {/* {hasDoubleApproval(user?.role) && (
-              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <p className="text-blue-800 font-semibold text-sm md:text-base">
-                  ℹ️ As a {user?.role}, you have two approval stages: First Approval and Second Approval
-                </p>
-              </div>
-            )} */}
+           
 
             {/* Error Message */}
             {error && (
