@@ -20,6 +20,7 @@ import AccountTable from "../../shared/tables/AccountTable";
 import ProcurementMTable from "../../shared/tables/ProcurementMTable";
 import MDTable from "../../shared/tables/MDTable";
 import DeliveryTable from "../../shared/tables/DeliveryTable";
+import CompletedTable from "../../shared/tables/CompletedTable";
 
 const RequestDetailView = ({
   request,
@@ -28,6 +29,7 @@ const RequestDetailView = ({
   onReject,
   onQuery,
   actionLoading,
+  isReadOnly = false,
 }) => {
   const { user } = useAuth();
   const [vessels, setVessels] = useState([]);
@@ -109,9 +111,14 @@ const RequestDetailView = ({
     const userRole = user?.role?.toLowerCase(); // This converts to lowercase
     const items = request.items || [];
 
-    console.log("Current user role:", userRole);
-    console.log("Request items:", items);
-    console.log("🔍 Current State:", request.currentState);
+   if (isReadOnly) {
+    return (
+      <CompletedTable
+        items={items}
+        userRole={userRole}
+      />
+    );
+  }
 
     // Role-based table selection
     switch (userRole) {
@@ -210,6 +217,7 @@ const RequestDetailView = ({
             onDeliveryStatusChange={handleDeliveryStatusChange}
           />
         );
+        
       case "procurement":
       case "procurement officer":
         return (
@@ -243,6 +251,8 @@ const RequestDetailView = ({
             }}
           />
         );
+
+     
     }
   };
 
@@ -485,6 +495,8 @@ const RequestDetailView = ({
       )}
 
       {/* Action Footer */}
+      {!isReadOnly && (
+
       <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl px-6 md:px-8 py-6 shadow-lg sticky bottom-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-slate-600 text-sm">
@@ -530,6 +542,7 @@ const RequestDetailView = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

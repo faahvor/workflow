@@ -20,6 +20,7 @@ import {
 import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
 import RequestDetailView from "./RequestDetailView";
+import CompletedRequests from "./CompletedRequests";
 
 const ManagerDashboard = () => {
   const { user, getToken } = useAuth();
@@ -238,6 +239,7 @@ const ManagerDashboard = () => {
         return type;
     }
   };
+  
 
   // Get vessel name from vesselId
   const getVesselName = (vesselId) => {
@@ -300,6 +302,7 @@ const ManagerDashboard = () => {
             isRequester={false}
             
           />
+          {activeView === "completed" && <CompletedRequests />}
 
           <div className="flex-1 overflow-auto">
             <RequestDetailView
