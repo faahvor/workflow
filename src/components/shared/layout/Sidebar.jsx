@@ -144,22 +144,7 @@ const Sidebar = ({ activeView, setActiveView, pendingCount = 0, isRequester = fa
               <MdCheckCircle className="text-xl shrink-0" />
               <span className="font-medium text-sm">Approved</span>
             </button>
-            {/* Completed Requests */}
-<button
-  onClick={() => {
-    setActiveView("completed");
-    setIsSidebarOpen(false);
-  }}
-  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-    activeView === "completed"
-      ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
-      : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-  }`}
->
-  <MdCheckCircle className="text-xl shrink-0" />
-  <span className="font-medium text-sm">Completed</span>
-</button>
-
+    
             {/* History */}
             <button
               onClick={() => {

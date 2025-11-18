@@ -20,7 +20,6 @@ import {
 import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
 import RequestDetailView from "./RequestDetailView";
-import CompletedRequests from "./CompletedRequests";
 
 const ManagerDashboard = () => {
   const { user, getToken } = useAuth();
@@ -36,7 +35,6 @@ const ManagerDashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [vessels, setVessels] = useState([]);
-  
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -239,7 +237,6 @@ const ManagerDashboard = () => {
         return type;
     }
   };
-  
 
   // Get vessel name from vesselId
   const getVesselName = (vesselId) => {
@@ -300,9 +297,7 @@ const ManagerDashboard = () => {
             setActiveView={setActiveView}
             pendingCount={pendingRequests.length}
             isRequester={false}
-            
           />
-          {activeView === "completed" && <CompletedRequests />}
 
           <div className="flex-1 overflow-auto">
             <RequestDetailView
