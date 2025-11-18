@@ -10,6 +10,9 @@ const RequestWorkflow = ({ workflowPath }) => {
 
   if (!workflowPath || workflowPath.length === 0) return null;
 
+  // Determine if workflow should be centered (8 or fewer stages)
+  const shouldCenter = workflowPath.length <= 8;
+
   const getStageColor = (status) => {
     switch (status) {
       case "completed":
@@ -114,9 +117,9 @@ const RequestWorkflow = ({ workflowPath }) => {
         Request Workflow
       </h3>
       
-      <div className="relative px-12">
-        {/* Left Scroll Arrow - Now with left-0 positioning and proper spacing */}
-        {showLeftArrow && (
+      <div className={`relative ${shouldCenter ? 'px-4' : 'px-12'}`}>
+        {/* Left Scroll Arrow - Only show if not centered */}
+        {!shouldCenter && showLeftArrow && (
           <button
             onClick={scrollLeft}
             className="absolute -left-4 top-6 z-20 w-10 h-10 bg-white border-2 border-slate-300 rounded-full flex items-center justify-center shadow-lg hover:bg-slate-50 hover:border-emerald-400 hover:scale-110 transition-all duration-200"
@@ -126,8 +129,8 @@ const RequestWorkflow = ({ workflowPath }) => {
           </button>
         )}
 
-        {/* Right Scroll Arrow - Now with right-0 positioning and proper spacing */}
-        {showRightArrow && (
+        {/* Right Scroll Arrow - Only show if not centered */}
+        {!shouldCenter && showRightArrow && (
           <button
             onClick={scrollRight}
             className="absolute -right-4 top-6 z-20 w-10 h-10 bg-white border-2 border-slate-300 rounded-full flex items-center justify-center shadow-lg hover:bg-slate-50 hover:border-emerald-400 hover:scale-110 transition-all duration-200"
@@ -141,7 +144,9 @@ const RequestWorkflow = ({ workflowPath }) => {
         <div
           ref={scrollContainerRef}
           onScroll={checkScroll}
-          className="relative overflow-x-auto overflow-y-visible scrollbar-hide pb-4"
+          className={`relative ${
+            shouldCenter ? 'overflow-x-visible' : 'overflow-x-auto'
+          } overflow-y-visible scrollbar-hide pb-4`}
           style={{
             scrollbarWidth: "none", // Firefox
             msOverflowStyle: "none", // IE/Edge
@@ -162,8 +167,13 @@ const RequestWorkflow = ({ workflowPath }) => {
             />
           </div>
 
-          {/* Stages */}
-          <div className="relative flex items-start gap-2" style={{ minWidth: "max-content" }}>
+          {/* Stages - Centered if 8 or fewer, otherwise left-aligned */}
+          <div 
+            className={`relative flex items-start gap-2 ${
+              shouldCenter ? 'justify-center' : ''
+            }`}
+            style={{ minWidth: shouldCenter ? 'auto' : 'max-content' }}
+          >
             {workflowPath.map((stage, index) => {
               const roleName = getRoleFromState(stage);
               

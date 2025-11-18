@@ -1,6 +1,6 @@
 // src/components/pages/RequestDetailView.jsx
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   MdShoppingCart,
   MdAttachMoney,
@@ -17,20 +17,57 @@ import DeliveryJettyTable from "../../shared/tables/DeliveryJettyTable";
 import DeliveryVesselTable from "../../shared/tables/DeliveryVesselTable";
 import { useAuth } from "../../context/AuthContext";
 import VesselManagerTable from "../../shared/tables/VesselManagerTable";
+import axios from "axios";
 
-const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, actionLoading }) => {
+const RequestDetailView = ({
+  request,
+  onBack,
+  onApprove,
+  onReject,
+  onQuery,
+  actionLoading,
+}) => {
   const { user } = useAuth();
-  
+  const [vessels, setVessels] = useState([]);
+  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const { getToken } = useAuth();
+
   if (!request) return null;
+
+  const fetchVessels = async () => {
+    try {
+      const token = getToken();
+      const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVessels(response.data.data || []);
+    } catch (err) {
+      console.error("❌ Error fetching vessels:", err);
+    }
+  };
+
+  const getVesselName = (vesselId) => {
+    const vessel = vessels.find((v) => v.vesselId === vesselId);
+    return vessel?.name || vesselId; // Fallback to vesselId if name not found
+  };
+
+  // Fetch vessels on mount
+  useEffect(() => {
+    fetchVessels();
+  }, []);
 
   // Determine which table to show based on user role
   const renderItemsTable = () => {
-    const userRole = user?.role?.toLowerCase();
+    const userRole = user?.role?.toLowerCase(); // This converts to lowercase
     const items = request.items || [];
+
+    console.log("Current user role:", userRole); // Debug log
+    console.log("Request items:", items); // Debug log
 
     // Role-based table selection
     switch (userRole) {
-      case "Vessel Manager":
+      case "vesselmanager":
+      case "vessel manager": // Handle space variant
       case "vmanager":
         return (
           <VesselManagerTable
@@ -43,6 +80,7 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
         );
 
       case "fleetmanager":
+      case "fleet manager": // Handle space variant
         return (
           <FleetManagerTable
             items={items}
@@ -52,6 +90,7 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
         );
 
       case "deliverybase":
+      case "delivery base": // Handle space variant
         return (
           <DeliveryBaseTable
             items={items}
@@ -63,6 +102,7 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
         );
 
       case "deliveryjetty":
+      case "delivery jetty": // Handle space variant
         return (
           <DeliveryJettyTable
             items={items}
@@ -74,6 +114,7 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
         );
 
       case "deliveryvessel":
+      case "delivery vessel": // Handle space variant
         return (
           <DeliveryVesselTable
             items={items}
@@ -85,10 +126,46 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
         );
 
       // Add more role-based tables here as we create them
-     
+      default:
+        // Fallback: Show a simple table for roles without specific tables
+        console.warn("No specific table found for role:", userRole);
+        return (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Item Name
+                  </th>
+                  <th className="px-4 md:px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Quantity
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {items.map((item, index) => (
+                  <tr
+                    key={index}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="px-4 md:px-6 py-4">
+                      <p className="text-sm font-medium text-slate-900">
+                        {item.name}
+                      </p>
+                    </td>
+                    <td className="px-4 md:px-6 py-4 text-center">
+                      <p className="text-sm text-slate-700 font-semibold">
+                        {item.quantity}
+                      </p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
     }
   };
-
 
   // Handle edit item
   const handleEditItem = async (item) => {
@@ -135,39 +212,6 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
         Back to Requests
       </button>
 
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-3xl px-6 md:px-8 py-6 mb-8 border border-slate-700/50 shadow-xl">
-        <div className="flex items-center gap-3 mb-2 flex-wrap">
-          <span className="text-slate-400 text-sm font-mono font-semibold">
-            {request.requestId}
-          </span>
-          <span
-            className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg text-xs font-semibold border ${
-              request.requestType === "purchaseOrder"
-                ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/30"
-                : "bg-teal-500/20 text-teal-300 border-teal-400/30"
-            }`}
-          >
-            {request.requestType === "purchaseOrder" ? (
-              <MdShoppingCart className="text-sm" />
-            ) : (
-              <MdAttachMoney className="text-sm" />
-            )}
-            <span>
-              {request.requestType === "purchaseOrder" ? "Purchase Order" : "Petty Cash"}
-            </span>
-          </span>
-        </div>
-        <p className="text-slate-400 text-sm">
-          Requested by{" "}
-          <span className="text-white font-medium">
-            {request.requester?.displayName || "N/A"}
-          </span>{" "}
-          on {new Date(request.createdAt).toLocaleDateString()} at{" "}
-          {new Date(request.createdAt).toLocaleTimeString()}
-        </p>
-      </div>
-
       {/* Workflow Progress - Now a separate component */}
       {request.flow?.path && (
         <div className="mb-8">
@@ -184,50 +228,103 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Request ID</p>
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Request ID
+            </p>
             <p className="text-sm text-slate-900 font-semibold font-mono">
               {request.requestId}
             </p>
           </div>
+
           <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Requester</p>
+            <p className="text-xs text-slate-500 font-medium mb-0.5">Company</p>
+            <p className="text-sm text-slate-900 font-semibold font-mono">
+              {request.company || "N/A"}
+            </p>
+          </div>
+
+          <div className="px-4 py-3 border-b border-r border-slate-200">
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Requester
+            </p>
             <p className="text-sm text-slate-900 font-semibold">
               {request.requester?.displayName || "N/A"}
             </p>
           </div>
           <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Department</p>
-            <p className="text-sm text-slate-900 font-semibold">{request.department}</p>
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Department
+            </p>
+            <p className="text-sm text-slate-900 font-semibold">
+              {request.department}
+            </p>
           </div>
-          <div className="px-4 py-3 border-b border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Destination</p>
-            <p className="text-sm text-slate-900 font-semibold">{request.destination}</p>
+          <div className="px-4 py-3 border-b border-r border-slate-200">
+            {" "}
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Destination
+            </p>
+            <p className="text-sm text-slate-900 font-semibold">
+              {request.destination}
+            </p>
           </div>
 
           {request.vesselId && (
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">Vessel</p>
-              <p className="text-sm text-slate-900 font-semibold">{request.vesselId}</p>
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Vessel
+              </p>
+              <p className="text-sm text-slate-900 font-semibold">
+                {getVesselName(request.vesselId)}
+              </p>
             </div>
           )}
           <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Submitted Date</p>
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Submitted Date
+            </p>
             <p className="text-sm text-slate-900 font-semibold">
               {new Date(request.createdAt).toLocaleDateString()}
             </p>
           </div>
+          
           <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Status</p>
-            <p className="text-sm text-slate-900 font-semibold">{request.status}</p>
-          </div>
-          <div className="px-4 py-3 border-b border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Request Type</p>
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Request Type
+            </p>
             <p className="text-sm font-semibold">
               <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                {request.requestType === "purchaseOrder" ? "Purchase Order" : "Petty Cash"}
+                {request.requestType === "purchaseOrder"
+                  ? "Purchase Order"
+                  : "Petty Cash"}
               </span>
             </p>
           </div>
+          <div className="px-4 py-3 border-b border-r border-slate-200">
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Asset ID
+            </p>
+            <p className="text-sm text-slate-900 font-semibold">
+              {request.assetId || "N/A"}
+            </p>
+          </div>
+          <div className="px-4 py-3 border-b border-r border-slate-200">
+            
+          </div>
+          <div className="px-4 py-3 border-b border-r border-slate-200">
+            
+          </div>
+          <div className="px-4 py-3 border-b border-r border-slate-200">
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              Job Number{" "}
+            </p>
+            <p className="text-sm font-semibold">
+              <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+                              {request.jobNumber || "N/A"}
+              </span>
+            </p>
+          </div>
+         
         </div>
       </div>
 
@@ -260,7 +357,9 @@ const RequestDetailView = ({ request, onBack, onApprove, onReject, onQuery, acti
       {/* Action Footer */}
       <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl px-6 md:px-8 py-6 shadow-lg sticky bottom-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-slate-600 text-sm">Review the request details and take action</p>
+          <p className="text-slate-600 text-sm">
+            Review the request details and take action
+          </p>
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
             <button
               onClick={() => onReject(request.requestId)}

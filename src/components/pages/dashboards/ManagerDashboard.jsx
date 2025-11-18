@@ -24,7 +24,7 @@ import RequestDetailView from "./RequestDetailView";
 const ManagerDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
-  
+
   const [activeView, setActiveView] = useState("overview");
   const [view, setView] = useState("list"); // "list" or "detail"
   const [pendingRequests, setPendingRequests] = useState([]);
@@ -34,6 +34,7 @@ const ManagerDashboard = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [vessels, setVessels] = useState([]);
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -42,7 +43,7 @@ const ManagerDashboard = () => {
     try {
       setLoading(true);
       const token = getToken();
-      
+
       if (!token) {
         console.error("No token found");
         navigate("/login");
@@ -83,6 +84,19 @@ const ManagerDashboard = () => {
     }
   };
 
+  // Fetch vessels
+  const fetchVessels = async () => {
+    try {
+      const token = getToken();
+      const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVessels(response.data.data || []);
+    } catch (err) {
+      console.error("❌ Error fetching vessels:", err);
+    }
+  };
+
   // Handle Approve
   const handleApprove = async (requestId) => {
     if (!window.confirm("Are you sure you want to approve this request?")) {
@@ -103,7 +117,7 @@ const ManagerDashboard = () => {
 
       console.log("✅ Request Approved:", response.data);
       alert("Request approved successfully!");
-      
+
       setView("list");
       setSelectedRequest(null);
       fetchPendingRequests();
@@ -135,7 +149,7 @@ const ManagerDashboard = () => {
 
       console.log("✅ Request Rejected:", response.data);
       alert("Request rejected successfully!");
-      
+
       setView("list");
       setSelectedRequest(null);
       fetchPendingRequests();
@@ -149,7 +163,11 @@ const ManagerDashboard = () => {
 
   // Handle Query
   const handleQuery = async (requestId) => {
-    if (!window.confirm("Are you sure you want to query this request? It will be sent back to the requester.")) {
+    if (
+      !window.confirm(
+        "Are you sure you want to query this request? It will be sent back to the requester."
+      )
+    ) {
       return;
     }
 
@@ -167,7 +185,7 @@ const ManagerDashboard = () => {
 
       console.log("✅ Request Queried:", response.data);
       alert("Request queried and sent back to requester!");
-      
+
       setView("list");
       setSelectedRequest(null);
       fetchPendingRequests();
@@ -220,25 +238,34 @@ const ManagerDashboard = () => {
     }
   };
 
+  // Get vessel name from vesselId
+  const getVesselName = (vesselId) => {
+    const vessel = vessels.find((v) => v.vesselId === vesselId);
+    return vessel?.name || vesselId; // Fallback to vesselId if name not found
+  };
+
   // Filter requests
-// Around line 229
-const filteredRequests = pendingRequests.filter((req) => {
-  const matchesSearch =
-    req.requestId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    req.requester?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    req.department?.toLowerCase().includes(searchQuery.toLowerCase());
-  
-  const matchesFilter = 
-    filterType === "all" || 
-    req.requestType?.toLowerCase() === filterType.toLowerCase(); // Made case-insensitive
-  
-  return matchesSearch && matchesFilter;
-});
+  // Around line 229
+  const filteredRequests = pendingRequests.filter((req) => {
+    const matchesSearch =
+      req.requestId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.requester?.displayName
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      req.department?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesFilter =
+      filterType === "all" ||
+      req.requestType?.toLowerCase() === filterType.toLowerCase(); // Made case-insensitive
+
+    return matchesSearch && matchesFilter;
+  });
 
   // Load pending requests on mount
   useEffect(() => {
     if (user) {
       fetchPendingRequests();
+      fetchVessels();
     }
   }, [user]);
 
@@ -247,8 +274,14 @@ const filteredRequests = pendingRequests.filter((req) => {
     return (
       <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
         <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
-        <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "1s"}} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "0.5s"}} />
+        <div
+          className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse"
+          style={{ animationDelay: "0.5s" }}
+        />
 
         <div
           className="absolute inset-0 opacity-[0.015]"
@@ -288,8 +321,14 @@ const filteredRequests = pendingRequests.filter((req) => {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
       <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
-      <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "1s"}} />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: "0.5s"}} />
+      <div
+        className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse"
+        style={{ animationDelay: "1s" }}
+      />
+      <div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse"
+        style={{ animationDelay: "0.5s" }}
+      />
 
       <div
         className="absolute inset-0 opacity-[0.015]"
@@ -300,7 +339,7 @@ const filteredRequests = pendingRequests.filter((req) => {
       />
 
       <div className="relative z-10 flex h-full">
-        <Sidebar 
+        <Sidebar
           activeView={activeView}
           setActiveView={setActiveView}
           pendingCount={pendingRequests.length}
@@ -332,13 +371,13 @@ const filteredRequests = pendingRequests.filter((req) => {
             </div>
 
             {/* Special Note for Double Approval Roles */}
-            {hasDoubleApproval(user?.role) && (
+            {/* {hasDoubleApproval(user?.role) && (
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
                 <p className="text-blue-800 font-semibold text-sm md:text-base">
                   ℹ️ As a {user?.role}, you have two approval stages: First Approval and Second Approval
                 </p>
               </div>
-            )}
+            )} */}
 
             {/* Error Message */}
             {error && (
@@ -389,7 +428,11 @@ const filteredRequests = pendingRequests.filter((req) => {
                         Purchase Orders
                       </p>
                       <p className="text-slate-900 text-3xl font-bold">
-                        {pendingRequests.filter((r) => r.requestType === "purchaseOrder").length}
+                        {
+                          pendingRequests.filter(
+                            (r) => r.requestType === "purchaseOrder"
+                          ).length
+                        }
                       </p>
                     </div>
 
@@ -400,10 +443,14 @@ const filteredRequests = pendingRequests.filter((req) => {
                         </div>
                       </div>
                       <p className="text-slate-500 text-sm mb-1 font-semibold">
-                        Other Requests
+                        Petty Cash
                       </p>
                       <p className="text-slate-900 text-3xl font-bold">
-                        {pendingRequests.filter((r) => r.requestType !== "purchaseOrder").length}
+                        {
+                          pendingRequests.filter(
+                            (r) => r.requestType !== "purchaseOrder"
+                          ).length
+                        }
                       </p>
                     </div>
 
@@ -473,7 +520,7 @@ const filteredRequests = pendingRequests.filter((req) => {
                               <span>{getTypeLabel(request.requestType)}</span>
                             </span>
                           </div>
-                          
+
                           <p className="text-slate-600 text-sm mb-3">
                             Requested by{" "}
                             <span className="text-slate-900 font-semibold">
@@ -495,14 +542,16 @@ const filteredRequests = pendingRequests.filter((req) => {
                               <div className="flex items-center gap-1.5 text-slate-600">
                                 <MdDirectionsBoat className="text-base" />
                                 <span className="text-xs md:text-sm font-medium">
-                                  {request.vesselId}
+                                  {getVesselName(request.vesselId)}
                                 </span>
                               </div>
                             )}
                             <div className="flex items-center gap-1.5 text-slate-600">
                               <HiClock className="text-base" />
                               <span className="text-xs md:text-sm font-medium">
-                                {new Date(request.createdAt).toLocaleDateString()}
+                                {new Date(
+                                  request.createdAt
+                                ).toLocaleDateString()}
                               </span>
                             </div>
                           </div>
