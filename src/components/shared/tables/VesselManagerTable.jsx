@@ -118,7 +118,7 @@ const VesselManagerTable = ({
       <div className="overflow-x-auto" id="vessel-table-container">
         <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
           <thead>
-            <tr className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
+          <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                 SN
               </th>
@@ -244,7 +244,7 @@ const VesselManagerTable = ({
                     <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-900">
                       <span className="font-semibold">
                         {item.currency || "NGN"}{" "}
-                        {Number(item.total || 0).toLocaleString(undefined, {
+                        {Number(item.totalPrice || 0).toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}

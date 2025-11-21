@@ -85,11 +85,12 @@ const AccountTable = ({
     setEditingIndex(index);
   };
 
-  const handleSaveClick = async (index) => {
+     const handleSaveClick = async (index) => {
     const item = editedItems[index];
 
     try {
-      // Include payment fields when saving
+      // Send paymentStatus exactly as the backend expects:
+      // 'paid', 'notpaid', 'partpayment'
       const updatedItem = {
         ...item,
         paymentStatus: item.paymentStatus || "notpaid",
@@ -99,11 +100,12 @@ const AccountTable = ({
       };
 
       await onEditItem(updatedItem);
-      console.log("✅ Item updated successfully"); // ✅ Just log it
+      setEditingIndex(null);
+      console.log("✅ Item updated successfully");
     } catch (error) {
       console.error("❌ Error saving item:", error);
-      // Only show alert on error
       console.error("❌ Failed to update item. Please try again.");
+      // optionally show user feedback here
     }
   };
 
@@ -272,7 +274,7 @@ const AccountTable = ({
                         >
                           <option value="notpaid">Not Paid</option>
                           <option value="paid">Paid</option>
-                          <option value="part">Partially Paid</option>
+                          <option value="partpayment">Partially Paid</option>
                         </select>
                       ) : (
                         <span
@@ -286,8 +288,8 @@ const AccountTable = ({
                         >
                           {item.paymentStatus === "paid"
                             ? "Paid"
-                            : item.paymentStatus === "part"
-                            ? "Partially Paid"
+                            : item.paymentStatus === "partpayment"
+                            ? "Part"
                             : "Not Paid"}
                         </span>
                       )}
@@ -295,7 +297,7 @@ const AccountTable = ({
 
                     {/* Percentage Paid */}
                     <td className="border border-slate-200 px-4 py-3 text-center">
-                      {item.paymentStatus === "part" ? (
+                      {item.paymentStatus === "partpayment" ? (
                         allowPaymentEditing ? (
                           <div className="flex items-center justify-center gap-2">
                             <input

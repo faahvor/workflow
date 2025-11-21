@@ -11,7 +11,11 @@ const RequestWorkflow = ({ workflowPath }) => {
   if (!workflowPath || workflowPath.length === 0) return null;
 
   // Determine if workflow should be centered (8 or fewer stages)
-  const shouldCenter = workflowPath.length <= 8;
+ const visibleStages = (workflowPath || []).filter(
+    (s) => (s.role || "").toUpperCase() !== "SYSTEM"
+  );
+
+  const shouldCenter = visibleStages.length <= 8;
 
   const getStageColor = (status) => {
     switch (status) {
@@ -166,7 +170,7 @@ const RequestWorkflow = ({ workflowPath }) => {
             }`}
             style={{ minWidth: shouldCenter ? "auto" : "max-content" }}
           >
-            {workflowPath.map((stage, index) => {
+            {visibleStages.map((stage, index) => {
               const roleName = getRoleFromState(stage);
 
               return (

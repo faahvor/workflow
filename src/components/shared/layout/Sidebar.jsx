@@ -6,13 +6,17 @@ import {
   MdDashboard,
   MdPendingActions,
   MdCheckCircle,
-  MdHistory,
   MdAdd,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
-const Sidebar = ({ activeView, setActiveView, pendingCount = 0, isRequester = false }) => {
+const Sidebar = ({
+  activeView,
+  setActiveView,
+  pendingCount = 0,
+  isRequester = false,
+}) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -144,22 +148,22 @@ const Sidebar = ({ activeView, setActiveView, pendingCount = 0, isRequester = fa
               <MdCheckCircle className="text-xl shrink-0" />
               <span className="font-medium text-sm">Approved</span>
             </button>
-    
-            {/* History */}
+            {/* Completed Requests */}
             <button
               onClick={() => {
-                setActiveView("history");
-                setIsSidebarOpen(false);
+                setActiveView("completed"); 
+                setIsSidebarOpen(false); 
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                activeView === "history"
+                activeView === "completed"
                   ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
                   : "text-gray-400 hover:text-white hover:bg-gray-800/50"
               }`}
             >
-              <MdHistory className="text-xl shrink-0" />
-              <span className="font-medium text-sm">History</span>
+              <MdCheckCircle className="text-xl shrink-0" />
+              <span className="font-medium text-sm">Completed</span>
             </button>
+           
           </div>
         </nav>
 
@@ -178,7 +182,7 @@ const Sidebar = ({ activeView, setActiveView, pendingCount = 0, isRequester = fa
               </p>
             </div>
           </div>
-          
+
           {/* Logout Button */}
           <button
             onClick={handleLogout}

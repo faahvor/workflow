@@ -1,5 +1,3 @@
-// src/pages/dashboards/ManagerDashboard.jsx
-
 import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -20,13 +18,16 @@ import {
 import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
 import RequestDetailView from "./RequestDetailView";
+import CompletedRequests from "./CompletedRequests";
+import Approved from "./Approved"; // <-- added import
 
+// ManagerDashboard component
 const ManagerDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
 
   const [activeView, setActiveView] = useState("overview");
-  const [view, setView] = useState("list"); // "list" or "detail"
+  const [view, setView] = useState("list");
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,8 +36,53 @@ const ManagerDashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [vessels, setVessels] = useState([]);
+  const [detailReadOnly, setDetailReadOnly] = useState(false);
+  const [completedRequests, setCompletedRequests] = useState([]);
+
+  // Replace request helper
+  const replaceRequestIn = (setter) => (updatedReq) =>
+    setter((prev = []) =>
+      prev.map((r) => (r?.requestId === updatedReq?.requestId ? updatedReq : r))
+    );
+
+  const replaceInPending = replaceRequestIn(setPendingRequests);
+  const replaceInCompleted = replaceRequestIn(setCompletedRequests);
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+
+  // Handle detail back navigation and list updates
+  const handleDetailBack = (updatedRequest) => {
+    setView("list");
+    setSelectedRequest(null);
+    if (typeof setDetailReadOnly === "function") setDetailReadOnly(false);
+
+    if (updatedRequest && updatedRequest.requestId) {
+      replaceInPending(updatedRequest);
+      replaceInCompleted(updatedRequest);
+
+      if (typeof setRequests === "function") {
+        setRequests((prev = []) =>
+          prev.map((r) =>
+            r?.requestId === updatedRequest.requestId ? updatedRequest : r
+          )
+        );
+      }
+    } else {
+      if (typeof fetchPendingRequests === "function") fetchPendingRequests();
+      if (typeof fetchCompletedRequests === "function")
+        fetchCompletedRequests();
+      if (typeof fetchAllRequests === "function") fetchAllRequests();
+    }
+  };
+
+  // Open request detail and fetch flow
+  const handleOpenDetail = async (request) => {
+    const flow = await fetchRequestFlow(request.requestId);
+    setSelectedRequest({ ...request, flow });
+    // set readOnly for both completed and approved views
+    setDetailReadOnly(activeView === "completed" || activeView === "approved");
+    setView("detail");
+  };
 
   // Fetch pending requests
   const fetchPendingRequests = async () => {
@@ -54,7 +100,6 @@ const ManagerDashboard = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("✅ Pending Requests:", response.data);
       setPendingRequests(response.data.data || []);
       setError(null);
     } catch (err) {
@@ -65,7 +110,7 @@ const ManagerDashboard = () => {
     }
   };
 
-  // Fetch request flow/details
+  // Fetch request flow/details by ID
   const fetchRequestFlow = async (requestId) => {
     try {
       const token = getToken();
@@ -76,7 +121,6 @@ const ManagerDashboard = () => {
         }
       );
 
-      console.log("✅ Request Flow:", response.data);
       return response.data;
     } catch (err) {
       console.error("❌ Error fetching request flow:", err);
@@ -84,7 +128,7 @@ const ManagerDashboard = () => {
     }
   };
 
-  // Fetch vessels
+  // Fetch vessels list
   const fetchVessels = async () => {
     try {
       const token = getToken();
@@ -97,7 +141,7 @@ const ManagerDashboard = () => {
     }
   };
 
-  // Handle Approve
+  // Approve a request
   const handleApprove = async (requestId) => {
     if (!window.confirm("Are you sure you want to approve this request?")) {
       return;
@@ -115,7 +159,6 @@ const ManagerDashboard = () => {
         }
       );
 
-      console.log("✅ Request Approved:", response.data);
       alert("Request approved successfully!");
 
       setView("list");
@@ -129,7 +172,7 @@ const ManagerDashboard = () => {
     }
   };
 
-  // Handle Reject
+  // Reject a request
   const handleReject = async (requestId) => {
     if (!window.confirm("Are you sure you want to reject this request?")) {
       return;
@@ -147,7 +190,6 @@ const ManagerDashboard = () => {
         }
       );
 
-      console.log("✅ Request Rejected:", response.data);
       alert("Request rejected successfully!");
 
       setView("list");
@@ -161,7 +203,7 @@ const ManagerDashboard = () => {
     }
   };
 
-  // Handle Query
+  // Query a request (send back to requester)
   const handleQuery = async (requestId) => {
     if (
       !window.confirm(
@@ -183,7 +225,6 @@ const ManagerDashboard = () => {
         }
       );
 
-      console.log("✅ Request Queried:", response.data);
       alert("Request queried and sent back to requester!");
 
       setView("list");
@@ -197,14 +238,16 @@ const ManagerDashboard = () => {
     }
   };
 
-  // View request details
+  // View request details (opens detail view)
   const handleViewDetails = async (request) => {
     const flow = await fetchRequestFlow(request.requestId);
     setSelectedRequest({ ...request, flow });
+    // set readOnly for both completed and approved views
+    setDetailReadOnly(activeView === "completed" || activeView === "approved");
     setView("detail");
   };
 
-  // Helper functions
+  // Get CSS color classes for request type
   const getTypeColor = (type) => {
     switch (type) {
       case "purchaseOrder":
@@ -216,6 +259,7 @@ const ManagerDashboard = () => {
     }
   };
 
+  // Get icon component for request type
   const getTypeIcon = (type) => {
     switch (type) {
       case "purchaseOrder":
@@ -227,6 +271,7 @@ const ManagerDashboard = () => {
     }
   };
 
+  // Get human-readable label for request type
   const getTypeLabel = (type) => {
     switch (type) {
       case "purchaseOrder":
@@ -241,11 +286,9 @@ const ManagerDashboard = () => {
   // Get vessel name from vesselId
   const getVesselName = (vesselId) => {
     const vessel = vessels.find((v) => v.vesselId === vesselId);
-    return vessel?.name || vesselId; // Fallback to vesselId if name not found
+    return vessel?.name || vesselId;
   };
 
-  // Filter requests
-  // Around line 229
   const filteredRequests = pendingRequests.filter((req) => {
     const matchesSearch =
       req.requestId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -256,7 +299,7 @@ const ManagerDashboard = () => {
 
     const matchesFilter =
       filterType === "all" ||
-      req.requestType?.toLowerCase() === filterType.toLowerCase(); // Made case-insensitive
+      req.requestType?.toLowerCase() === filterType.toLowerCase();
 
     return matchesSearch && matchesFilter;
   });
@@ -269,7 +312,13 @@ const ManagerDashboard = () => {
     }
   }, [user]);
 
-  // If viewing detail, show RequestDetailView
+  useEffect(() => {
+    if (view === "detail") {
+      setView("list");
+      setSelectedRequest(null);
+    }
+  }, [activeView]);
+
   if (view === "detail" && selectedRequest) {
     return (
       <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
@@ -302,14 +351,12 @@ const ManagerDashboard = () => {
           <div className="flex-1 overflow-auto">
             <RequestDetailView
               request={selectedRequest}
-              onBack={() => {
-                setView("list");
-                setSelectedRequest(null);
-              }}
+              onBack={handleDetailBack}
               onApprove={handleApprove}
               onReject={handleReject}
               onQuery={handleQuery}
               actionLoading={actionLoading}
+              isReadOnly={detailReadOnly}
             />
           </div>
         </div>
@@ -317,7 +364,6 @@ const ManagerDashboard = () => {
     );
   }
 
-  // Main list view
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
       <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
@@ -348,7 +394,6 @@ const ManagerDashboard = () => {
 
         <div className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
-            {/* Header */}
             <div className="mb-6 md:mb-8">
               <h1 className="text-3xl md:text-4xl font-bold text-[#0a0a0a] mb-2">
                 {activeView === "overview"
@@ -357,6 +402,8 @@ const ManagerDashboard = () => {
                   ? "Pending Requests"
                   : activeView === "approved"
                   ? "Approved Requests"
+                  : activeView === "completed"
+                  ? "Completed Requests"
                   : "Request History"}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
@@ -366,20 +413,18 @@ const ManagerDashboard = () => {
                   ? "Review and process pending requests"
                   : activeView === "approved"
                   ? "View all approved requests"
+                  : activeView === "completed"
+                  ? "View all completed requests"
                   : "Complete history of all requests"}
               </p>
             </div>
 
-           
-
-            {/* Error Message */}
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
                 <p className="text-red-800 text-sm md:text-base">{error}</p>
               </div>
             )}
 
-            {/* Loading State */}
             {loading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">
@@ -389,7 +434,6 @@ const ManagerDashboard = () => {
               </div>
             ) : (
               <>
-                {/* Stats Cards - Only show in overview */}
                 {activeView === "overview" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
@@ -397,11 +441,7 @@ const ManagerDashboard = () => {
                         <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
                           <MdPendingActions className="text-2xl text-white" />
                         </div>
-                        {pendingRequests.length > 0 && (
-                          <span className="text-orange-600 text-xs font-bold bg-orange-100 px-3 py-1.5 rounded-full border border-orange-200">
-                            URGENT
-                          </span>
-                        )}
+                       
                       </div>
                       <p className="text-slate-500 text-sm mb-1 font-semibold">
                         Pending Requests
@@ -461,7 +501,6 @@ const ManagerDashboard = () => {
                   </div>
                 )}
 
-                {/* Search and Filter Bar */}
                 <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
                   <div className="flex flex-col md:flex-row gap-4">
                     <div className="flex-1 relative">
@@ -490,20 +529,32 @@ const ManagerDashboard = () => {
                   </div>
                 </div>
 
-                {/* Requests Cards */}
-                <div className="space-y-4">
-                  {filteredRequests.map((request) => (
-                    <div
-                      key={request.requestId}
-                      className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200 cursor-pointer group"
-                    >
-                      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                        {/* Left Section */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                {activeView === "completed" ? (
+                  <CompletedRequests
+                    searchQuery={searchQuery}
+                    filterType={filterType}
+                    onOpenDetail={handleOpenDetail}
+                  />
+                ) : activeView === "approved" ? (
+                  <Approved
+                    searchQuery={searchQuery}
+                    filterType={filterType}
+                    onOpenDetail={handleOpenDetail}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    {filteredRequests.map((request) => (
+                      <div
+                        key={request.requestId}
+                        className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200 cursor-pointer group"
+                      >
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                          <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <span className="text-slate-500 text-xs font-mono font-semibold">
                               {request.requestId}
                             </span>
+
                             <span
                               className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
                                 request.requestType
@@ -512,71 +563,78 @@ const ManagerDashboard = () => {
                               {getTypeIcon(request.requestType)}
                               <span>{getTypeLabel(request.requestType)}</span>
                             </span>
+
+                            {request.priority === "high" && (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">
+                                <MdPriorityHigh className="text-sm" />
+                                <span>URGENT</span>
+                              </span>
+                            )}
                           </div>
 
-                          <p className="text-slate-600 text-sm mb-3">
-                            Requested by{" "}
-                            <span className="text-slate-900 font-semibold">
-                              {request.requester?.displayName || "N/A"}
-                            </span>
-                          </p>
+                            <p className="text-slate-600 text-sm mb-3">
+                              Requested by{" "}
+                              <span className="text-slate-900 font-semibold">
+                                {request.requester?.displayName || "N/A"}
+                              </span>
+                            </p>
 
-                          <div className="flex flex-wrap items-center gap-3 md:gap-4 text-sm">
-                            <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
-                              <span className="text-slate-900 font-semibold text-xs md:text-sm">
-                                {request.department}
-                              </span>
-                              <MdArrowForward className="text-emerald-500" />
-                              <span className="text-slate-900 font-semibold text-xs md:text-sm">
-                                {request.destination}
-                              </span>
-                            </div>
-                            {request.vesselId && (
-                              <div className="flex items-center gap-1.5 text-slate-600">
-                                <MdDirectionsBoat className="text-base" />
-                                <span className="text-xs md:text-sm font-medium">
-                                  {getVesselName(request.vesselId)}
+                            <div className="flex flex-wrap items-center gap-3 md:gap-4 text-sm">
+                              <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
+                                <span className="text-slate-900 font-semibold text-xs md:text-sm">
+                                  {request.department}
+                                </span>
+                                <MdArrowForward className="text-emerald-500" />
+                                <span className="text-slate-900 font-semibold text-xs md:text-sm">
+                                  {request.destination}
                                 </span>
                               </div>
-                            )}
-                            <div className="flex items-center gap-1.5 text-slate-600">
-                              <HiClock className="text-base" />
-                              <span className="text-xs md:text-sm font-medium">
-                                {new Date(
-                                  request.createdAt
-                                ).toLocaleDateString()}
-                              </span>
+                              {request.vesselId && (
+                                <div className="flex items-center gap-1.5 text-slate-600">
+                                  <MdDirectionsBoat className="text-base" />
+                                  <span className="text-xs md:text-sm font-medium">
+                                    {getVesselName(request.vesselId)}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5 text-slate-600">
+                                <HiClock className="text-base" />
+                                <span className="text-xs md:text-sm font-medium">
+                                  {new Date(
+                                    request.createdAt
+                                  ).toLocaleDateString()}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Right Section - Action Button */}
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => handleViewDetails(request)}
-                            className="w-full lg:w-auto px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-sm font-bold rounded-lg hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-200"
-                          >
-                            View Details
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => handleViewDetails(request)}
+                              className="w-full lg:w-auto px-6 py-3 bg-gradient-to-r from-[#036173] to-emerald-600 text-white text-sm font-bold rounded-lg hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-200"
+                            >
+                              View Details
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
 
-                  {filteredRequests.length === 0 && (
-                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-12 text-center shadow-lg">
-                      <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <MdPendingActions className="text-4xl text-slate-400" />
+                    {filteredRequests.length === 0 && (
+                      <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-12 text-center shadow-lg">
+                        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <MdPendingActions className="text-4xl text-slate-400" />
+                        </div>
+                        <p className="text-slate-700 text-lg font-semibold">
+                          No requests found
+                        </p>
+                        <p className="text-slate-500 text-sm mt-2">
+                          Try adjusting your search or filter criteria
+                        </p>
                       </div>
-                      <p className="text-slate-700 text-lg font-semibold">
-                        No requests found
-                      </p>
-                      <p className="text-slate-500 text-sm mt-2">
-                        Try adjusting your search or filter criteria
-                      </p>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

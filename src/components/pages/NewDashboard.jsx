@@ -13,8 +13,12 @@ import {
 
 const NewDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [requestsExpanded, setRequestsExpanded] = useState(true);
+  const [requestsExpanded, setRequestsExpanded] = useState(false); // start COLLAPSED with UP arrow
   const [activeView, setActiveView] = useState("overview");
+
+  // ===== New state for overview search + filter
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState("all");
   const [formData, setFormData] = useState({
     company: "",
     vessel: "",
@@ -236,79 +240,82 @@ const NewDashboard = () => {
                 {sidebarOpen && <span className="font-medium">Overview</span>}
               </button>
 
-              {/* Requests Section */}
-              <div className="mt-6">
-                {sidebarOpen && (
+              {/* Requests (now a top-level item directly under Overview) */}
+              {sidebarOpen && (
+                <>
                   <button
-                    onClick={() => setRequestsExpanded(!requestsExpanded)}
-                    className="w-full flex items-center justify-between px-4 py-2 text-gray-500 hover:text-gray-300 transition-colors text-xs uppercase tracking-wider font-semibold"
+                    onClick={() => setRequestsExpanded((s) => !s)}
+                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                      requestsExpanded
+                        ? "bg-gray-800/80 text-white"
+                        : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                    }`}
+                    aria-expanded={requestsExpanded}
                   >
-                    <span>Requests</span>
-                    {requestsExpanded ? <MdExpandLess /> : <MdExpandMore />}
-                  </button>
-                )}
+                    <MdPendingActions className="text-xl flex-shrink-0" />
+                    <span className="font-medium  tracking-wider">
+                      Requests
+                    </span>
 
-                {requestsExpanded && (
-                  <div className="space-y-1 mt-2">
-                    <button
-                      onClick={() => setActiveView("pending")}
-                      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                        activeView === "pending"
-                          ? "bg-gray-800/80 text-white"
-                          : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                      }`}
-                    >
-                      <MdPendingActions className="text-xl flex-shrink-0" />
-                      {sidebarOpen && (
-                        <span className="font-medium">Pending</span>
+                    {/* right-side arrow */}
+                    <span className="ml-auto">
+                      {requestsExpanded ? (
+                        <MdExpandMore className="text-gray-400" />
+                      ) : (
+                        <MdExpandLess className="text-gray-400" />
                       )}
-                      {sidebarOpen && (
-                        <span className="ml-auto bg-orange-500/20 text-orange-400 text-xs px-2 py-1 rounded-lg font-semibold">
+                    </span>
+                  </button>
+
+                  {/* Sub-list (indented under Requests header) */}
+                  {requestsExpanded && (
+                    <div className="mt-2 pl-4 space-y-1">
+                      <button
+                        onClick={() => setActiveView("pending")}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                          activeView === "pending"
+                            ? "bg-gray-800/80 text-white"
+                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <MdPendingActions className="text-lg flex-shrink-0" />
+                          <span className="text-sm font-normal">Pending</span>
+                        </div>
+
+                        {/* badge aligned to the right with comfortable gap */}
+                        <span className="bg-orange-500/20 text-orange-400 text-xs px-2 py-0.5 rounded-lg font-semibold">
                           {pendingRequests.length}
                         </span>
-                      )}
-                    </button>
+                      </button>
 
-                    <button
-                      onClick={() => setActiveView("approved")}
-                      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                        activeView === "approved"
-                          ? "bg-gray-800/80 text-white"
-                          : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                      }`}
-                    >
-                      <MdCheckCircle className="text-xl flex-shrink-0" />
-                      {sidebarOpen && (
-                        <span className="font-medium">Approved</span>
-                      )}
-                      {sidebarOpen && (
-                        <span className="ml-auto bg-green-500/20 text-green-400 text-xs px-2 py-1 rounded-lg font-semibold">
-                          {approvedRequests.length}
-                        </span>
-                      )}
-                    </button>
+                      <button
+                        onClick={() => setActiveView("myrequests")}
+                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                          activeView === "myrequests"
+                            ? "bg-gray-800/80 text-white"
+                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                        }`}
+                      >
+                        <MdDirectionsBoat className="text-lg flex-shrink-0" />
+                        <span className="text-sm font-normal">My Requests</span>
+                      </button>
 
-                    <button
-                      onClick={() => setActiveView("completed")}
-                      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                        activeView === "completed"
-                          ? "bg-gray-800/80 text-white"
-                          : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                      }`}
-                    >
-                      <MdHistory className="text-xl flex-shrink-0" />
-                      {sidebarOpen && (
-                        <span className="font-medium">Completed</span>
-                      )}
-                      {sidebarOpen && (
-                        <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-xs px-2 py-1 rounded-lg font-semibold">
-                          {completedRequests.length}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
+                      <button
+                        onClick={() => setActiveView("completed")}
+                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                          activeView === "completed"
+                            ? "bg-gray-800/80 text-white"
+                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                        }`}
+                      >
+                        <MdHistory className="text-lg flex-shrink-0" />
+                        <span className="text-sm font-normal">Completed</span>
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </nav>
 
@@ -338,305 +345,137 @@ const NewDashboard = () => {
             {/* Overview - Create Request Form */}
             {activeView === "overview" && (
               <div>
-                <div className="mb-8">
+                {/* Header */}
+                <div className="mb-6">
                   <h1 className="text-4xl font-bold text-gray-900 mb-2">
                     Overview
                   </h1>
-                  <p className="text-gray-600">
-                    Create a new request for your vessel
-                  </p>
+                  <p className="text-gray-600">Requester dashboard</p>
                 </div>
 
-                <form
-                  onSubmit={handleSubmit}
-                  className="bg-white/90 backdrop-blur-xl p-8 rounded-3xl border-2 border-slate-200 shadow-xl"
-                >
-                  <div className="mb-6">
-                    <h2 className="text-2xl font-semibold text-slate-900 mb-2">
-                      Create New Request
-                    </h2>
-                    <p className="text-slate-600 text-sm">
-                      Fill in the details below to submit your request
+                {/* Stats cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+                        <MdPendingActions className="text-2xl text-white" />
+                      </div>
+                    </div>
+                    <p className="text-slate-500 text-sm mb-1 font-semibold">
+                      Pending Requests
+                    </p>
+                    <p className="text-slate-900 text-3xl font-bold">
+                      {pendingRequests.length}
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-2.5 uppercase tracking-wider pl-0.5">
-                        Company Name
-                      </label>
-                      <div className="relative">
-                        <select
-                          name="company"
-                          value={formData.company}
-                          onChange={handleInputChange}
-                          className="w-full h-12 px-4 pr-10 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none"
-                        >
-                          <option value="">Select Company</option>
-                          <option value="HWFP Marine Services">
-                            HWFP Marine Services
-                          </option>
-                          <option value="Ocean Logistics Ltd">
-                            Ocean Logistics Ltd
-                          </option>
-                          <option value="Blue Wave Shipping">
-                            Blue Wave Shipping
-                          </option>
-                          <option value="Maritime Solutions Inc">
-                            Maritime Solutions Inc
-                          </option>
-                        </select>
-                        <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xl" />
+                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <MdDirectionsBoat className="text-2xl text-white" />
                       </div>
                     </div>
+                    <p className="text-slate-500 text-sm mb-1 font-semibold">
+                      My Requests
+                    </p>
+                    <p className="text-slate-900 text-3xl font-bold">
+                      {pendingRequests.length + approvedRequests.length}
+                    </p>
+                  </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-2.5 uppercase tracking-wider pl-0.5">
-                        Vessel
-                      </label>
-                      <div className="relative">
-                        <select
-                          name="vessel"
-                          value={formData.vessel}
-                          onChange={handleInputChange}
-                          className="w-full h-12 px-4 pr-10 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none"
-                        >
-                          <option value="">Select Vessel</option>
-                          <option value="MV Ocean Star">MV Ocean Star</option>
-                          <option value="MV Sea Breeze">MV Sea Breeze</option>
-                          <option value="MV Wave Rider">MV Wave Rider</option>
-                          <option value="MV Atlantic Pride">
-                            MV Atlantic Pride
-                          </option>
-                          <option value="MV Pacific Explorer">
-                            MV Pacific Explorer
-                          </option>
-                        </select>
-                        <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xl" />
+                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+                        <MdCheckCircle className="text-2xl text-white" />
                       </div>
                     </div>
+                    <p className="text-slate-500 text-sm mb-1 font-semibold">
+                      Approved Today
+                    </p>
+                    <p className="text-slate-900 text-3xl font-bold">
+                      {approvedRequests.length}
+                    </p>
+                  </div>
+                </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-2.5 uppercase tracking-wider pl-0.5">
-                        Department
-                      </label>
-                      <div className="relative">
-                        <select
-                          name="department"
-                          value={formData.department}
-                          onChange={handleInputChange}
-                          className="w-full h-12 px-4 pr-10 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none"
-                        >
-                          <option value="">Select Department</option>
-                          <option value="Marine">Marine</option>
-                          <option value="IT">IT</option>
-                          <option value="Operations">Operations</option>
-                          <option value="Project">Project</option>
-                        </select>
-                        <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xl" />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-2.5 uppercase tracking-wider pl-0.5">
-                        Destination
-                      </label>
-                      <div className="relative">
-                        <select
-                          name="destination"
-                          value={formData.destination}
-                          onChange={handleInputChange}
-                          className="w-full h-12 px-4 pr-10 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none"
-                        >
-                          <option value="">Select Destination</option>
-                          <option value="Marine">Marine</option>
-                          <option value="IT">IT</option>
-                          <option value="Operations">Operations</option>
-                          <option value="Project">Project</option>
-                        </select>
-                        <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xl" />
-                      </div>
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-gray-400 mb-2.5 uppercase tracking-wider pl-0.5">
-                        Items from Inventory
-                      </label>
-
-                      {/* Added Items List */}
-                      {items.length > 0 && (
-                        <div className="mb-4 space-y-2">
-                          {items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between p-3 bg-slate-50 border-2 border-slate-200 rounded-lg"
-                            >
-                              <div className="flex-1">
-                                <p className="text-slate-900 text-sm font-medium">
-                                  {item.itemName}
-                                </p>
-                                <p className="text-slate-600 text-xs">
-                                  Quantity: {item.quantity} {item.unit}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => removeItem(item.id)}
-                                className="text-red-600 hover:text-red-700 text-xs font-medium px-3 py-1 rounded-lg hover:bg-red-100 transition-all duration-200"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => setShowItemModal(true)}
-                        className="w-full h-12 px-4 text-sm font-semibold text-emerald-600 bg-emerald-100 border-2 border-emerald-200 rounded-xl hover:bg-emerald-200 transition-all duration-200 flex items-center justify-center space-x-2"
-                      >
-                        <IoMdAdd className="text-lg" />
-                        <span>Add Item from Inventory</span>
-                      </button>
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600 mb-2.5 uppercase tracking-wider pl-0.5">
-                        Additional Notes
-                      </label>
-                      <textarea
-                        name="description"
-                        value={formData.description}
-                        onChange={handleInputChange}
-                        placeholder="Any additional information or special instructions..."
-                        rows="3"
-                        className="w-full px-4 py-3 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 resize-none"
+                {/* Search & Filter */}
+                <div className="bg-white/90 p-4 rounded-2xl border-2 border-slate-200 mb-6">
+                  <div className="flex gap-4 flex-col md:flex-row">
+                    <div className="flex-1 relative">
+                      <input
+                        type="text"
+                        placeholder="Search by request ID, title, or requester..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full h-12 pl-4 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl"
                       />
                     </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600 mb-2.5 uppercase tracking-wider pl-0.5">
-                        Attach Files
-                      </label>
-                      <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-slate-400 transition-all duration-200 cursor-pointer bg-slate-50">
-                        <MdAttachFile className="text-3xl text-slate-400 mx-auto mb-2" />
-                        <p className="text-slate-600 text-sm mb-1">
-                          Click to upload or drag and drop
-                        </p>
-                        <p className="text-slate-500 text-xs">
-                          PDF, DOC, XLS, PNG, JPG (Max 10MB)
-                        </p>
-                      </div>
+                    <div>
+                      <select
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value)}
+                        className="h-12 pl-3 pr-8 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl"
+                      >
+                        <option value="all">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="completed">Completed</option>
+                      </select>
                     </div>
                   </div>
+                </div>
 
-                  {/* Item Modal */}
-                  {showItemModal && (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                      <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 w-full max-w-md shadow-xl">
-                        <h3 className="text-xl font-semibold text-slate-900 mb-4">
-                          Add Item from Inventory
-                        </h3>
-
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                              Select Item
-                            </label>
-                            <select
-                              name="itemName"
-                              value={currentItem.itemName}
-                              onChange={handleItemChange}
-                              className="w-full h-11 px-4 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-emerald-400"
-                            >
-                              <option value="">Choose from inventory</option>
-                              {inventoryItems.map((item, index) => (
-                                <option key={index} value={item}>
-                                  {item}
-                                </option>
-                              ))}
-                            </select>
+                {/* Requests list (uses pendingRequests as requested) */}
+                <div className="space-y-4 mb-6">
+                  {pendingRequests
+                    .filter((r) => {
+                      const q = searchQuery.trim().toLowerCase();
+                      if (q) {
+                        return (
+                          r.id.toLowerCase().includes(q) ||
+                          r.title.toLowerCase().includes(q) ||
+                          r.vessel.toLowerCase().includes(q)
+                        );
+                      }
+                      if (filterType === "all") return true;
+                      if (filterType === "pending")
+                        return r.status === "Pending";
+                      if (filterType === "approved")
+                        return approvedRequests.some((a) => a.id === r.id);
+                      if (filterType === "completed")
+                        return completedRequests.some((c) => c.id === r.id);
+                      return true;
+                    })
+                    .map((req) => (
+                      <div
+                        key={req.id}
+                        className="bg-white/90 p-4 rounded-2xl border-2 border-slate-200 shadow-sm flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="text-xs text-slate-500 font-mono">
+                            {req.id}
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                              Quantity
-                            </label>
-                            <input
-                              type="number"
-                              name="quantity"
-                              value={currentItem.quantity}
-                              onChange={handleItemChange}
-                              placeholder="Enter quantity"
-                              className="w-full h-11 px-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-emerald-400"
-                            />
+                          <div className="text-sm font-semibold text-slate-900">
+                            {req.title}
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                              Unit
-                            </label>
-                            <select
-                              name="unit"
-                              value={currentItem.unit}
-                              onChange={handleItemChange}
-                              className="w-full h-11 px-4 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-emerald-400"
-                            >
-                              <option value="">Select unit</option>
-                              <option value="pieces">Pieces</option>
-                              <option value="liters">Liters</option>
-                              <option value="kg">Kilograms</option>
-                              <option value="meters">Meters</option>
-                              <option value="boxes">Boxes</option>
-                              <option value="sets">Sets</option>
-                            </select>
+                          <div className="text-xs text-slate-500">
+                            Vessel: {req.vessel} • {req.date}
                           </div>
                         </div>
-
-                        <div className="flex items-center space-x-3 mt-6">
+                        <div className="flex items-center gap-3">
                           <button
-                            type="button"
-                            onClick={addItem}
-                            className="flex-1 h-11 px-4 text-sm font-semibold text-[#0a0a0a] bg-white rounded-lg hover:bg-gray-50 transition-all duration-200"
+                            onClick={() => setActiveView("pending")}
+                            className="px-4 py-2 bg-emerald-500 text-white rounded-lg"
                           >
-                            Add Item
+                            Review
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowItemModal(false);
-                              setCurrentItem({
-                                itemName: "",
-                                quantity: "",
-                                unit: "",
-                              });
-                            }}
-                            className="px-6 h-11 text-sm font-medium text-gray-400 hover:text-white transition-colors duration-200"
-                          >
-                            Cancel
-                          </button>
+                          <span className="text-xs text-orange-500 font-semibold">
+                            {req.status}
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  )}
-
-                  <div className="mt-8 flex items-center space-x-4">
-                    <button
-                      type="submit"
-                      className="flex-1 h-12 px-6 text-sm font-semibold text-[#0a0a0a] bg-white rounded-xl transition-all duration-200 shadow-sm hover:bg-gray-50 active:scale-[0.98] hover:shadow-md flex items-center justify-center space-x-2"
-                    >
-                      <IoMdAdd className="text-lg" />
-                      <span>Submit Request</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="px-6 h-12 text-sm font-medium text-gray-400 hover:text-white transition-colors duration-200"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
+                    ))}
+                </div>
               </div>
             )}
 

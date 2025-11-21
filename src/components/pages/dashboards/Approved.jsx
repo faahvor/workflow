@@ -6,102 +6,61 @@ import {
   MdAttachMoney,
   MdDirectionsBoat,
   MdArrowForward,
-  MdPendingActions,
 } from "react-icons/md";
-import RequestDetailView from "../../pages/dashboards/RequestDetailView";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail = () => {} }) => {
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedDepartment, setSelectedDepartment] = useState("all");
-  const [vessels, setVessels] = useState([]);
+const Approved = ({
+  searchQuery = "",
+  filterType = "all",
+  onOpenDetail = () => {},
+}) => {
   const { user, getToken } = useAuth();
+  const [requests, setRequests] = useState([]);
+  const [vessels, setVessels] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [limit] = useState(10);
+
   const normalizedSearch = (searchQuery || "").trim().toLowerCase();
   const normalizedFilter = (filterType || "all").trim().toLowerCase();
-
-  const filteredRequests = (requests || []).filter((req) => {
-    const matchesSearch =
-      !normalizedSearch ||
-      (req.requestId || "").toLowerCase().includes(normalizedSearch) ||
-      (req.requester?.displayName || "")
-        .toLowerCase()
-        .includes(normalizedSearch) ||
-      (req.department || "").toLowerCase().includes(normalizedSearch);
-
-    const reqType = (req.requestType || "").toLowerCase();
-
-    const matchesFilter =
-      normalizedFilter === "all" ||
-      reqType === normalizedFilter ||
-      (normalizedFilter === "pettycash" && reqType.includes("petty")) ||
-      (normalizedFilter === "purchaseorder" && reqType.includes("purchase"));
-
-    return matchesSearch && matchesFilter;
-  });
-  // Roles that can view all departments
-  const canViewAllDepartments = [
-    "head of procurement",
-    "account manager",
-    "managing director",
-    "cfo",
-    "procurement officer",
-    "accounting officer",
-    "delivery base",
-    "delivery vessel",
-    "delivery jetty",
-  ].includes(user?.role?.toLowerCase());
-
-  const departments = [
-    { value: "all", label: "All Departments" },
-    { value: "Marine", label: "Marine" },
-    { value: "Purchase", label: "Purchase" },
-    { value: "Accounting", label: "Accounting" },
-    { value: "Management", label: "Management" },
-    { value: "IT", label: "IT" },
-    { value: "Operations", label: "Operations" },
-  ];
-
-  useEffect(() => {
-    fetchCompletedRequests();
-  }, [selectedDepartment]);
 
   useEffect(() => {
     fetchVessels();
   }, []);
 
- const fetchVessels = async () => {
+  useEffect(() => {
+    fetchApprovedRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  const fetchVessels = async () => {
     try {
       const token = getToken();
-      const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
+      const resp = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setVessels(response.data.data || []);
+      setVessels(resp.data.data || []);
     } catch (err) {
       console.error("❌ Error fetching vessels:", err);
     }
   };
 
-  const fetchCompletedRequests = async () => {
+  const fetchApprovedRequests = async () => {
     try {
       setLoading(true);
       const token = getToken();
-      let url = `${API_BASE_URL}/requests/completed`;
-
-      if (canViewAllDepartments && selectedDepartment !== "all") {
-        url += `?department=${selectedDepartment}`;
-      } else if (!canViewAllDepartments) {
-        url += `?department=${user?.department}`;
-      }
-
-      const response = await axios.get(url, {
+      const url = `${API_BASE_URL}/requests/approved?page=${page}&limit=${limit}`;
+      const resp = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setRequests(response.data.data || []);
-    } catch (error) {
-      console.error("Error fetching completed requests:", error);
+      setRequests(resp.data.data || []);
+      setPages(resp.data.pages || 1);
+    } catch (err) {
+      console.error("❌ Error fetching approved requests:", err);
       setRequests([]);
+      setPages(1);
     } finally {
       setLoading(false);
     }
@@ -145,39 +104,34 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
     }
   };
 
- const handleViewDetails = (request) => {
-    if (typeof onOpenDetail === "function") {
-      onOpenDetail(request);
-    }
-  };
+  const filteredRequests = (requests || []).filter((req) => {
+    const matchesSearch =
+      !normalizedSearch ||
+      (req.requestId || "").toLowerCase().includes(normalizedSearch) ||
+      (req.requester?.displayName || "")
+        .toLowerCase()
+        .includes(normalizedSearch) ||
+      (req.department || "").toLowerCase().includes(normalizedSearch);
 
-  const handleBack = () => {
-    setSelectedRequest(null);
-  };
+    const reqType = (req.requestType || "").toLowerCase();
+    const matchesFilter =
+      normalizedFilter === "all" ||
+      reqType === normalizedFilter ||
+      (normalizedFilter === "pettycash" && reqType.includes("petty")) ||
+      (normalizedFilter === "purchaseorder" && reqType.includes("purchase"));
 
- 
+    return matchesSearch && matchesFilter;
+  });
+
+  const handleViewDetails = (request) => {
+    if (typeof onOpenDetail === "function") onOpenDetail(request);
+  };
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
-        {canViewAllDepartments && (
-          <select
-            value={selectedDepartment}
-            onChange={(e) => setSelectedDepartment(e.target.value)}
-            className="mt-3 block w-full max-w-xs border border-slate-300 rounded-lg shadow-sm px-4 py-2 focus:ring focus:ring-emerald-200"
-          >
-            {departments.map((dept) => (
-              <option key={dept.value} value={dept.value}>
-                {dept.label}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      {loading && <p>Loading completed requests...</p>}
+      {loading && <p>Loading approved requests...</p>}
       {!loading && filteredRequests.length === 0 && (
-        <p>No completed requests found.</p>
+        <p>No approved requests found.</p>
       )}
 
       {!loading && filteredRequests.length > 0 && (
@@ -185,7 +139,7 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
           {filteredRequests.map((request) => (
             <div
               key={request.requestId}
-              className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200 cursor-pointer group"
+              className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200"
             >
               <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex-1 min-w-0">
@@ -251,8 +205,31 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
           ))}
         </div>
       )}
+
+      {/* Pagination controls */}
+      {!loading && pages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-3">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-3 py-2 bg-white border rounded disabled:opacity-50"
+          >
+            Prev
+          </button>
+          <div className="px-4 py-2 bg-white border rounded">
+            Page {page} / {pages}
+          </div>
+          <button
+            onClick={() => setPage((p) => Math.min(pages, p + 1))}
+            disabled={page === pages}
+            className="px-3 py-2 bg-white border rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 };
 
-export default CompletedRequests;
+export default Approved;

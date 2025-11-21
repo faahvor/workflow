@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { IoMdMenu, IoMdClose } from "react-icons/io";
 import {
   MdDashboard,
@@ -16,9 +16,31 @@ import {
   MdHelp,
 } from "react-icons/md";
 import { HiClock } from "react-icons/hi";
+import Select from "react-select";
 
 const RequestDetailDemo = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // ===== New state for quotation upload (demo) =====
+  const [quotationFile, setQuotationFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Delivery assignment state
+  const [deliveryTarget, setDeliveryTarget] = useState(null);
+  const deliveryOptions = [
+    { value: "delivery", label: "Delivery" },
+    { value: "delivery_base", label: "Delivery Base" },
+    { value: "delivery_jetty", label: "Delivery Jetty" },
+    { value: "delivery_vessel", label: "Delivery Vessel" },
+  ];
+
+  // Requisition preview state
+  const [showRequisition, setShowRequisition] = useState(false);
+  const openRequisition = () => setShowRequisition(true);
+  const closeRequisition = () => setShowRequisition(false);
 
   // Demo request data
   const request = {
@@ -113,6 +135,132 @@ const RequestDetailDemo = () => {
         return "⏳";
       default:
         return "⏳";
+    }
+  };
+
+  // ===== New handlers =====
+  const handleFileSelect = (file) => {
+    if (!file) return;
+    // Only allow single file in demo
+    setQuotationFile(file);
+    if (file.type.startsWith("image/")) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    } else {
+      setPreviewUrl(null);
+    }
+  };
+
+  const handleBrowseClick = () => fileInputRef.current?.click();
+
+  const handleInputChange = (e) => {
+    const f = e.target.files?.[0];
+    handleFileSelect(f);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files?.[0];
+    handleFileSelect(f);
+  };
+
+  const handleDragOver = (e) => e.preventDefault();
+
+  const handleRemoveFile = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setQuotationFile(null);
+    setPreviewUrl(null);
+    setUploadProgress(0);
+    setIsUploading(false);
+  };
+
+  // Simulated upload for demo — replace with real API call if needed
+  const handleUpload = async () => {
+    if (!quotationFile) return;
+    setIsUploading(true);
+    setUploadProgress(0);
+    const total = 100;
+    let p = 0;
+    const t = setInterval(() => {
+      p += Math.floor(Math.random() * 15) + 5;
+      if (p >= total) {
+        p = total;
+        clearInterval(t);
+        setTimeout(() => setIsUploading(false), 300);
+      }
+      setUploadProgress(p);
+    }, 160);
+  };
+
+  // ref to the requisition printable content
+  const requisitionRef = useRef(null);
+
+  const openPrintableWindow = (htmlContent, title = "Requisition") => {
+    const win = window.open("", "_blank", "noopener,noreferrer");
+    if (!win) {
+      alert("Popup blocked — allow popups for this site to print or download.");
+      return null;
+    }
+    const styles = `
+      <style>
+        body{font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; color:#0f172a; margin:20px;}
+        .header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+        .company{font-weight:700;font-size:18px}
+        .meta{font-size:13px;color:#475569}
+        table{width:100%;border-collapse:collapse;margin-top:12px}
+        th,td{padding:8px;border:1px solid #e6e9ee;font-size:13px}
+        th{background:#f8fafc;text-align:left}
+        .right{text-align:right}
+        .signature{margin-top:28px}
+      </style>
+    `;
+    win.document.open();
+    win.document.write(
+      `<!doctype html><html><head><title>${title}</title>${styles}</head><body>${htmlContent}</body></html>`
+    );
+    win.document.close();
+    return win;
+  };
+
+  const handlePrint = () => {
+    if (!requisitionRef.current) return;
+    const html = requisitionRef.current.innerHTML;
+    const win = openPrintableWindow(html, `Requisition - ${request.id}`);
+    if (win) {
+      // give the window a moment to render then trigger print
+      setTimeout(() => {
+        win.focus();
+        win.print();
+      }, 300);
+    }
+  };
+
+  const handleDownload = () => {
+    // We reuse print flow: user can Save as PDF in the print dialog.
+    handlePrint();
+  };
+
+  const handleShare = async () => {
+    const shareText = `Requisition ${request.id} • ${request.title} • Requested by ${request.requester}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Requisition ${request.id}`,
+          text: shareText,
+        });
+      } catch (err) {
+        console.error("Share cancelled or failed", err);
+      }
+    } else {
+      // Fallback: copy summary to clipboard
+      try {
+        await navigator.clipboard.writeText(shareText);
+        alert(
+          "Requisition details copied to clipboard (paste into chat/email to share)."
+        );
+      } catch (err) {
+        alert("Share not supported on this browser.");
+      }
     }
   };
 
@@ -457,13 +605,156 @@ const RequestDetailDemo = () => {
               </div>
             </div>
 
+            {/* Quotation Upload - inserted ABOVE Requested Items */}
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <MdAttachFile className="text-xl" />
+                Upload Quotation
+              </h3>
+
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  role="button"
+                  tabIndex={0}
+                  onClick={handleBrowseClick}
+                  className="w-full cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors duration-200 p-6 flex items-center justify-between gap-6"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                      📎
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {quotationFile
+                          ? "Quotation selected"
+                          : "Drag & drop quotation here, or click to browse"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Accepted: PDF, JPG, PNG. Max (demo): 10MB
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleBrowseClick();
+                      }}
+                      className="px-4 py-2 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition"
+                    >
+                      Browse
+                    </button>
+
+                    {quotationFile && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFile();
+                        }}
+                        className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={handleInputChange}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* File preview & upload actions */}
+                {quotationFile && (
+                  <div className="mt-4 flex items-start gap-4">
+                    <div className="w-20 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden border">
+                      {previewUrl ? (
+                        <img
+                          src={previewUrl}
+                          alt="preview"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-slate-600 text-sm px-2 text-center">
+                          {quotationFile.type === "application/pdf"
+                            ? "PDF"
+                            : "FILE"}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 truncate w-72">
+                            {quotationFile.name}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {(quotationFile.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUpload();
+                            }}
+                            disabled={isUploading || uploadProgress === 100}
+                            className={`px-4 py-2 rounded-md text-sm font-medium ${
+                              isUploading || uploadProgress === 100
+                                ? "bg-gray-200 text-slate-600 cursor-not-allowed"
+                                : "bg-emerald-500 text-white hover:bg-emerald-600"
+                            }`}
+                          >
+                            {isUploading
+                              ? "Uploading..."
+                              : uploadProgress === 100
+                              ? "Uploaded"
+                              : "Upload"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress */}
+                      <div className="mt-3">
+                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="h-2 bg-emerald-500 transition-all"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {uploadProgress}%{" "}
+                          {isUploading
+                            ? "• processing"
+                            : uploadProgress === 100
+                            ? "• complete (demo)"
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* ===== End Quotation Upload ===== */}
+
             {/* Items List */}
             <div className="mb-8">
               <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                 <MdShoppingCart className="text-xl" />
                 Requested Items
               </h3>
-              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg">
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -537,6 +828,43 @@ const RequestDetailDemo = () => {
               </div>
             </div>
 
+            {/* Delivery assignment dropdown - placed below requested items */}
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <MdDirectionsBoat className="text-xl" />
+                Assign Delivery
+              </h3>
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <div className="max-w-md">
+                  <Select
+                    options={deliveryOptions}
+                    value={deliveryTarget}
+                    onChange={setDeliveryTarget}
+                    isClearable
+                    placeholder="Select delivery target..."
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: "48px",
+                        borderRadius: 12,
+                        boxShadow: "none",
+                      }),
+                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    }}
+                    menuPortalTarget={document.body}
+                  />
+                  {deliveryTarget && (
+                    <p className="mt-3 text-sm text-slate-600">
+                      Selected:{" "}
+                      <span className="font-semibold">
+                        {deliveryTarget.label}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Additional Notes */}
             <div className="mb-8">
               <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -570,12 +898,18 @@ const RequestDetailDemo = () => {
                   <p className="text-xs text-slate-500">245 KB</p>
                 </div>
 
-                <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-xl p-4 hover:border-slate-400 transition-all cursor-pointer group shadow-lg">
+                {/* Requisition card - opens preview above content */}
+                <div
+                  onClick={openRequisition}
+                  role="button"
+                  tabIndex={0}
+                  className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-xl p-4 hover:border-slate-400 transition-all cursor-pointer group shadow-lg"
+                >
                   <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-3">
                     <span className="text-2xl">📊</span>
                   </div>
                   <p className="text-sm font-semibold text-slate-900 mb-1 group-hover:text-emerald-600">
-                    Budget Analysis.xlsx
+                    Requisition File.xlsx
                   </p>
                   <p className="text-xs text-slate-500">128 KB</p>
                 </div>
@@ -585,12 +919,242 @@ const RequestDetailDemo = () => {
                     <span className="text-2xl">🖼️</span>
                   </div>
                   <p className="text-sm font-semibold text-slate-900 mb-1 group-hover:text-emerald-600">
-                    Product Specs.jpg
+                    Quotation File.jpg
                   </p>
                   <p className="text-xs text-slate-500">892 KB</p>
                 </div>
               </div>
             </div>
+
+            {/* Requisition Preview Overlay (modern) */}
+            {showRequisition && (
+              <>
+                <div
+                  className="fixed inset-0-bg-black/40 z-40"
+                  onClick={closeRequisition}
+                />
+                <div className="fixed left-1/2 transform -translate-x-1/2 top-16 z-50 w-[95%] md:w-[80%] lg:w-[70%] max-h-[80vh] overflow-auto">
+                  {/* Card: the visual requisition (wrap with ref so we can print/download its content) */}
+                  <div
+                    ref={requisitionRef}
+                    className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-slideDown"
+                  >
+                    {/* Modern header: logo/company left, meta right */}
+                    <div className="px-6 py-4 border-b bg-gradient-to-r from-white to-slate-50">
+                      <h2 className="text-2xl font-extrabold text-slate-900">
+                        Requisition Form
+                      </h2>
+                    </div>
+                    <div className="px-6 py-5 border-b">
+                      <div className="grid gap-2 md:grid-cols-[1fr_250px] grid-cols-1 md:gap-4">
+                        {/* Left: logo + company + address */}
+                        <div className="flex flex-col items-start gap-4 min-w-0">
+                          <div className="w-16 h-16 flex-shrink-0 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                            G
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-lg font-bold text-slate-900 leading-tight">
+                              Hydrodive Nigeria Ltd
+                            </div>
+                            <div className="text-sm text-slate-500 mt-1 truncate">
+                              17, Wharf Road, <br />
+                              Apapa, Lagos <br />
+                              Nigeria.
+                              <br />
+                            </div>
+                            <div className="text-sm text-slate-500 mt-1 truncate">
+                              234-1-2600562, 4600563, 4740509 <br />
+                              4704686, 7749433, 9505023, 4631445
+                              <br />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: metadata */}
+                        <div className="text-right shrink-0 flex flex-col justify-start items-start ">
+                          <div className="flex justify-center items-center gap-2">
+                            <div className=" font-semibold text-slate-900">
+                              Number:{" "}
+                            </div>
+                            <div className=" text-sm text-slate-500">
+                              {request.id}
+                            </div>
+                          </div>
+                          <div className="flex justify-center items-center gap-2 ">
+                            <div className="font-semibold text-slate-900">
+                              {" "}
+                              Date:
+                            </div>
+                            <div className="text-sm text-slate-500">
+                              {request.date}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-center items-center gap-2 ">
+                            <div className="font-semibold text-slate-900">
+                              {" "}
+                              Page:
+                            </div>
+                            <div className="text-sm text-slate-500">1 of 1</div>
+                          </div>
+                          <div className="flex justify-center items-center gap-2 ">
+                            <div className="font-semibold text-slate-900 ">
+                              {" "}
+                              Required:
+                            </div>
+                            <div className="text-sm text-slate-500">
+                              {request.date}
+                            </div>
+                          </div>
+                          <div className="flex justify-center items-center gap-2 ">
+                            <div className="font-semibold text-slate-900">
+                              {" "}
+                              Reference:
+                            </div>
+                            <div className="text-sm text-slate-500">1 of 1</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Issued To / Ship To boxes (from attached image) */}
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
+                        <div className="text-sm font-semibold text-slate-800 mb-2">
+                          Issued To:
+                        </div>
+                        <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                          AVL Integrated Technology Solution
+                          {"\n"}Block B, Suite 366, Sura Shopping Complex
+                          {"\n"}Ikeja
+                          {"\n"}Lagos
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
+                        <div className="text-sm font-semibold text-slate-800 mb-2">
+                          Ship To:
+                        </div>
+                        <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                          Hydrodive Nigeria Limited
+                          {"\n"}17, Wharf Road
+                          {"\n"}Apapa
+                          {"\n"}Lagos
+                          {"\n"}Nigeria
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Title row */}
+
+                    <div className="p-6 space-y-4">
+                      <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                        <h4 className="text-sm font-semibold mb-3">
+                          Requisition Items
+                        </h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-xs text-slate-500">
+                                <th className="pb-2">#</th>
+                                <th className="pb-2">Description</th>
+                                <th className="pb-2">Qty</th>
+                                <th className="pb-2">Unit</th>
+                                <th className="pb-2 text-right">Unit Price</th>
+                                <th className="pb-2 text-right">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {requestItems.map((it, i) => (
+                                <tr key={it.id} className="py-2">
+                                  <td className="py-3 text-slate-700">
+                                    {i + 1}
+                                  </td>
+                                  <td className="py-3 text-slate-900">
+                                    {it.name}
+                                  </td>
+                                  <td className="py-3 text-slate-700">
+                                    {it.quantity}
+                                  </td>
+                                  <td className="py-3 text-slate-700">
+                                    {it.unit}
+                                  </td>
+                                  <td className="py-3 text-right text-slate-700">
+                                    {it.unitPrice}
+                                  </td>
+                                  <td className="py-3 text-right font-semibold text-slate-900">
+                                    {it.total}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr>
+                                <td
+                                  colSpan={5}
+                                  className="pt-4 text-right font-bold"
+                                >
+                                  Grand Total
+                                </td>
+                                <td className="pt-4 text-right text-xl font-bold">
+                                  {request.amount}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t"></div>
+
+                      {/* Electronic signature block */}
+                      <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
+                        <div className="flex-1">
+                          <p className="text-xs text-slate-500 mb-2">
+                            Approved by
+                          </p>
+                          <div className="bg-white p-4 rounded-xl border border-slate-100 w-full max-w-md">
+                            {/* simple signature SVG placeholder */}
+                            <svg
+                              width="240"
+                              height="70"
+                              viewBox="0 0 240 70"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M10 40 C40 10, 80 10, 110 40 S180 70, 230 40"
+                                stroke="#036173"
+                                strokeWidth="2.5"
+                                fill="none"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                            <div className="mt-2">
+                              <div className="text-sm font-semibold text-slate-900">
+                                Procurement Officer
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                e-signature • {new Date().toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right md:text-left">
+                          <p className="text-xs text-slate-500">Contact</p>
+                          <p className="font-semibold text-slate-900">
+                            procurement@gemz.com
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                
+                </div>
+              </>
+            )}
 
             {/* Action Footer */}
             <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl px-8 py-6 shadow-lg sticky bottom-0">
