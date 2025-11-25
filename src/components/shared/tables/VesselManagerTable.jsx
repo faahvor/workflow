@@ -10,7 +10,8 @@ const VesselManagerTable = ({
   onDeleteItem,
   requestId,
   isReadOnly = false,
-  currentState = "", // ✅ ADD THIS PROP
+  currentState = "",
+    vendors = [], // ✅ ADD THIS PROP
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
@@ -19,6 +20,24 @@ const VesselManagerTable = ({
   // ✅ Check if we're in second approval stage
   const isSecondApproval = currentState === "PENDING_VESSEL_MANAGER_APPROVAL_2";
 
+
+   const vendorsById = React.useMemo(() => {
+    const map = new Map();
+    (vendors || []).forEach((v) => {
+      const id = v.vendorId || v._id || v.id;
+      if (id) map.set(String(id), v);
+    });
+    return map;
+  }, [vendors]);
+
+  const resolveVendorName = (vendorField) => {
+    if (!vendorField) return "N/A";
+    const key = String(vendorField);
+    const found = vendorsById.get(key);
+    if (found) return found.name || found.vendorName || key;
+    // fallback: if vendorField already looks like a name, return it
+    return vendorField;
+  };
   // Update editedItems when items prop changes
   React.useEffect(() => {
     setEditedItems(items);
@@ -221,8 +240,8 @@ const VesselManagerTable = ({
                 {isSecondApproval && (
                   <>
                     {/* ✅ Vendor Column */}
-                    <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                      {item.vendor || "N/A"}
+                     <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                      {resolveVendorName(item.vendor)}
                     </td>
                     {/* Unit Price */}
                     <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-900">

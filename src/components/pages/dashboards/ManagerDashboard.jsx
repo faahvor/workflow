@@ -19,7 +19,10 @@ import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
 import RequestDetailView from "./RequestDetailView";
 import CompletedRequests from "./CompletedRequests";
-import Approved from "./Approved"; // <-- added import
+import Approved from "./Approved";
+import UsersSignature from "./UsersSignature";
+import VendorManagement from "./VendorManagement";
+import InventoryManagement from "./InventoryManagement";
 
 // ManagerDashboard component
 const ManagerDashboard = () => {
@@ -404,7 +407,7 @@ const ManagerDashboard = () => {
                   ? "Approved Requests"
                   : activeView === "completed"
                   ? "Completed Requests"
-                  : "Request History"}
+                  : ""}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
                 {activeView === "overview"
@@ -415,7 +418,7 @@ const ManagerDashboard = () => {
                   ? "View all approved requests"
                   : activeView === "completed"
                   ? "View all completed requests"
-                  : "Complete history of all requests"}
+                  : ""}
               </p>
             </div>
 
@@ -441,7 +444,6 @@ const ManagerDashboard = () => {
                         <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
                           <MdPendingActions className="text-2xl text-white" />
                         </div>
-                       
                       </div>
                       <p className="text-slate-500 text-sm mb-1 font-semibold">
                         Pending Requests
@@ -501,33 +503,44 @@ const ManagerDashboard = () => {
                   </div>
                 )}
 
-                <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
-                  <div className="flex flex-col md:flex-row gap-4">
-                    <div className="flex-1 relative">
-                      <IoMdSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl" />
-                      <input
-                        type="text"
-                        placeholder="Search by request ID, requester, or department..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
-                      />
+                {activeView !== "signature" &&
+                  activeView !== "vendorManagement" &&
+                  activeView !== "inventoryManagement" && (
+                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
+                      <div className="flex flex-col md:flex-row gap-4">
+                        <div className="flex-1 relative">
+                          <IoMdSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl" />
+                          <input
+                            type="text"
+                            placeholder="Search by request ID, requester, or department..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
+                          />
+                        </div>
+                        <div className="relative">
+                          <select
+                            value={filterType}
+                            onChange={(e) => setFilterType(e.target.value)}
+                            className="h-12 pl-12 pr-10 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none cursor-pointer"
+                          >
+                            <option value="all">All Types</option>
+                            <option value="purchaseOrder">
+                              Purchase Orders
+                            </option>
+                            <option value="pettycash">PettyCash</option>
+                          </select>
+                          <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
+                          <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
+                        </div>
+                      </div>
                     </div>
-                    <div className="relative">
-                      <select
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value)}
-                        className="h-12 pl-12 pr-10 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none cursor-pointer"
-                      >
-                        <option value="all">All Types</option>
-                        <option value="purchaseOrder">Purchase Orders</option>
-                        <option value="pettycash">PettyCash</option>
-                      </select>
-                      <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
-                      <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
-                    </div>
-                  </div>
-                </div>
+                  )}
+                {activeView === "signature" && <UsersSignature />}
+                {activeView === "vendorManagement" && <VendorManagement />}
+                {activeView === "inventoryManagement" && (
+                  <InventoryManagement />
+                )}
 
                 {activeView === "completed" ? (
                   <CompletedRequests
@@ -541,7 +554,9 @@ const ManagerDashboard = () => {
                     filterType={filterType}
                     onOpenDetail={handleOpenDetail}
                   />
-                ) : (
+                ) : activeView !== "signature" &&
+                  activeView !== "vendorManagement" &&
+                  activeView !== "inventoryManagement" ? (
                   <div className="space-y-4">
                     {filteredRequests.map((request) => (
                       <div
@@ -550,27 +565,27 @@ const ManagerDashboard = () => {
                       >
                         <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                           <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            <span className="text-slate-500 text-xs font-mono font-semibold">
-                              {request.requestId}
-                            </span>
-
-                            <span
-                              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
-                                request.requestType
-                              )}`}
-                            >
-                              {getTypeIcon(request.requestType)}
-                              <span>{getTypeLabel(request.requestType)}</span>
-                            </span>
-
-                            {request.priority === "high" && (
-                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">
-                                <MdPriorityHigh className="text-sm" />
-                                <span>URGENT</span>
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <span className="text-slate-500 text-xs font-mono font-semibold">
+                                {request.requestId}
                               </span>
-                            )}
-                          </div>
+
+                              <span
+                                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
+                                  request.requestType
+                                )}`}
+                              >
+                                {getTypeIcon(request.requestType)}
+                                <span>{getTypeLabel(request.requestType)}</span>
+                              </span>
+
+                              {request.priority === "high" && (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">
+                                  <MdPriorityHigh className="text-sm" />
+                                  <span>URGENT</span>
+                                </span>
+                              )}
+                            </div>
 
                             <p className="text-slate-600 text-sm mb-3">
                               Requested by{" "}
@@ -620,21 +635,22 @@ const ManagerDashboard = () => {
                       </div>
                     ))}
 
-                    {filteredRequests.length === 0 && (
-                      <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-12 text-center shadow-lg">
-                        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <MdPendingActions className="text-4xl text-slate-400" />
+                    {filteredRequests.length === 0 &&
+                      activeView !== "signature" && (
+                        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-12 text-center shadow-lg">
+                          <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <MdPendingActions className="text-4xl text-slate-400" />
+                          </div>
+                          <p className="text-slate-700 text-lg font-semibold">
+                            No requests found
+                          </p>
+                          <p className="text-slate-500 text-sm mt-2">
+                            Try adjusting your search or filter criteria
+                          </p>
                         </div>
-                        <p className="text-slate-700 text-lg font-semibold">
-                          No requests found
-                        </p>
-                        <p className="text-slate-500 text-sm mt-2">
-                          Try adjusting your search or filter criteria
-                        </p>
-                      </div>
-                    )}
+                      )}
                   </div>
-                )}
+                ) : null}
               </>
             )}
           </div>

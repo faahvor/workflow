@@ -20,6 +20,8 @@ import CompletedRequests from "./CompletedRequests";
 import RequestDetailView from "./RequestDetailView";
 import RequesterPending from "./RequesterPending";
 import RequesterHistory from "./RequesterHistory";
+import UsersSignature from "./UsersSignature";
+
 
 const RequesterDashboard = () => {
   const { user, getToken } = useAuth();
@@ -35,6 +37,8 @@ const RequesterDashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
     const [selectedRequestReadOnly, setSelectedRequestReadOnly] = useState(false);
+    const [vendors, setVendors] = useState([]);
+const [loadingVendors, setLoadingVendors] = useState(false);
 
 
   // Form state
@@ -93,7 +97,7 @@ const RequesterDashboard = () => {
       return null;
     }
   };
-  // Company options
+
   const companies = ["HNL", "HOIL", "SCS"];
 
   // Priority options
@@ -180,21 +184,21 @@ const RequesterDashboard = () => {
   };
 
 const handleOpenDetail = async (request, opts = {}) => {
-    const readOnly = !!opts.readOnly;
-    try {
-      const flow = await fetchRequestFlow(request.requestId);
-      setSelectedRequest({ ...request, flow });
-      setSelectedRequestReadOnly(readOnly);
-      setActiveView("detail");
-    } catch (err) {
-      console.error("Error opening request detail:", err);
-      // fallback: still open detail with minimal data
-      setSelectedRequest(request);
-      setSelectedRequestReadOnly(readOnly);
-      setActiveView("detail");
-    }
-  };
-
+  const readOnly = !!opts.readOnly;
+  const origin = opts.origin || null;
+  try {
+    const flow = await fetchRequestFlow(request.requestId);
+    setSelectedRequest({ ...request, flow, origin });
+    setSelectedRequestReadOnly(readOnly);
+    setActiveView("detail");
+  } catch (err) {
+    console.error("Error opening request detail:", err);
+    // fallback: still open detail with minimal data but include origin
+    setSelectedRequest({ ...request, origin });
+    setSelectedRequestReadOnly(readOnly);
+    setActiveView("detail");
+  }
+};
   // Fetch inventory and vessels on mount
   useEffect(() => {
     if (user) {
@@ -537,6 +541,8 @@ const handleOpenDetail = async (request, opts = {}) => {
           setActiveView={setActiveView}
           pendingCount={myRequests.length}
           isRequester={true}
+            selectedRequestOrigin={selectedRequest?.origin}
+
         />
 
         {/* Main Content */}
@@ -548,10 +554,12 @@ const handleOpenDetail = async (request, opts = {}) => {
                 {activeView === "createNew"
                   ? "Create New Request"
                   : activeView === "pending"
-                  ? "My Requests"
+                  ? "Pending Requests"
                   : activeView === "overview"
                   ? "Overview"
-                  : "Dashboard"}
+                  : activeView === "shipping"
+                  ? "Shipping Request"
+                  : ""}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
                 {activeView === "createNew"
@@ -560,7 +568,9 @@ const handleOpenDetail = async (request, opts = {}) => {
                   ? "View and track your submitted requests"
                   : activeView === "overview"
                   ? "Requester dashboard"
-                  : `${user?.displayName} | ${user?.department} Department`}
+                      : activeView === "shipping"
+                  ? "Shipping  dashboard"
+                  : ``}
               </p>
             </div>
 
@@ -888,6 +898,7 @@ const handleOpenDetail = async (request, opts = {}) => {
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onQuery={handleQuery}
+                  vendors={vendors}
               />
             )}
             {activeView === "completed" && (
@@ -945,6 +956,12 @@ const handleOpenDetail = async (request, opts = {}) => {
                 filterType={filterType}
                 onOpenDetail={handleOpenDetail}
               />
+            )}
+            
+         
+             {/* Signature Manager */}
+            {activeView === "signature" && (
+              <UsersSignature />
             )}
 
             {/* Overview - Placeholder */}

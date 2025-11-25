@@ -9,6 +9,8 @@ import {
   MdExpandLess,
   MdExpandMore,
   MdDirectionsBoat,
+  MdDescription,
+  MdOutlineLocalShipping,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -18,21 +20,25 @@ const RequesterSidebar = ({
   setActiveView,
   pendingCount = 0,
   isRequester = true,
+    selectedRequestOrigin = null,
+
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [requestsExpanded, setRequestsExpanded] = useState(false); // default collapsed
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-    useEffect(() => {
-    const requestsViews = ["createNew", "pending", "myrequests", "completed", "detail"];
+  useEffect(() => {
+    const requestsViews = [
+      "createNew",
+      "pending",
+      "myrequests",    ];
     if (requestsViews.includes(activeView)) {
       setRequestsExpanded(true);
     } else {
       setRequestsExpanded(false);
     }
   }, [activeView]);
-  
 
   const handleLogout = () => {
     logout();
@@ -40,14 +46,7 @@ const RequesterSidebar = ({
   };
 
   const toggleRequests = () => {
-    setRequestsExpanded((prev) => {
-      const next = !prev;
-      if (next) {
-        // when expanded, show pending by default
-        setActiveView("pending");
-      }
-      return next;
-    });
+    setRequestsExpanded((prev) => !prev);
   };
 
   const getUserInitials = (displayName) => {
@@ -60,14 +59,18 @@ const RequesterSidebar = ({
   };
 
   return (
-    <div className={`fixed lg:static inset-y-0 left-0 z-40 w-72 bg-[#0a0a0a] border-r border-gray-800/50 flex flex-col`}>
+    <div
+      className={`fixed lg:static inset-y-0 left-0 z-40 w-72 bg-[#0a0a0a] border-r border-gray-800/50 flex flex-col`}
+    >
       <div className="p-6 border-b border-gray-800/50 flex items-center space-x-3">
         <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
           <span className="text-white font-bold text-xl">G</span>
         </div>
         <div>
           <h1 className="text-white font-bold text-lg">Gemz Software</h1>
-          <p className="text-gray-400 text-xs capitalize">{user?.role || "User"}</p>
+          <p className="text-gray-400 text-xs capitalize">
+            {user?.role || "User"}
+          </p>
         </div>
       </div>
 
@@ -106,10 +109,21 @@ const RequesterSidebar = ({
             {/* Sub-list */}
             {requestsExpanded && (
               <div className="mt-2 pl-4 space-y-1">
-                 <button
-                 onClick={() => setActiveView("pending")}
+                <button
+                  onClick={() => setActiveView("createNew")}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                    activeView === "createNew"
+                      ? "bg-gray-800/80 text-white"
+                      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                  }`}
+                >
+                  <MdAdd className="text-lg" />
+                  <span className="text-sm">Create Request</span>
+                </button>
+                <button
+                  onClick={() => setActiveView("pending")}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                    activeView === "pending" || activeView === "detail"
+                    activeView === "pending" || (activeView === "detail" && selectedRequestOrigin === "pending")
                       ? "bg-gray-800/80 text-white"
                       : "text-gray-300 hover:text-white hover:bg-gray-800/50"
                   }`}
@@ -124,31 +138,8 @@ const RequesterSidebar = ({
                     </span>
                   )}
                 </button>
-                <button
-                  onClick={() => setActiveView("createNew")}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                    activeView === "createNew"
-                      ? "bg-gray-800/80 text-white"
-                      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                  }`}
-                >
-                  <MdAdd className="text-lg" />
-                  <span className="text-sm">Create Request</span>
-                </button>
 
-               
-
-                <button
-                  onClick={() => setActiveView("myrequests")}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                    activeView === "myrequests"
-                      ? "bg-gray-800/80 text-white"
-                      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                  }`}
-                >
-                  <MdDirectionsBoat className="text-lg" />
-                  <span className="text-sm">My Requests</span>
-                </button>
+              
 
                 <button
                   onClick={() => setActiveView("completed")}
@@ -164,6 +155,18 @@ const RequesterSidebar = ({
               </div>
             )}
           </div>
+
+          <button
+            onClick={() => setActiveView("signature")}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+              activeView === "signature"
+                ? "bg-gray-800/80 text-white"
+                : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+            }`}
+          >
+            <MdDescription className="text-lg" />
+            <span className="text-sm">Signature Manager</span>
+          </button>
         </div>
       </nav>
 

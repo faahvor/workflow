@@ -13,6 +13,10 @@ import NewDashboard from "./components/pages/NewDashboard";
 import NewDashboard2 from "./components/pages/NewDashboard2";
 import RequestDetailDemo from "./components/pages/RequestDetailDemo";
 import { isRequester } from "./components/utils/roles";
+import SignaturePage from "./components/pages/signature";
+import VendorPage from "./components/pages/vendor";
+import Inventory from "./components/pages/Inventory";
+import RequestDetailModal from "./components/pages/RequestDetailModal";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -59,6 +63,9 @@ function App() {
         <Route path="/ndb" element={<NewDashboard />} />
         <Route path="/ndb2" element={<NewDashboard2 />} />
         <Route path="/request-demo" element={<RequestDetailDemo />} />
+        <Route path="/request" element={<RequestDetailModal />} />
+        <Route path="/vendor" element={<VendorPage />} />
+        <Route path="/inventory" element={<Inventory />} />
 
         {/* Protected Dashboard Route - Automatically routes to correct dashboard */}
         <Route

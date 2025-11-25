@@ -51,22 +51,28 @@ const RequestWorkflow = ({ workflowPath }) => {
 
     const state = stage.state || "";
 
-    const rolePatterns = [
+  const rolePatterns = [
+      // Specific director/MD patterns first
+      { pattern: /DIRECTOR_OF_OPERATIONS|DIRECTOR OF OPERATIONS|DIRECTOROFOPERATIONS/i, role: "Director of Operations" },
+      { pattern: /MANAGING_DIRECTOR|MANAGING DIRECTOR|MANAGINGDIRECTOR|^MD$/i, role: "Managing Director" },
+
+      // Head / procurement / operations / finance / etc.
+      { pattern: /HEAD_OF_PROCUREMENT/i, role: "Head of Procurement" },
+      { pattern: /PROCUREMENT_MANAGER/i, role: "Procurement Manager" },
+      { pattern: /PROCUREMENT_OFFICER/i, role: "Procurement Officer" },
+      { pattern: /OPERATIONS_MANAGER/i, role: "Operations Manager" },
+      { pattern: /ACCOUNTING_OFFICER/i, role: "Accounting Officer" },
       { pattern: /VESSEL_MANAGER/i, role: "Vessel Manager" },
       { pattern: /FLEET_MANAGER/i, role: "Fleet Manager" },
-      { pattern: /PROCUREMENT_OFFICER/i, role: "Procurement Officer" },
-      { pattern: /PROCUREMENT_MANAGER/i, role: "Procurement Manager" },
-      { pattern: /ACCOUNTING_OFFICER/i, role: "Accounting Officer" },
-      { pattern: /REQUESTER/i, role: "Requester" },
       { pattern: /IT_MANAGER/i, role: "IT Manager" },
-      { pattern: /OPERATIONS_MANAGER/i, role: "Operations Manager" },
-      { pattern: /HEAD_OF_PROCUREMENT/i, role: "Head of Procurement" },
-      { pattern: /DIRECTOR/i, role: "Director" },
-      { pattern: /CFO/i, role: "CFO" },
-      { pattern: /MD/i, role: "Managing Director" },
+      { pattern: /REQUESTER/i, role: "Requester" },
       { pattern: /DELIVERY/i, role: "Delivery" },
       { pattern: /DRAFT/i, role: "Requester" },
       { pattern: /COMPLETED/i, role: "Completed" },
+
+      // Generic fallbacks last
+      { pattern: /DIRECTOR/i, role: "Director" },
+      { pattern: /CFO/i, role: "CFO" },
     ];
 
     for (const { pattern, role } of rolePatterns) {

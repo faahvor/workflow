@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { IoMdMenu, IoMdClose } from "react-icons/io";
 import {
   MdDashboard,
@@ -17,9 +17,90 @@ import {
 } from "react-icons/md";
 import { HiClock } from "react-icons/hi";
 import Select from "react-select";
+import axios from "axios";
 
 const RequestDetailDemo = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+
+  // Sample items (moved above items state so it exists when used)
+  const requestItems = [
+    {
+      id: 1,
+      name: "Marine Engine Oil SAE 40",
+      quantity: 50,
+      unit: "liters",
+      unitPrice: "$85.00",
+      total: "$4,250.00",
+    },
+    {
+      id: 2,
+      name: "Oil Filter - Premium Grade",
+      quantity: 24,
+      unit: "pieces",
+      unitPrice: "$45.00",
+      total: "$1,080.00",
+    },
+    {
+      id: 3,
+      name: "Fuel Filter Assembly",
+      quantity: 12,
+      unit: "sets",
+      unitPrice: "$120.00",
+      total: "$1,440.00",
+    },
+    {
+      id: 4,
+      name: "Air Filter Element",
+      quantity: 18,
+      unit: "pieces",
+      unitPrice: "$65.00",
+      total: "$1,170.00",
+    },
+    {
+      id: 5,
+      name: "Hydraulic Oil ISO 68",
+      quantity: 100,
+      unit: "liters",
+      unitPrice: "$75.00",
+      total: "$7,500.00",
+    },
+  ];
+
+  // --- items state (was static requestItems) ---
+  const [items, setItems] = useState(requestItems);
+
+  // search state for pulling another request's items
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedExternalRequest, setSelectedExternalRequest] = useState(null);
+  // small fallback mock if API not available (for demo)
+  const mockRequests = [
+    {
+      requestId: "REQ-2024-B",
+      purchaseOrderNumber: "PON-0002",
+      vendor: "Wartsila",
+      items: [
+        {
+          id: "B-1",
+          name: "Spare Pump",
+          quantity: 3,
+          unit: "pcs",
+          unitPrice: "$450.00",
+          total: "$1,350.00",
+        },
+        {
+          id: "B-2",
+          name: "Valve Set",
+          quantity: 2,
+          unit: "sets",
+          unitPrice: "$220.00",
+          total: "$440.00",
+        },
+      ],
+    },
+  ];
 
   // ===== New state for quotation upload (demo) =====
   const [quotationFile, setQuotationFile] = useState(null);
@@ -66,50 +147,6 @@ const RequestDetailDemo = () => {
     { id: 4, name: "Finance Approval", status: "pending" },
     { id: 5, name: "Processing", status: "pending" },
     { id: 6, name: "Completed", status: "pending" },
-  ];
-
-  // Sample items
-  const requestItems = [
-    {
-      id: 1,
-      name: "Marine Engine Oil SAE 40",
-      quantity: 50,
-      unit: "liters",
-      unitPrice: "$85.00",
-      total: "$4,250.00",
-    },
-    {
-      id: 2,
-      name: "Oil Filter - Premium Grade",
-      quantity: 24,
-      unit: "pieces",
-      unitPrice: "$45.00",
-      total: "$1,080.00",
-    },
-    {
-      id: 3,
-      name: "Fuel Filter Assembly",
-      quantity: 12,
-      unit: "sets",
-      unitPrice: "$120.00",
-      total: "$1,440.00",
-    },
-    {
-      id: 4,
-      name: "Air Filter Element",
-      quantity: 18,
-      unit: "pieces",
-      unitPrice: "$65.00",
-      total: "$1,170.00",
-    },
-    {
-      id: 5,
-      name: "Hydraulic Oil ISO 68",
-      quantity: 100,
-      unit: "liters",
-      unitPrice: "$75.00",
-      total: "$7,500.00",
-    },
   ];
 
   const getStageColor = (status) => {
@@ -191,6 +228,160 @@ const RequestDetailDemo = () => {
       setUploadProgress(p);
     }, 160);
   };
+
+  // --- Search other requests (by vendor or PON) and merge items ---
+  const performSearch = async () => {
+    const q = searchTerm.trim();
+    if (!q) return;
+    setSearching(true);
+    setSearchResults([]);
+    try {
+      const token = sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      // Try paginated search endpoint - fallback to mockRequests on error
+      const resp = await axios.get(
+        `${API_BASE}/requests?search=${encodeURIComponent(q)}&limit=20`,
+        { headers }
+      );
+      const body = resp.data || {};
+      const data = Array.isArray(body.data)
+        ? body.data
+        : Array.isArray(body)
+        ? body
+        : [];
+      // Map to minimal result shape
+      const results = data.map((r) => ({
+        requestId: r.requestId || r.id || r.requestId,
+        purchaseOrderNumber:
+          r.purchaseOrderNumber || r.pon || r.purchaseOrderNumber,
+        vendor: r.vendor || (r.items && r.items[0]?.vendor) || "",
+        summary: `${r.requestId || r.id} • ${r.purchaseOrderNumber || ""} • ${
+          r.vendor || ""
+        }`,
+      }));
+      setSearchResults(
+        results.length
+          ? results
+          : mockRequests.map((m) => ({
+              requestId: m.requestId,
+              purchaseOrderNumber: m.purchaseOrderNumber,
+              vendor: m.vendor,
+              summary: `${m.requestId} • ${m.purchaseOrderNumber} • ${m.vendor}`,
+            }))
+      );
+    } catch (err) {
+      console.warn("Search failed, using mock:", err);
+      setSearchResults(
+        mockRequests.map((m) => ({
+          requestId: m.requestId,
+          purchaseOrderNumber: m.purchaseOrderNumber,
+          vendor: m.vendor,
+          summary: `${m.requestId} • ${m.purchaseOrderNumber} • ${m.vendor}`,
+        }))
+      );
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const fetchAndAttachRequest = async (requestIdOrPON) => {
+    // Accept either a requestId or purchaseOrderNumber - try direct fetch by id then fallback to search
+    try {
+      const token = sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      let resp;
+      // try fetching by requestId
+      try {
+        resp = await axios.get(
+          `${API_BASE}/requests/${encodeURIComponent(requestIdOrPON)}`,
+          { headers }
+        );
+      } catch (err) {
+        // fallback: search by PON or vendor
+        const s = encodeURIComponent(requestIdOrPON);
+        const listResp = await axios.get(
+          `${API_BASE}/requests?search=${s}&limit=20`,
+          { headers }
+        );
+        const listBody = listResp.data || {};
+        const list = Array.isArray(listBody.data)
+          ? listBody.data
+          : Array.isArray(listBody)
+          ? listBody
+          : [];
+        resp = { data: list[0] || null };
+      }
+
+      const data = resp.data || resp.data?.data || resp.data?.request || null;
+      if (!data) {
+        // Try mock
+        const mock = mockRequests.find(
+          (m) =>
+            m.requestId === requestIdOrPON ||
+            m.purchaseOrderNumber === requestIdOrPON
+        );
+        if (mock) {
+          attachItemsFromExternalRequest(mock);
+          setSelectedExternalRequest(mock);
+          return;
+        }
+        alert("No matching request found.");
+        return;
+      }
+
+      // normalize items array
+      const extItems = data.items || data.data?.items || [];
+      if (!extItems || extItems.length === 0) {
+        alert("Selected request has no items to attach.");
+        return;
+      }
+      attachItemsFromExternalRequest({
+        requestId: data.requestId || data.id || data._id,
+        items: extItems,
+      });
+      setSelectedExternalRequest({
+        requestId: data.requestId || data.id || data._id,
+      });
+    } catch (err) {
+      console.error("Error fetching external request:", err);
+      alert("Failed to fetch external request (see console).");
+    }
+  };
+
+  const attachItemsFromExternalRequest = (externalRequest) => {
+    // append items from externalRequest into current items state
+    const extId = externalRequest.requestId || externalRequest.requestId;
+    const newItems = (externalRequest.items || []).map((it, idx) => ({
+      // ensure unique id for demo
+      id: `${extId || "EXT"}-${it.id || it.inventoryId || idx}-${Date.now()
+        .toString()
+        .slice(-4)}`,
+      name: it.name || it.description || it.title || "Item",
+      quantity: it.quantity || it.qty || 1,
+      unit: it.unit || "pcs",
+      unitPrice: it.unitPrice || it.price || "$0.00",
+      total: it.total || it.totalPrice || "$0.00",
+      _attached: true,
+      _attachedFrom: extId || externalRequest.purchaseOrderNumber || "external",
+    }));
+
+    setItems((prev) => [...prev, ...newItems]);
+    // scroll into view or give feedback
+    alert(
+      `${newItems.length} item(s) attached from ${extId || "external request"}.`
+    );
+  };
+
+  // helper: if user types PON and presses Enter
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "Enter") {
+        if (searchTerm.trim()) performSearch();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [searchTerm]);
 
   // ref to the requisition printable content
   const requisitionRef = useRef(null);
@@ -777,15 +968,22 @@ const RequestDetailDemo = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {requestItems.map((item, index) => (
+                      {items.map((item, index) => (
                         <tr
                           key={item.id}
                           className="hover:bg-slate-50 transition-colors"
                         >
                           <td className="px-6 py-4">
-                            <p className="text-sm font-medium text-slate-900">
-                              {item.name}
-                            </p>
+                            <div className="flex items-center gap-3">
+                              <p className="text-sm font-medium text-slate-900">
+                                {item.name}
+                              </p>
+                              {item._attached && (
+                                <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+                                  Attached ({item._attachedFrom})
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-center">
                             <p className="text-sm text-slate-700 font-semibold">
@@ -810,21 +1008,67 @@ const RequestDetailDemo = () => {
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
-                      <tr className="bg-slate-900 text-white">
-                        <td
-                          colSpan="4"
-                          className="px-6 py-4 text-right font-bold"
-                        >
-                          Grand Total:
-                        </td>
-                        <td className="px-6 py-4 text-right text-xl font-bold">
-                          {request.amount}
-                        </td>
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
+              </div>
+            </div>
+
+            {/* Attach items from another request (search by vendor or PON) */}
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                🔗 Attach Items from Another Request
+              </h3>
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
+                <div className="flex gap-3 items-start">
+                  <input
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search by vendor name or PON and press Enter / Search"
+                    className="flex-1 px-4 py-3 border rounded-xl"
+                  />
+                  <button
+                    onClick={performSearch}
+                    disabled={searching || !searchTerm.trim()}
+                    className="px-4 py-3 bg-[#036173] text-white rounded-xl"
+                  >
+                    {searching ? "Searching..." : "Search"}
+                  </button>
+                </div>
+
+                {/* Results */}
+                {searchResults.length > 0 && (
+                  <div className="mt-4 grid gap-2">
+                    {searchResults.map((res) => (
+                      <div
+                        key={res.requestId}
+                        className="p-3 rounded-lg border hover:bg-slate-50 cursor-pointer flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {res.summary}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {res.vendor}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              fetchAndAttachRequest(
+                                res.requestId ||
+                                  res.purchaseOrderNumber ||
+                                  res.vendor
+                              )
+                            }
+                            className="px-3 py-1 rounded-md bg-emerald-50 text-emerald-700"
+                          >
+                            Attach
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1150,8 +1394,6 @@ const RequestDetailDemo = () => {
                       </div>
                     </div>
                   </div>
-
-                
                 </div>
               </>
             )}

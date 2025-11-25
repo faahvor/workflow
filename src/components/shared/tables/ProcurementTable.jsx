@@ -622,46 +622,33 @@ const ProcurementTable = ({
             updatedItem.vatted = !!value;
           } else {
             updatedItem[field] = value;
-            if (field === "inStock") {
-              if (value === false) {
-                updatedItem.inStockQuantity = 0;
-                updatedItem.storeLocation = "";
-                // allow switching back from pettyCash if needed (do not force change when turning off)
-              } else if (value === true) {
-                if (
-                  updatedItem.inStockQuantity === "" ||
-                  updatedItem.inStockQuantity === null ||
-                  parseInt(updatedItem.inStockQuantity, 10) === 0
-                ) {
-                  updatedItem.inStockQuantity = 1;
-                }
-
-                // When item is marked in-stock:
-                // - clear/zero pricing fields and VAT immediately
-                // - set itemType to pettyCash and clear destination
-                updatedItem.unitPrice = 0;
-                updatedItem.currency = "";
-                updatedItem.discount = "";
-                updatedItem.vatted = false;
-                updatedItem.total = 0;
-
-                updatedItem.itemType = "pettyCash";
-                updatedItem.destination = "";
+          if (field === "inStock") {
+            if (value === false) {
+              updatedItem.inStockQuantity = 0;
+              updatedItem.storeLocation = "";
+            } else if (value === true) {
+              if (
+                updatedItem.inStockQuantity === "" ||
+                updatedItem.inStockQuantity === null ||
+                parseInt(updatedItem.inStockQuantity, 10) === 0
+              ) {
+                updatedItem.inStockQuantity = 1;
               }
 
-              console.log("handleChange - inStock toggle:", {
-                itemId,
-                value,
-                updatedItem,
-              });
+              // Keep pricing cleared for in-stock items
+              updatedItem.unitPrice = 0;
+              updatedItem.currency = "";
+              updatedItem.discount = "";
+              updatedItem.vatted = false;
+              updatedItem.total = 0;
             }
-            if (field === "inStock") {
-              console.log("handleChange - inStock toggle:", {
-                itemId,
-                value,
-                updatedItem,
-              });
-            }
+
+            console.log("handleChange - inStock toggle:", {
+              itemId,
+              value,
+              updatedItem,
+            });
+          }
           }
 
           // Recalculate total
@@ -1318,7 +1305,7 @@ const ProcurementTable = ({
                             )}
                           </td>
                         )}
-                       {showItemTypeAndDept && (
+                        {showItemTypeAndDept && (
                           <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                             <input
                               type="checkbox"
@@ -1328,7 +1315,11 @@ const ProcurementTable = ({
                                 )?.inStock || false
                               }
                               onChange={(e) =>
-                                handleChange(itemId, "inStock", e.target.checked)
+                                handleChange(
+                                  itemId,
+                                  "inStock",
+                                  e.target.checked
+                                )
                               }
                               disabled={
                                 isPreview ||
@@ -1336,7 +1327,9 @@ const ProcurementTable = ({
                                 allowInStockChange === false
                               }
                               className={
-                                isPreview || readOnly || allowInStockChange === false
+                                isPreview ||
+                                readOnly ||
+                                allowInStockChange === false
                                   ? "cursor-not-allowed"
                                   : ""
                               }
@@ -1357,22 +1350,42 @@ const ProcurementTable = ({
                                     : ""
                                 }
                                 onChange={(e) => {
-                                  const v = e.target.value;
-                                  if (v === "" || /^\d+$/.test(v)) {
-                                    handleChange(itemId, "inStockQuantity", v);
+                                  const raw = e.target.value;
+                                  // allow clearing while typing
+                                  if (raw === "") {
+                                    handleChange(itemId, "inStockQuantity", "");
+                                    return;
                                   }
+                                  // only accept digits
+                                  if (!/^\d+$/.test(raw)) return;
+                                  const parsed = parseInt(raw, 10);
+                                  const minVal = 1;
+                                  const maxVal = parseInt(request.quantity || 0, 10) || 0;
+                                  let newVal = parsed;
+                                  if (newVal < minVal) newVal = minVal;
+                                  if (maxVal > 0 && newVal > maxVal) newVal = maxVal;
+                                  handleChange(itemId, "inStockQuantity", newVal);
                                 }}
                                 onBlur={(e) => {
-                                  if (e.target.value === "") {
-                                    handleChange(itemId, "inStockQuantity", 0);
+                                  const raw = e.target.value;
+                                  if (raw === "" || raw === null) {
+                                    handleChange(itemId, "inStockQuantity", 1);
+                                    return;
                                   }
+                                  if (!/^\d+$/.test(raw)) {
+                                    handleChange(itemId, "inStockQuantity", 1);
+                                    return;
+                                  }
+                                  const parsed = parseInt(raw, 10);
+                                  const minVal = 1;
+                                  const maxVal = parseInt(request.quantity || 0, 10) || 0;
+                                  let newVal = parsed;
+                                  if (newVal < minVal) newVal = minVal;
+                                  if (maxVal > 0 && newVal > maxVal) newVal = maxVal;
+                                  handleChange(itemId, "inStockQuantity", newVal);
                                 }}
                                 className="border px-2 py-1 rounded-md w-28 text-black"
-                                disabled={
-                                  isPreview ||
-                                  readOnly ||
-                                  request.itemType === "pettyCash"
-                                }
+                                disabled={isPreview || readOnly || !request.inStock}
                               />
                             ) : (
                               <div className="text-sm text-slate-500">N/A</div>
@@ -1836,74 +1849,67 @@ const ProcurementTable = ({
                           (allowEditing ? 1 : 0) -
                           1
                         }
-                        className="border p-3 text-center font-bold"
+                        className="border border-slate-200 p-3 text-center font-bold"
                       >
                         Shipping Fee -{" "}
                         {vendorGroup.items[0]?.vendor || "No Vendor"}
                       </td>
-                      <td className="border p-3 text-center">
-                        <input
-                          type="number"
-                          value={
-                            shippingFees[
-                              vendorGroup.items[0]?.vendor || "No Vendor"
-                            ] || ""
-                          }
-                          onChange={(e) => {
-                            const vendor =
-                              vendorGroup.items[0]?.vendor || "No Vendor";
-                            const value =
-                              e.target.value === ""
-                                ? 0
-                                : parseFloat(e.target.value) || 0;
-
-                            // Update local state immediately
-                            setShippingFees((prev) => ({
-                              ...prev,
-                              [vendor]: value,
-                            }));
-
-                            // Update all items with this vendor
-                            const updates = editedRequests
-                              .filter(
-                                (item) =>
-                                  (item.vendor || "No Vendor") === vendor
-                              )
-                              .map((item) => ({
-                                itemId: item.itemId,
-                                changes: { shippingFee: value },
-                              }));
-
-                            // Call unified edit with debounce
-                            clearTimeout(window.shippingFeeTimeout);
-                            window.shippingFeeTimeout = setTimeout(() => {
-                              handleUnifiedEdit(updates);
-                            }, 5000);
-                          }}
-                          onFocus={(e) => {
-                            if (
-                              e.target.value === "0" ||
-                              e.target.value === "0.00"
-                            ) {
-                              e.target.value = "";
+                        <td className="border border-slate-200 p-3 text-center">
+                          <input
+                            type="number"
+                            value={
+                              shippingFees[
+                                vendorGroup.items[0]?.vendor || "No Vendor"
+                              ] || ""
                             }
-                          }}
-                          onBlur={(e) => {
-                            if (e.target.value === "") {
+                            onChange={(e) => {
                               const vendor =
                                 vendorGroup.items[0]?.vendor || "No Vendor";
+                              const value =
+                                e.target.value === ""
+                                  ? 0
+                                  : parseFloat(e.target.value) || 0;
+
+                              // Update local UI state immediately
                               setShippingFees((prev) => ({
                                 ...prev,
-                                [vendor]: 0,
+                                [vendor]: value,
                               }));
-                            }
-                          }}
-                          className="border px-2 py-1 rounded-md w-24 text-black text-center"
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
-                        />
-                      </td>
+
+                              // Update editedRequests locally and mark as dirty.
+                              // Do NOT call handleUnifiedEdit here; saving happens on Save Changes.
+                              setEditedRequests((prev) =>
+                                prev.map((item) =>
+                                  (item.vendor || "No Vendor") === vendor
+                                    ? { ...item, shippingFee: value, _dirty: true }
+                                    : item
+                                )
+                              );
+                            }}
+                            onFocus={(e) => {
+                              if (
+                                e.target.value === "0" ||
+                                e.target.value === "0.00"
+                              ) {
+                                e.target.value = "";
+                              }
+                            }}
+                            onBlur={(e) => {
+                              if (e.target.value === "") {
+                                const vendor =
+                                  vendorGroup.items[0]?.vendor || "No Vendor";
+                                setShippingFees((prev) => ({
+                                  ...prev,
+                                  [vendor]: 0,
+                                }));
+                              }
+                            }}
+                            className="border px-2 py-1 rounded-md w-24 border-slate-200 text-center"
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                          />
+                        </td>
                     </tr>
                   </tbody>
                 )}

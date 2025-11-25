@@ -26,6 +26,122 @@ export async function generateAndUploadRequisition({
   if (!requestId) throw new Error("Missing requestId");
   if (!items || items.length === 0) return [];
 
+  let vendorObj = null;
+  try {
+    const vendorIdFromItems = items[0]?.vendorId ?? items[0]?.vendor ?? null;
+    if (vendorIdFromItems && token) {
+      const vResp = await axios.get(
+        `${apiBase}/vendors/${encodeURIComponent(vendorIdFromItems)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      vendorObj = vResp.data?.data ?? vResp.data ?? null;
+    }
+  } catch (fetchVendorErr) {
+    // non-fatal: continue without vendor details
+    console.warn(
+      "generateAndUploadRequisition: failed to fetch vendor details",
+      fetchVendorErr
+    );
+  }
+
+  // ...existing code...
+  // --- ADD: fetch latest request (to pick up newest signatures) and prepare signatures array ---
+  let latestRequest = request;
+  if (token) {
+    try {
+      const reqResp = await axios.get(
+        `${apiBase}/requests/${encodeURIComponent(requestId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      latestRequest = reqResp.data?.data ?? reqResp.data ?? request;
+    } catch (e) {
+      console.warn(
+        "generateAndUploadRequisition: failed to refresh request for signatures",
+        e
+      );
+      latestRequest = request;
+    }
+  }
+
+  const rawSignatures = Array.isArray(latestRequest.signatures)
+    ? latestRequest.signatures.slice()
+    : [];
+
+  // sort oldest-first
+  rawSignatures.sort((a, b) => {
+    const ta = a.timestamp || a.time || a.createdAt || 0;
+    const tb = b.timestamp || b.time || b.createdAt || 0;
+    return new Date(ta).getTime() - new Date(tb).getTime();
+  });
+
+  // helper: convert ArrayBuffer -> base64 for browser
+  const arrayBufferToBase64 = (buffer) => {
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  };
+
+  const fetchImageAsDataUrl = async (url) => {
+    try {
+      const resp = await axios.get(url, {
+        responseType: "arraybuffer",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const contentType =
+        resp.headers && resp.headers["content-type"]
+          ? resp.headers["content-type"]
+          : "image/png";
+      const base64 = arrayBufferToBase64(resp.data);
+      return `data:${contentType};base64,${base64}`;
+    } catch (err) {
+      console.warn(
+        "generateAndUploadRequisition: failed to fetch signature image",
+        url,
+        err
+      );
+      return null;
+    }
+  };
+
+  // prepare signatures with inline images (if available)
+  const signaturesPrepared = await Promise.all(
+    rawSignatures.map(async (s) => {
+      const imgData = s.signatureUrl
+        ? await fetchImageAsDataUrl(s.signatureUrl)
+        : null;
+      return {
+        userId: s.userId,
+        name: s.name || s.userName || s.displayName || s.requesterName || "",
+        role: s.role || s.position || "",
+        timestamp: s.timestamp || s.time || s.createdAt || null,
+        signatureUrl: s.signatureUrl || null,
+        imageData: imgData, // base64 data URI or null
+      };
+    })
+  );
+  // ...existing code...
+
+  // --- ADD: prepare Issued To name + address (escaped) ---
+  const issuedToName = escapeHtml(
+    (vendorObj && (vendorObj.name || vendorObj.vendorName)) || vendorName || ""
+  );
+  const issuedToAddress = (() => {
+    if (!vendorObj) return "";
+    const parts = [];
+    if (vendorObj.address) parts.push(vendorObj.address);
+    if (vendorObj.city) parts.push(vendorObj.city);
+    if (vendorObj.state) parts.push(vendorObj.state);
+    if (vendorObj.postalCode) parts.push(vendorObj.postalCode);
+    if (vendorObj.country) parts.push(vendorObj.country);
+    // compact, join with newlines, escape
+    return escapeHtml(parts.filter(Boolean).join("\n"));
+  })();
   // build rows
   const rowsHtml = items
     .map((it, i) => {
@@ -35,7 +151,9 @@ export async function generateAndUploadRequisition({
       const vat = it.vat != null ? it.vat : null;
       const total = it.total != null ? Number(it.total) : unitPrice * qty;
       return `<tr>
-        <td style="padding:8px;border-bottom:1px solid #e6e6e6;vertical-align:top">${i + 1}</td>
+        <td style="padding:8px;border-bottom:1px solid #e6e6e6;vertical-align:top">${
+          i + 1
+        }</td>
         <td style="padding:8px;border-bottom:1px solid #e6e6e6;vertical-align:top">${escapeHtml(
           it.name || ""
         )}</td>
@@ -43,42 +161,94 @@ export async function generateAndUploadRequisition({
         <td style="padding:8px;border-bottom:1px solid #e6e6e6;vertical-align:top">${escapeHtml(
           it.unit || "pcs"
         )}</td>
-        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${request.currency ||
-          "NGN"} ${unitPrice.toFixed(2)}</td>
-        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${discount != null
-          ? `${request.currency || "NGN"} ${discount.toFixed(2)}`
-          : "-"}</td>
-        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${vat != null
-          ? `${vat}%`
-          : "-"}</td>
-        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${request.currency ||
-          "NGN"} ${Number(total).toFixed(2)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${
+          request.currency || "NGN"
+        } ${unitPrice.toFixed(2)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${
+          discount != null
+            ? `${request.currency || "NGN"} ${discount.toFixed(2)}`
+            : "-"
+        }</td>
+        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${
+          vat != null ? `${vat}%` : "-"
+        }</td>
+        <td style="padding:8px;border-bottom:1px solid #e6e6e6;text-align:right;vertical-align:top">${
+          request.currency || "NGN"
+        } ${Number(total).toFixed(2)}</td>
       </tr>`;
     })
     .join("");
 
   const grandTotal = items.reduce((s, it) => {
     const qty = Number(it.quantity || 0);
-    const total = it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
+    const total =
+      it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
     return s + (isNaN(total) ? 0 : total);
   }, 0);
 
   const css = `
     body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;padding:24px;background:#fff}
-    .header{border-bottom:1px solid #e6e6e6;padding-bottom:12px;margin-bottom:12px}
-    .meta{float:right;text-align:right}
-    table{width:100%;border-collapse:collapse;margin-top:12px}
-    th,td{padding:8px;border-bottom:1px solid #e6e6e6}
+    .header{border-bottom:1px solid #e6e6e6;padding-bottom:10px;margin-bottom:10px}
+    .header .logo{width:48px;height:48px}
+    .header .company{font-weight:700;font-size:14px;margin-top:6px}
+    .header .address{color:#64748b;margin-top:4px;white-space:pre-line;font-size:11px}
+    .meta{float:right;text-align:right;font-size:12px;color:#0f172a}
+    .meta div{margin-bottom:3px}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{padding:6px;border-bottom:1px solid #e6e6e6;font-size:11px}
+    thead th{color:#475569;font-size:11px}
     tfoot td{border-top:2px solid #e6e6e6}
-    .signature{margin-top:24px}
+    .signature{margin-top:18px}
+    .issued-block{border-radius:8px;padding:10px}
+    .issued-block .title{font-weight:600;margin-bottom:4px;font-size:12px}
+    .issued-block .content{white-space:pre-line;color:#334155;font-size:11px}
     @media print{ .page-break{page-break-after:always} }
   `;
 
   const reqIdStr = request.requestId || request.id || requestId;
-  const createdAt = request.createdAt ? new Date(request.createdAt) : new Date();
+  const createdAt = request.createdAt
+    ? new Date(request.createdAt)
+    : new Date();
   const dateStr = createdAt.toLocaleDateString();
-  const requiredDate = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString();
+  const requiredDate = new Date(
+    createdAt.getTime() + 24 * 60 * 60 * 1000
+  ).toLocaleDateString();
   const reference = request.reference || "N/A";
+
+  const signatureHtml = `
+    <div class="signature" style="margin-top:18px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        ${signaturesPrepared
+          .map((s) => {
+            const name = escapeHtml(s.name || "Unknown");
+            const role = escapeHtml(s.role || "");
+            const ts = s.timestamp
+              ? escapeHtml(new Date(s.timestamp).toLocaleString())
+              : "";
+            if (s.imageData) {
+              return `
+                <div style="text-align:left;min-height:60px">
+                  <div style="height:36px">
+                    <img src="${s.imageData}" style="max-width:120px;height:36px;object-fit:contain;border:none" />
+                  </div>
+                  <div style="font-family:'Brush Script MT','Lucida Handwriting',cursive;font-size:12px;margin-top:6px;color:#036173">${name}</div>
+                  <div style="font-size:10px;color:#64748b">${role}</div>
+                  <div style="font-size:10px;color:#94a3b8">${ts}</div>
+                </div>
+              `;
+            }
+            return `
+              <div style="text-align:left;min-height:60px">
+                <div style="height:36px;font-family:'Brush Script MT','Lucida Handwriting',cursive;font-size:20px;color:#036173">${name}</div>
+                <div style="font-size:10px;color:#64748b">${role}</div>
+                <div style="font-size:10px;color:#94a3b8">${ts}</div>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Requisition ${escapeHtml(
     reqIdStr
@@ -90,7 +260,7 @@ export async function generateAndUploadRequisition({
         <div style="color:#64748b;margin-top:6px;white-space:pre-line">17, Wharf Road,\nApapa, Lagos\nNigeria.</div>
       </div>
       <div class="meta">
-        <div><strong>Number:</strong> ${escapeHtml(reqIdStr)}</div>
+        <div><strong>RequestId:</strong> ${escapeHtml(reqIdStr)}</div>
         <div><strong>Date:</strong> ${escapeHtml(dateStr)}</div>
         <div><strong>Required:</strong> ${escapeHtml(requiredDate)}</div>
         <div><strong>Reference:</strong> ${escapeHtml(reference)}</div>
@@ -98,18 +268,13 @@ export async function generateAndUploadRequisition({
       <div style="clear:both"></div>
     </div>
 
-    <div style="margin:14px 0 8px 0">
-      <div style="font-weight:600;margin-bottom:6px">Vendor: ${escapeHtml(vendorName)}</div>
-    </div>
+   
 
-    <div style="display:flex;gap:12px;margin-bottom:12px">
+   <div style="display:flex;gap:12px;margin-bottom:12px">
       <div style="flex:1;border:2px dashed #e6e6e6;padding:12px;border-radius:8px">
-        <div style="font-weight:600;margin-bottom:6px">Issued To:</div>
-        <div style="white-space:pre-line;color:#334155;font-size:13px">
-          AVL Integrated Technology Solution
-          \nBlock B, Suite 366, Sura Shopping Complex
-          \nIkeja
-          \nLagos
+        <div style="font-weight:600;margin-bottom:6px;font-size:12px">Issued To:</div>
+        <div style="white-space:pre-line;color:#334155;font-size:11px">
+          ${issuedToName}${issuedToAddress ? "\n" + issuedToAddress : ""}
         </div>
       </div>
       <div style="flex:1;border:2px dashed #e6e6e6;padding:12px;border-radius:8px">
@@ -145,33 +310,16 @@ export async function generateAndUploadRequisition({
         <tfoot>
           <tr>
             <td colspan="7" style="text-align:right;font-weight:700;padding-top:12px">Grand Total</td>
-            <td style="text-align:right;font-weight:700;padding-top:12px">${request.currency || "NGN"} ${Number(
-    grandTotal
-  ).toFixed(2)}</td>
+            <td style="text-align:right;font-weight:700;padding-top:12px">${
+              request.currency || "NGN"
+            } ${Number(grandTotal).toFixed(2)}</td>
           </tr>
         </tfoot>
       </table>
     </div>
 
-    <div class="signature">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px">
-        <div style="flex:1">
-          <div style="font-size:12px;color:#94a3b8;margin-bottom:6px">Approved by</div>
-          <div style="border:1px solid #e6e6e6;padding:12px;border-radius:12px;max-width:360px">
-            <svg width="240" height="70" viewBox="0 0 240 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M10 40 C40 10, 80 10, 110 40 S180 70, 230 40" stroke="#036173" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <div style="margin-top:8px;font-weight:600">Procurement Officer</div>
-            <div style="font-size:12px;color:#64748b">e-signature • ${new Date().toLocaleDateString()}</div>
-          </div>
-        </div>
+     ${signatureHtml}
 
-        <div style="text-align:right;min-width:200px;margin-left:16px">
-          <div style="font-size:12px;color:#94a3b8">Contact</div>
-          <div style="font-weight:600">procurement@gemz.com</div>
-        </div>
-      </div>
-    </div>
   </body></html>`;
 
   // write into hidden same-origin iframe
@@ -193,7 +341,11 @@ export async function generateAndUploadRequisition({
     await new Promise((r) => setTimeout(r, 200));
 
     // capture
-    const canvas = await html2canvas(idoc.body, { scale: 1, useCORS: true, backgroundColor: "#ffffff" });
+    const canvas = await html2canvas(idoc.body, {
+      scale: 1,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+    });
 
     // downscale
     let sourceCanvas = canvas;
@@ -221,7 +373,17 @@ export async function generateAndUploadRequisition({
       pageCanvas.width = sourceCanvas.width;
       pageCanvas.height = thisPageHeight;
       const pctx = pageCanvas.getContext("2d");
-      pctx.drawImage(sourceCanvas, 0, y, sourceCanvas.width, thisPageHeight, 0, 0, sourceCanvas.width, thisPageHeight);
+      pctx.drawImage(
+        sourceCanvas,
+        0,
+        y,
+        sourceCanvas.width,
+        thisPageHeight,
+        0,
+        0,
+        sourceCanvas.width,
+        thisPageHeight
+      );
 
       const pageImgData = pageCanvas.toDataURL("image/jpeg", jpegQuality);
       const imgHeightInPts = thisPageHeight / pxPerPt;
@@ -238,7 +400,10 @@ export async function generateAndUploadRequisition({
     }
 
     const pdfBlob = pdf.output("blob");
-    const filename = `${requestId}-${vendorName.replace(/\s+/g, "_")}-requisition.pdf`;
+    const filename = `${requestId}-${vendorName.replace(
+      /\s+/g,
+      "_"
+    )}-requisition.pdf`;
     const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
     const formData = new FormData();
@@ -246,8 +411,14 @@ export async function generateAndUploadRequisition({
 
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-    const resp = await axios.post(`${apiBase}/requests/${requestId}/requisition-files`, formData, { headers });
-    const uploadedFiles = (resp.data && (resp.data.uploadedFiles || resp.data.uploaded_files)) || [];
+    const resp = await axios.post(
+      `${apiBase}/requests/${requestId}/requisition-files`,
+      formData,
+      { headers }
+    );
+    const uploadedFiles =
+      (resp.data && (resp.data.uploadedFiles || resp.data.uploaded_files)) ||
+      [];
     return uploadedFiles;
   } finally {
     if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);

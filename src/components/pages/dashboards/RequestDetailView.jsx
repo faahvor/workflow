@@ -27,6 +27,12 @@ import RequesterTable from "../../shared/tables/RequesterTable";
 import StoreDeliveryTable from "../../shared/tables/StoreDeliverytable";
 import Select from "react-select";
 import AttachedDocuments from "../../shared/AttachedDocuments";
+import OperationsManagerTable from "../../shared/tables/OperationsManagerTable";
+import DirectOfOpTable from "../../shared/tables/DirectOfOpTable";
+import ShippingTable from "../../shared/tables/ShippingTable";
+import { generateAndUploadRequisition } from "../../shared/generateAndUploadRequisition";
+
+
 
 const RequestDetailView = ({
   request,
@@ -36,8 +42,10 @@ const RequestDetailView = ({
   onQuery,
   actionLoading,
   isReadOnly = false,
+    vendors: vendorsProp = [],
 }) => {
   const { user } = useAuth();
+
   const [vessels, setVessels] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [vendors, setVendors] = useState([]);
@@ -46,6 +54,14 @@ const RequestDetailView = ({
   const [canApproveDelivery, setCanApproveDelivery] = useState(true);
   const [filesRefreshCounter, setFilesRefreshCounter] = useState(0);
 
+  // Attach-from-other-request state + helpers (shipping-only UI will use these)
+  const [attachSearchTerm, setAttachSearchTerm] = useState("");
+  const [attachSearching, setAttachSearching] = useState(false);
+  const [attachSearchResults, setAttachSearchResults] = useState([]);
+  const [attachSourceItems, setAttachSourceItems] = useState([]);
+  const [attachSelectedItemIds, setAttachSelectedItemIds] = useState([]);
+  const [attachSourceMeta, setAttachSourceMeta] = useState(null);
+  
 
   // --- Quotation upload state & refs (REPLACED to support multiple files)
   const fileInputRef = useRef(null);
@@ -139,24 +155,25 @@ const RequestDetailView = ({
   }, []); // ✅ Add getToken to dependencies if needed
 
   const fetchRequestDetails = async () => {
-    try {
-      const token = getToken();
-      if (!token) {
-        console.error("❌ No token available");
-        return null;
-      }
-      const response = await axios.get(
-        `https://hdp-backend-1vcl.onrender.com/api/requests/${request.requestId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = response.data;
-      setSelectedRequest(data);
-      return data; // return for callers
-    } catch (error) {
-      console.error("Error fetching request:", error);
-      throw error;
+   try {
+    const token = getToken();
+    if (!token) {
+      console.error("❌ No token available");
+      return null;
     }
-  };
+    const response = await axios.get(
+      `${API_BASE_URL}/requests/${request.requestId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    // API may return the object at response.data.data or response.data
+    const data = response.data?.data ?? response.data;
+    setSelectedRequest(data);
+    return data; // return for callers
+  } catch (error) {
+    console.error("Error fetching request:", error);
+    throw error;
+  }
+};
   useEffect(() => {
     if (request?.requestId) {
       fetchRequestDetails().catch((err) => {
@@ -166,84 +183,86 @@ const RequestDetailView = ({
   }, [request?.requestId]);
 
   const handleFilesChanged = async () => {
-  try {
-    // re-fetch latest request details (silent)
-    await fetchRequestDetails();
-    // bump counter so AttachedDocuments can show a local spinner and react
-    setFilesRefreshCounter((c) => c + 1);
-  } catch (err) {
-    console.error("Failed to refresh files after upload:", err);
-  }
-};
+    try {
+      // re-fetch latest request details (silent)
+      await fetchRequestDetails();
+      // bump counter so AttachedDocuments can show a local spinner and react
+      setFilesRefreshCounter((c) => c + 1);
+    } catch (err) {
+      console.error("Failed to refresh files after upload:", err);
+    }
+  };
 
+  const uploadEntryImmediate = async (entry) => {
+    if (!entry) return;
+    const id = entry.id;
+    try {
+      setIsUploading(true);
 
+      // ensure entry exists in state so progress UI updates
+      setQuotationFiles((prev) => {
+        if (prev.find((p) => p.id === id)) return prev;
+        return [...prev, entry];
+      });
 
-const uploadEntryImmediate = async (entry) => {
-  if (!entry) return;
-  const id = entry.id;
-  try {
-    setIsUploading(true);
+      setQuotationFiles((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, progress: 0, uploaded: false } : p
+        )
+      );
 
-    // ensure entry exists in state so progress UI updates
-    setQuotationFiles((prev) => {
-      if (prev.find((p) => p.id === id)) return prev;
-      return [...prev, entry];
-    });
+      const token = getToken();
+      const formData = new FormData();
+      formData.append("files", entry.file);
 
-    setQuotationFiles((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, progress: 0, uploaded: false } : p))
-    );
+      const resp = await axios.post(
+        `${API_BASE_URL}/requests/${request.requestId}/quotations`,
+        formData,
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : undefined,
+            "Content-Type": "multipart/form-data",
+          },
+          onUploadProgress: (progressEvent) => {
+            const percent = Math.round(
+              (progressEvent.loaded * 100) / (progressEvent.total || 1)
+            );
+            setQuotationFiles((prev) =>
+              prev.map((p) => (p.id === id ? { ...p, progress: percent } : p))
+            );
+          },
+        }
+      );
 
-    const token = getToken();
-    const formData = new FormData();
-    formData.append("files", entry.file);
+      // mark uploaded
+      setQuotationFiles((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, progress: 100, uploaded: true } : p
+        )
+      );
 
-    const resp = await axios.post(
-      `${API_BASE_URL}/requests/${request.requestId}/quotations`,
-      formData,
-      {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : undefined,
-          "Content-Type": "multipart/form-data",
-        },
-        onUploadProgress: (progressEvent) => {
-          const percent = Math.round(
-            (progressEvent.loaded * 100) / (progressEvent.total || 1)
-          );
-          setQuotationFiles((prev) =>
-            prev.map((p) => (p.id === id ? { ...p, progress: percent } : p))
-          );
-        },
-      }
-    );
+      // refresh request details so AttachedDocuments sees the new file
+      if (typeof fetchRequestDetails === "function")
+        await fetchRequestDetails();
+      if (typeof handleFilesChanged === "function") handleFilesChanged();
 
-    // mark uploaded
-    setQuotationFiles((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, progress: 100, uploaded: true } : p))
-    );
-
-    // refresh request details so AttachedDocuments sees the new file
-    if (typeof fetchRequestDetails === "function") await fetchRequestDetails();
-    if (typeof handleFilesChanged === "function") handleFilesChanged();
-
-    // remove the temporary entry after successful upload (keeps UI clean)
-    setQuotationFiles((prev) => {
-      const toRemove = prev.find((p) => p.id === id);
-      if (toRemove?.previewUrl) URL.revokeObjectURL(toRemove.previewUrl);
-      return prev.filter((p) => p.id !== id);
-    });
-  } catch (err) {
-    console.error("Error uploading quotation (immediate):", err);
-    alert(err?.response?.data?.message || "Upload failed");
-    // keep entry in list for retry and mark uploaded=false
-    setQuotationFiles((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, uploaded: false } : p))
-    );
-  } finally {
-    setIsUploading(false);
-  }
-};
-
+      // remove the temporary entry after successful upload (keeps UI clean)
+      setQuotationFiles((prev) => {
+        const toRemove = prev.find((p) => p.id === id);
+        if (toRemove?.previewUrl) URL.revokeObjectURL(toRemove.previewUrl);
+        return prev.filter((p) => p.id !== id);
+      });
+    } catch (err) {
+      console.error("Error uploading quotation (immediate):", err);
+      alert(err?.response?.data?.message || "Upload failed");
+      // keep entry in list for retry and mark uploaded=false
+      setQuotationFiles((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, uploaded: false } : p))
+      );
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const fetchVessels = async () => {
     try {
@@ -267,14 +286,150 @@ const uploadEntryImmediate = async (entry) => {
     fetchVessels();
   }, []);
 
+  // attached files function
+
+  const performAttachSearch = async () => {
+    const q = (attachSearchTerm || "").trim();
+    if (!q) return;
+    setAttachSearching(true);
+    try {
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+      const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const all = resp.data?.data || [];
+      const lowered = q.toLowerCase();
+      const results = all.filter((r) => {
+        const vendor = (r.vendor || r.requester?.displayName || "")
+          .toString()
+          .toLowerCase();
+        const po = (r.purchaseOrderNumber || r.reference || r.requestId || "")
+          .toString()
+          .toLowerCase();
+        return vendor.includes(lowered) || po.includes(lowered);
+      });
+      setAttachSearchResults(results);
+    } catch (err) {
+      console.error("Attach search error:", err);
+      setAttachSearchResults([]);
+    } finally {
+      setAttachSearching(false);
+    }
+  };
+
+const loadSourceRequestItems = async (sourceRequestId) => {
+  try {
+    const token = getToken();
+    if (!token) throw new Error("Not authenticated");
+    const resp = await axios.get(
+      `${API_BASE_URL}/requests/${sourceRequestId}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    const src = resp.data?.data ?? resp.data ?? {};
+    // Use only src.items for all cases
+    const items = src.items || [];
+    setAttachSourceItems(items);
+    setAttachSelectedItemIds(
+      items.map((it) => it.itemId || it._id).filter(Boolean)
+    );
+    setAttachSourceMeta({
+      requestId: src.requestId || sourceRequestId,
+      vendor: src.vendor || src.requester?.displayName || "",
+    });
+  } catch (err) {
+    console.error("Error loading source request items:", err);
+    alert(err?.response?.data?.message || "Failed to load request items");
+  }
+};
+
+  const toggleAttachSelect = (itemId) => {
+    setAttachSelectedItemIds((prev) => {
+      if (prev.includes(itemId)) return prev.filter((id) => id !== itemId);
+      return [...prev, itemId];
+    });
+  };
+
+  const selectAllAttachItems = () => {
+    setAttachSelectedItemIds(
+      attachSourceItems.map((it) => it.itemId || it._id).filter(Boolean)
+    );
+  };
+
+  const clearAttachSelection = () => {
+    setAttachSourceItems([]);
+    setAttachSelectedItemIds([]);
+    setAttachSourceMeta(null);
+    setAttachSearchResults([]);
+    setAttachSearchTerm("");
+  };
+
+  const attachSelectedToTarget = async (targetRequestId, purpose = "") => {
+    if (!targetRequestId) return;
+    try {
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+      const payload = {
+        sourceRequestId: attachSourceMeta?.requestId || null,
+        itemIds: attachSelectedItemIds || [],
+        purpose,
+      };
+      const resp = await axios.post(
+        `${API_BASE_URL}/requests/${targetRequestId}/attach`,
+        payload,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      alert(resp.data?.message || "Request attached successfully");
+      // refresh current request details so UI updates
+      await fetchRequestDetails();
+      clearAttachSelection();
+    } catch (err) {
+      console.error("Attach error:", err);
+      alert(err?.response?.data?.message || "Failed to attach items");
+    }
+  };
+
   const currentRequest = selectedRequest || request;
 
   const renderItemsTable = () => {
     const userRole = user?.role?.toLowerCase();
-    const items = currentRequest?.items || [];
+
+  // determine if this request is a shipping request (tag === "shipping")
+  const isShippingTag = String(currentRequest?.tag || "").toLowerCase().includes("shipping");
+
+   const itemsSource = currentRequest?.items || [];
+
+
+  // normalize fields so downstream tables can render consistently
+  const items = (itemsSource || []).map((it, idx) => ({
+    itemId: it.itemId || it._id || it.id || `gen-${idx}`,
+    name: it.name || it.description || it.title || "N/A",
+    itemType: it.itemType || it.makersType || it.type || "",
+    maker: it.maker || it.manufacturer || "",
+    makersPartNo:
+      it.makersPartNo || it.makerPartNumber || it.partNumber || "",
+    vendor:
+      it.vendor || it.vendorName || it.supplier || it.vendorId || "",
+    quantity: it.quantity || it.qty || it.requestedQuantity || 0,
+    unitPrice: it.unitPrice || it.unit_price || it.price || null,
+    total:
+      it.total ||
+      (it.unitPrice && it.quantity
+        ? Number(it.unitPrice) * Number(it.quantity)
+        : null),
+    purchaseReqNumber: it.purchaseReqNumber || it.prn || it.prNumber || "",
+    purchaseOrderNumber:
+      it.purchaseOrderNumber || it.PON || it.pon || it.purchaseOrder || "",
+    currency: it.currency || "NGN",
+    __raw: it,
+  }));
 
     // When viewing approved/completed set tables to read-only (also consider actionLoading)
-    const tableReadOnly = isReadOnly || actionLoading;
+  const tableReadOnly = isReadOnly || actionLoading;
 
     if (isReadOnly) {
       return <CompletedTable items={items} userRole={userRole} />;
@@ -293,6 +448,7 @@ const uploadEntryImmediate = async (entry) => {
             requestId={request.requestId}
             isReadOnly={tableReadOnly}
             currentState={request.flow?.currentState}
+               vendors={vendors} 
           />
         );
 
@@ -303,6 +459,7 @@ const uploadEntryImmediate = async (entry) => {
             items={items}
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
+               vendors={vendors} 
           />
         );
 
@@ -313,6 +470,7 @@ const uploadEntryImmediate = async (entry) => {
             items={items}
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
+               vendors={vendors} 
           />
         );
 
@@ -323,6 +481,7 @@ const uploadEntryImmediate = async (entry) => {
             items={items}
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
+               vendors={vendors} 
           />
         );
       case "storebase":
@@ -361,7 +520,27 @@ const uploadEntryImmediate = async (entry) => {
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
             showPaymentStatus={true}
-            allowPaymentEditing={true} // disable editing when readOnly
+            allowPaymentEditing={true} 
+               vendors={vendors} 
+          />
+        );
+
+      case "operationsmanager":
+      case "operations manager":
+        return (
+          <OperationsManagerTable
+            items={items}
+            onEditItem={handleEditItem}
+            isReadOnly={tableReadOnly}
+          />
+        );
+      case "directorofoperations":
+      case "director of operations":
+        return (
+          <DirectOfOpTable
+            items={items}
+            onEditItem={handleEditItem}
+            isReadOnly={tableReadOnly}
           />
         );
 
@@ -382,9 +561,30 @@ const uploadEntryImmediate = async (entry) => {
             onDeliveryStatusChange={handleDeliveryStatusChange}
           />
         );
-      case "requester":
+     case "requester":
       case "Requester":
-        return <RequesterTable items={items} isReadOnly={tableReadOnly} />;
+          if (isShippingTag) {
+          return (
+            <ShippingTable
+              items={items}
+              userRole={userRole}
+              isReadOnly={tableReadOnly}
+              vendors={vendors}
+              selectedRequest={currentRequest}
+              onEditItem={handleEditItem}
+              handleCreateVendor={handleCreateVendor}
+              handleVendorChange={handleVendorChange}
+              onFilesChanged={handleFilesChanged}
+            />
+          );
+        }
+        return (
+          <RequesterTable
+            items={items}
+            userRole={userRole}
+            isReadOnly={tableReadOnly}
+          />
+        );
 
       case "procurement":
       case "procurement officer":
@@ -413,8 +613,7 @@ const uploadEntryImmediate = async (entry) => {
             isPreview={false}
             readOnly={tableReadOnly}
             onSwitchInitiated={(itemId) => {}}
-            onFilesChanged={handleFilesChanged} 
-
+            onFilesChanged={handleFilesChanged}
           />
         );
     }
@@ -579,30 +778,34 @@ const uploadEntryImmediate = async (entry) => {
   };
 
   const processSelectedFiles = (files) => {
-  const maxSize = 10 * 1024 * 1024;
-  const newEntries = files
-    .map((file, idx) => {
-      if (file.size > maxSize) {
-        alert(`${file.name} is too large. Max 10MB per file.`);
-        return null;
-      }
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`;
-      const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
-      return { id, file, previewUrl, progress: 0, uploaded: false };
-    })
-    .filter(Boolean);
+    const maxSize = 10 * 1024 * 1024;
+    const newEntries = files
+      .map((file, idx) => {
+        if (file.size > maxSize) {
+          alert(`${file.name} is too large. Max 10MB per file.`);
+          return null;
+        }
+        const id = `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}-${idx}`;
+        const previewUrl = file.type.startsWith("image/")
+          ? URL.createObjectURL(file)
+          : null;
+        return { id, file, previewUrl, progress: 0, uploaded: false };
+      })
+      .filter(Boolean);
 
-  if (newEntries.length === 0) return;
+    if (newEntries.length === 0) return;
 
-  // add to UI so user can see items (failed uploads remain for retry)
-  setQuotationFiles((prev) => [...prev, ...newEntries]);
+    // add to UI so user can see items (failed uploads remain for retry)
+    setQuotationFiles((prev) => [...prev, ...newEntries]);
 
-  // start uploads immediately (do not await; uploadEntryImmediate handles state & errors)
-  newEntries.forEach((entry) => {
-    // slight delay so state updates before upload begins (optional)
-    setTimeout(() => uploadEntryImmediate(entry), 50);
-  });
-};
+    // start uploads immediately (do not await; uploadEntryImmediate handles state & errors)
+    newEntries.forEach((entry) => {
+      // slight delay so state updates before upload begins (optional)
+      setTimeout(() => uploadEntryImmediate(entry), 50);
+    });
+  };
 
   const handleRemoveFile = (id) => {
     setQuotationFiles((prev) => {
@@ -822,161 +1025,326 @@ const uploadEntryImmediate = async (entry) => {
       )}
 
       {/* Quotation Upload - inserted ABOVE Requested Items (UPDATED for multiple files) */}
-      {canUploadQuotation && !isReadOnly && (
-        <div className="mb-8">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <MdAttachFile className="text-xl" />
-            Upload Quotation
-          </h3>
+      {(canUploadQuotation ||
+        String(currentRequest?.tag || "").toLowerCase().includes("shipping")) &&
+        !isReadOnly && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdAttachFile className="text-xl" />
+              Upload Quotation
+            </h3>
 
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-            <div
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              role="button"
-              tabIndex={0}
-              onClick={handleBrowseClick}
-              className="w-full cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors duration-200 p-6 flex items-center justify-between gap-6"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
-                  📎
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+              <div
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                role="button"
+                tabIndex={0}
+                onClick={handleBrowseClick}
+                className="w-full cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors duration-200 p-6 flex items-center justify-between gap-6"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                    📎
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {quotationFiles.length > 0
+                        ? `${quotationFiles.length} file(s) selected`
+                        : "Drag & drop quotation(s) here, or click to browse"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {quotationFiles.length > 0
-                      ? `${quotationFiles.length} file(s) selected`
-                      : "Drag & drop quotation(s) here, or click to browse"}
-                  </p>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleBrowseClick();
-                  }}
-                  className="px-4 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] transition"
-                >
-                  Add Files
-                </button>
-
-                {quotationFiles.length > 0 && (
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleUploadAll();
+                      handleBrowseClick();
                     }}
-                    disabled={isUploading}
-                    className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 transition text-sm"
+                    className="px-4 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] transition"
                   >
-                    Upload All
+                    Add Files
                   </button>
-                )}
+
+                  {quotationFiles.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUploadAll();
+                      }}
+                      disabled={isUploading}
+                      className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 transition text-sm"
+                    >
+                      Upload All
+                    </button>
+                  )}
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,image/*"
+                  onChange={handleInputChange}
+                  multiple
+                  className="hidden"
+                />
               </div>
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,image/*"
-                onChange={handleInputChange}
-                multiple
-                className="hidden"
-              />
-            </div>
-
-            {/* Files list & per-file actions */}
-            {quotationFiles.length > 0 && (
-              <div className="mt-4 space-y-3">
-                {quotationFiles.map((entry) => (
-                  <div key={entry.id} className="flex items-start gap-4">
-                    <div className="w-20 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden border">
-                      {entry.previewUrl ? (
-                        <img
-                          src={entry.previewUrl}
-                          alt="preview"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="text-slate-600 text-sm px-2 text-center">
-                          {entry.file.type === "application/pdf"
-                            ? "PDF"
-                            : "FILE"}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900 truncate w-72">
-                            {entry.file.name}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {(entry.file.size / 1024 / 1024).toFixed(2)} MB
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUploadFile(entry.id);
-                            }}
-                            disabled={isUploading || entry.uploaded}
-                            className={`px-3 py-2 rounded-md text-sm font-medium ${
-                              isUploading || entry.uploaded
-                                ? "bg-gray-200 text-slate-600 cursor-not-allowed"
-                                : "bg-emerald-500 text-white hover:bg-emerald-600"
-                            }`}
-                          >
-                            {entry.uploaded ? "Uploaded" : "Upload"}
-                          </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveFile(entry.id);
-                            }}
-                            className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Progress */}
-                      <div className="mt-3">
-                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="h-2 bg-emerald-500 transition-all"
-                            style={{ width: `${entry.progress}%` }}
+              {/* Files list & per-file actions */}
+              {quotationFiles.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  {quotationFiles.map((entry) => (
+                    <div key={entry.id} className="flex items-start gap-4">
+                      <div className="w-20 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden border">
+                        {entry.previewUrl ? (
+                          <img
+                            src={entry.previewUrl}
+                            alt="preview"
+                            className="w-full h-full object-cover"
                           />
+                        ) : (
+                          <div className="text-slate-600 text-sm px-2 text-center">
+                            {entry.file.type === "application/pdf"
+                              ? "PDF"
+                              : "FILE"}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 truncate w-72">
+                              {entry.file.name}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {(entry.file.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUploadFile(entry.id);
+                              }}
+                              disabled={isUploading || entry.uploaded}
+                              className={`px-3 py-2 rounded-md text-sm font-medium ${
+                                isUploading || entry.uploaded
+                                  ? "bg-gray-200 text-slate-600 cursor-not-allowed"
+                                  : "bg-emerald-500 text-white hover:bg-emerald-600"
+                              }`}
+                            >
+                              {entry.uploaded ? "Uploaded" : "Upload"}
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveFile(entry.id);
+                              }}
+                              className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm"
+                            >
+                              Clear
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {entry.progress}%{" "}
-                          {isUploading && entry.progress < 100
-                            ? "• uploading"
-                            : entry.uploaded
-                            ? "• complete"
-                            : ""}
-                        </p>
+
+                        {/* Progress */}
+                        <div className="mt-3">
+                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="h-2 bg-emerald-500 transition-all"
+                              style={{ width: `${entry.progress}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {entry.progress}%{" "}
+                            {isUploading && entry.progress < 100
+                              ? "• uploading"
+                              : entry.uploaded
+                              ? "• complete"
+                              : ""}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
       {/* ===== End Quotation Upload ===== */}
 
+      {/* ===== attaching of request to another request ===== */}
+
+      {String(currentRequest?.tag || "").toLowerCase() === "shipping" &&
+        !isReadOnly && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              🔗 Attach Items from Another Request
+            </h3>
+
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
+              <div className="flex gap-3 items-start">
+                <input
+                  value={attachSearchTerm}
+                  onChange={(e) => setAttachSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") performAttachSearch();
+                  }}
+                  placeholder="Search by vendor name or PON and press Enter / Search"
+                  className="flex-1 px-4 py-3 border rounded-xl"
+                />
+                <button
+                  onClick={performAttachSearch}
+                  disabled={attachSearching || !attachSearchTerm.trim()}
+                  className="px-4 py-3 bg-[#036173] text-white rounded-xl"
+                >
+                  {attachSearching ? "Searching..." : "Search"}
+                </button>
+              </div>
+
+              {attachSearchResults.length > 0 && (
+                <div className="mt-4 grid gap-2">
+                  {attachSearchResults.map((res) => (
+                    <div
+                      key={res.requestId || res.id}
+                      className="p-3 rounded-lg border hover:bg-slate-50 cursor-pointer flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold">
+                          {res.summary ||
+                            res.requestId ||
+                            res.purchaseOrderNumber ||
+                            res.reference}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {res.vendor ||
+                            res.requester?.displayName ||
+                            "Unknown vendor"}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() =>
+                            loadSourceRequestItems(res.requestId || res.id)
+                          }
+                          className="px-3 py-1 rounded-md bg-emerald-50 text-emerald-700"
+                        >
+                          View Items
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {attachSourceItems.length > 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        Source: {attachSourceMeta?.requestId}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {attachSourceMeta?.vendor}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={selectAllAttachItems}
+                        className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-md"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        onClick={clearAttachSelection}
+                        className="px-3 py-1 bg-red-50 text-red-600 rounded-md"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    {attachSourceItems.map((it) => {
+                      const iid = it.itemId || it._id || it.id;
+                      return (
+                        <label
+                          key={iid}
+                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                        >
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {it.name || it.description || iid}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Qty: {it.quantity || it.qty || "N/A"}
+                            </div>
+                          </div>
+                          <div>
+                            <input
+                              type="checkbox"
+                              checked={attachSelectedItemIds.includes(iid)}
+                              onChange={() => toggleAttachSelect(iid)}
+                            />
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-2">
+                    <input
+                      placeholder="Purpose (optional)"
+                      className="flex-1 px-3 py-2 border rounded-lg"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const p = e.target.value.trim();
+                          const confirmed = window.confirm(
+                            "Attach selected items to this request?"
+                          );
+                          if (confirmed)
+                            attachSelectedToTarget(currentRequest.requestId, p);
+                        }
+                      }}
+                      id="attach-purpose-input"
+                    />
+                    <button
+                      onClick={() => {
+                        const el = document.getElementById(
+                          "attach-purpose-input"
+                        );
+                        const purpose = el ? el.value.trim() : "";
+                        const confirmed = window.confirm(
+                          "Attach selected items to this request?"
+                        );
+                        if (confirmed)
+                          attachSelectedToTarget(
+                            currentRequest.requestId,
+                            purpose
+                          );
+                      }}
+                      disabled={attachSelectedItemIds.length === 0}
+                      className="px-4 py-2 bg-[#036173] text-white rounded-lg"
+                    >
+                      Attach Selected
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       {/* Items List - Role-based table */}
-      {currentRequest?.items && currentRequest.items.length > 0 && (
+        {currentRequest?.items && currentRequest.items.length > 0 && (
         <div className="mb-8">
           <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
             <MdShoppingCart className="text-xl" />
@@ -1034,8 +1402,7 @@ const uploadEntryImmediate = async (entry) => {
         requestId={request.requestId}
         files={currentRequest?.quotationFiles || []}
         requestData={currentRequest}
-                filesRefreshCounter={filesRefreshCounter} // <-- added: signal to trigger attached-docs refresh
-
+        filesRefreshCounter={filesRefreshCounter} // <-- added: signal to trigger attached-docs refresh
       />
 
       {/* Action Footer */}

@@ -6,11 +6,30 @@ import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 const MDTable = ({ 
   items = [], 
   onEditItem,
-  isReadOnly = false 
+  isReadOnly = false ,
+    vendors = [],
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
+
+   const vendorsById = React.useMemo(() => {
+    const map = new Map();
+    (vendors || []).forEach((v) => {
+      const id = v.vendorId || v._id || v.id;
+      if (id) map.set(String(id), v);
+    });
+    return map;
+  }, [vendors]);
+
+  const resolveVendorName = (vendorField) => {
+    if (!vendorField) return "N/A";
+    const key = String(vendorField);
+    const found = vendorsById.get(key);
+    if (found) return found.name || found.vendorName || key;
+    // fallback: if vendorField already looks like a name, return it
+    return vendorField;
+  };
 
 // Check if table needs horizontal scrolling
 React.useEffect(() => {
@@ -153,8 +172,8 @@ return (
 
               {/* ✅ Vendor Column */}
               <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                {item.vendor || "N/A"}
-              </td>
+                      {resolveVendorName(item.vendor)}
+                    </td>
 
               {/* Quantity - Editable */}
               <td className="border border-slate-200 px-4 py-3 text-center">

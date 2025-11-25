@@ -1,40 +1,21 @@
-// src/components/tables/FleetManagerTable.jsx
+// src/components/tables/OperationsManagerTable.jsx
 
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const FleetManagerTable = ({ 
+const OperationsManagerTable = ({ 
   items = [], 
   onEditItem,
-  isReadOnly = false ,
-  vendors =[],
+  isReadOnly = false 
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
 
-   const vendorsById = React.useMemo(() => {
-    const map = new Map();
-    (vendors || []).forEach((v) => {
-      const id = v.vendorId || v._id || v.id;
-      if (id) map.set(String(id), v);
-    });
-    return map;
-  }, [vendors]);
-
-  const resolveVendorName = (vendorField) => {
-    if (!vendorField) return "N/A";
-    const key = String(vendorField);
-    const found = vendorsById.get(key);
-    if (found) return found.name || found.vendorName || key;
-    // fallback: if vendorField already looks like a name, return it
-    return vendorField;
-  };
-
 // Check if table needs horizontal scrolling
 React.useEffect(() => {
   const checkScroll = () => {
-    const container = document.getElementById('fleet-table-container');
+    const container = document.getElementById('operations-table-container');
     if (container) {
       setNeedsScroll(container.scrollWidth > container.clientWidth);
     }
@@ -106,7 +87,7 @@ React.useEffect(() => {
 return (
   <div className="relative">
     {/* ✅ Scrollable table container */}
-    <div className="overflow-x-auto" id="fleet-table-container">
+    <div className="overflow-x-auto" id="operations-table-container">
       <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
         <thead>
           <tr className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
@@ -131,12 +112,7 @@ return (
             <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
               Quantity
             </th>
-            <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-              Unit Price
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-              Total Price
-            </th>
+           
           </tr>
         </thead>
         <tbody>
@@ -171,9 +147,10 @@ return (
               </td>
 
               {/* ✅ Vendor Column */}
-               <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                      {resolveVendorName(item.vendor)}
-                    </td>
+              <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                {item.vendor || "N/A"}
+              </td>
+
               {/* Quantity - Editable */}
               <td className="border border-slate-200 px-4 py-3 text-center">
                 {editingIndex === index ? (
@@ -189,27 +166,7 @@ return (
                 )}
               </td>
 
-              {/* Unit Price - Read Only */}
-              <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                {item.unitPrice ? (
-                  <>
-                    {item.currency || "NGN"} {parseFloat(item.unitPrice).toFixed(2)}
-                  </>
-                ) : (
-                  "N/A"
-                )}
-              </td>
-
-              {/* Total Price - Calculated */}
-              <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                {item.total || item.unitPrice ? (
-                  <>
-                    {item.currency || "NGN"} {calculateTotal(item)}
-                  </>
-                ) : (
-                  "N/A"
-                )}
-              </td>
+          
             </tr>
           ))}
         </tbody>
@@ -222,7 +179,7 @@ return (
         <button
           className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
           onClick={() => {
-            const container = document.getElementById('fleet-table-container');
+            const container = document.getElementById('operations-table-container');
             if (container) {
               container.scrollLeft -= 100;
             }
@@ -233,7 +190,7 @@ return (
         <button
           className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
           onClick={() => {
-            const container = document.getElementById('fleet-table-container');
+            const container = document.getElementById('operations-table-container');
             if (container) {
               container.scrollLeft += 100;
             }
@@ -247,4 +204,4 @@ return (
 );
 };
 
-export default FleetManagerTable;
+export default OperationsManagerTable;

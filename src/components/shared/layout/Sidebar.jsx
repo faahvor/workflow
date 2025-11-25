@@ -7,9 +7,12 @@ import {
   MdPendingActions,
   MdCheckCircle,
   MdAdd,
+  MdDescription,
+  MdInventory,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { FaFileSignature } from "react-icons/fa";
 
 const Sidebar = ({
   activeView,
@@ -20,6 +23,7 @@ const Sidebar = ({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const isProcurement = String(user?.role || "") === "Procurement Manager";
 
   const handleLogout = () => {
     logout();
@@ -151,8 +155,8 @@ const Sidebar = ({
             {/* Completed Requests */}
             <button
               onClick={() => {
-                setActiveView("completed"); 
-                setIsSidebarOpen(false); 
+                setActiveView("completed");
+                setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                 activeView === "completed"
@@ -163,7 +167,55 @@ const Sidebar = ({
               <MdCheckCircle className="text-xl shrink-0" />
               <span className="font-medium text-sm">Completed</span>
             </button>
-           
+
+            <button
+              onClick={() => {
+                setActiveView("signature");
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                activeView === "signature"
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+              }`}
+            >
+              <FaFileSignature className="text-xl shrink-0" />
+              <span className="font-medium text-sm">Signature Manager</span>
+            </button>
+
+            {isProcurement && (
+              <button
+                onClick={() => {
+                  setActiveView("vendorManagement");
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                  activeView === "vendorManagement"
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                }`}
+              >
+                <MdDescription className="text-xl shrink-0" />
+                <span className="font-medium text-sm">Vendor Management</span>
+              </button>
+            )}
+
+             {isProcurement && (
+              <button
+                onClick={() => {
+                  setActiveView("inventoryManagement");
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                  activeView === "inventoryManagement"
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                }`}
+              >
+                <MdInventory className="text-xl shrink-0" />
+                <span className="font-medium text-sm">Inventory Management</span>
+              </button>
+            )}
           </div>
         </nav>
 
