@@ -13,6 +13,7 @@ import {
   MdInventory,
    MdHelpOutline,
 } from "react-icons/md";
+import { FaHouseFloodWaterCircleArrowRight } from "react-icons/fa6";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -48,7 +49,13 @@ const RequesterPending = ({
     return <MdHelpOutline className="text-sm" />;
   };
 
+ const getClearingColor = () => {
+    return "bg-purple-100 text-blue-700 border-purple-200";
+  };
 
+  const getClearingIcon = () => {
+    return <FaHouseFloodWaterCircleArrowRight className="text-sm" />;
+  };
   useEffect(() => {
     setLocalSearch(searchQuery);
   }, [searchQuery]);
@@ -172,6 +179,13 @@ const RequesterPending = ({
                         <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-blue-100 text-blue-700 border-blue-200">
                           <MdLocalShipping className="text-sm" />
                           <span>Shipping</span>
+                        </span>
+                      )}
+                      {(request.tag?.includes?.("Clearing") ||
+                        request.tag === "Clearing") && (
+                        <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getClearingColor()}`}>
+                          {getClearingIcon()}
+                          <span>Clearing</span>
                         </span>
                       )}
                       {request.items &&

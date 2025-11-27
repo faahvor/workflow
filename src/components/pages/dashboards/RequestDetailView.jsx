@@ -36,6 +36,7 @@ import InvoiceUpload from "./InvoiceUpload";
 import AttachItems from "./AttachItems";
 import AccountLeadTable from "../../shared/tables/AccountLeadtable";
 import CFOTable from "../../shared/tables/CFOTable";
+import ClearingTable from "../../shared/tables/ClearingTable";
 
 const RequestDetailView = ({
   request,
@@ -302,6 +303,15 @@ const RequestDetailView = ({
     "operations manager",
     "equipment manager",
   ];
+  const allowedQueryRoles = ["vessel manager", "managing director"];
+  const isVesselManagerBlockedForActions =
+    userRole === "vessel manager" &&
+    (
+      selectedRequest?.flow?.currentState ||
+      request?.flow?.currentState ||
+      request?.status ||
+      ""
+    ).toString() === "PENDING_VESSEL_MANAGER_APPROVAL_2";
 
   const openRejectModal = () => {
     setRejectComment("");
@@ -1327,6 +1337,7 @@ const RequestDetailView = ({
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
             vendors={vendors}
+            tag={currentRequest?.tag}
           />
         );
 
@@ -1453,8 +1464,14 @@ const RequestDetailView = ({
             onDeliveryStatusChange={handleDeliveryStatusChange}
           />
         );
-      case "requester":
+           case "requester":
       case "Requester":
+        const isShippingTag = String(currentRequest?.tag || "")
+          .toLowerCase()
+          .includes("shipping");
+        const isClearingTag = String(currentRequest?.tag || "")
+          .toLowerCase()
+          .includes("clearing");
         if (isShippingTag) {
           return (
             <ShippingTable
@@ -1467,6 +1484,19 @@ const RequestDetailView = ({
               handleCreateVendor={handleCreateVendor}
               handleVendorChange={handleVendorChange}
               onFilesChanged={handleFilesChanged}
+            />
+          );
+        }
+
+           if (isClearingTag) {
+          return (
+            <ClearingTable
+              items={items}
+              userRole={userRole}
+              isReadOnly={tableReadOnly}
+              vendors={vendors}
+              selectedRequest={currentRequest}
+              onEditItem={handleEditItem}
             />
           );
         }
@@ -2770,9 +2800,12 @@ const RequestDetailView = ({
 
       {/* Quotation Upload - inserted ABOVE Requested Items (UPDATED for multiple files) */}
       {(canUploadQuotation ||
-        (String(currentRequest?.tag || "")
+        ((String(currentRequest?.tag || "")
           .toLowerCase()
-          .includes("shipping") &&
+          .includes("shipping") ||
+          String(currentRequest?.tag || "")
+            .toLowerCase()
+            .includes("clearing")) &&
           userRole === "requester")) &&
         !isReadOnly && (
           <div className="mb-8">
@@ -3459,24 +3492,28 @@ const RequestDetailView = ({
               Review the request details and take action
             </p>
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-              {allowedRejectRoles.includes(userRole) && (
-                <button
-                  onClick={openRejectModal}
-                  disabled={actionLoading}
-                  className="w-full sm:w-auto px-6 h-12 bg-white border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:border-slate-400 hover:bg-slate-50 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <MdCancel className="text-lg" />
-                  Reject
-                </button>
-              )}
-              <button
-                onClick={openQueryModal}
-                disabled={actionLoading}
-                className="w-full sm:w-auto px-6 h-12 bg-amber-500 text-white rounded-xl font-semibold hover:bg-amber-600 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-50"
-              >
-                <MdHelp className="text-lg" />
-                Query
-              </button>
+              {allowedRejectRoles.includes(userRole) &&
+                !isVesselManagerBlockedForActions && (
+                  <button
+                    onClick={openRejectModal}
+                    disabled={actionLoading}
+                    className="w-full sm:w-auto px-6 h-12 bg-white border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:border-slate-400 hover:bg-slate-50 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <MdCancel className="text-lg" />
+                    Reject
+                  </button>
+                )}
+              {allowedQueryRoles.includes(userRole) &&
+                !isVesselManagerBlockedForActions && (
+                  <button
+                    onClick={openQueryModal}
+                    disabled={actionLoading}
+                    className="w-full sm:w-auto px-6 h-12 bg-amber-500 text-white rounded-xl font-semibold hover:bg-amber-600 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-50"
+                  >
+                    <MdHelp className="text-lg" />
+                    Query
+                  </button>
+                )}
               <button
                 onClick={handleApproveClick}
                 disabled={

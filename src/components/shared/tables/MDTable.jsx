@@ -9,10 +9,13 @@ const MDTable = ({
   isReadOnly = false ,
     vendors = [],
     requestType = "",
+    tag = ""
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
+  const hidePrices = ["shipping", "clearing"].includes(String(tag || "").toLowerCase());
+
 
   React.useEffect(() => {
   const checkScroll = () => {
@@ -160,12 +163,15 @@ return (
             <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
               Quantity
             </th>
+                        {!hidePrices && (
+<>
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               Unit Price
             </th>
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               Total Price
             </th>
+            </>)}
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               PRN
             </th>
@@ -222,6 +228,8 @@ return (
                 )}
               </td>
 
+            {!hidePrices && (
+<>
               {/* Unit Price - Read Only */}
               <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                 {item.unitPrice ? (
@@ -243,6 +251,7 @@ return (
                   "N/A"
                 )}
               </td>
+              </>)}
               <td className="border border-slate-200 px-4 py-3 text-center text-sm  text-slate-700">
                 {item.purchaseRequisitionNumber || "N/A"}
               </td>
