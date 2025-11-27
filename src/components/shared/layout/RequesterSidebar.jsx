@@ -14,6 +14,7 @@ import {
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { IoAttach } from "react-icons/io5";
 
 const RequesterSidebar = ({
   activeView,
@@ -29,16 +30,19 @@ const RequesterSidebar = ({
   const navigate = useNavigate();
 
   useEffect(() => {
-    const requestsViews = [
-      "createNew",
-      "pending",
-      "myrequests",    ];
+    const requestsViews = ["createNew", "pending", "myrequests"];
+    // include merged only for users in the Operations department (case-insensitive)
+    const dept = (user?.department || "").toString().toLowerCase();
+    if (dept.includes("operation")) {
+      requestsViews.push("merged");
+    }
+
     if (requestsViews.includes(activeView)) {
       setRequestsExpanded(true);
     } else {
       setRequestsExpanded(false);
     }
-  }, [activeView]);
+  }, [activeView, user]);
 
   const handleLogout = () => {
     logout();
@@ -138,6 +142,35 @@ const RequesterSidebar = ({
                     </span>
                   )}
                 </button>
+                <button
+                  onClick={() => setActiveView("myrequests")}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                    activeView === "myrequests" || (activeView === "detail" && selectedRequestOrigin === "myrequests")
+                      ? "bg-gray-800/80 text-white"
+                      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <MdPendingActions className="text-lg" />
+                    <span className="text-sm">My Requests</span>
+                  </div>
+                 
+                </button>
+             {(user?.department || "").toString().toLowerCase().includes("operation") && (
+                  <button
+                    onClick={() => setActiveView("merged")}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                      activeView === "merged"
+                        ? "bg-gray-800/80 text-white"
+                        : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <IoAttach className="text-lg" />
+                      <span className="text-sm">Merged</span>
+                    </div>
+                  </button>
+                )}
 
               
 

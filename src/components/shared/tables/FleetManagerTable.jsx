@@ -8,10 +8,14 @@ const FleetManagerTable = ({
   onEditItem,
   isReadOnly = false ,
   vendors =[],
+   requestType = "",
+  
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
+ 
+
 
    const vendorsById = React.useMemo(() => {
     const map = new Map();
@@ -30,6 +34,33 @@ const FleetManagerTable = ({
     // fallback: if vendorField already looks like a name, return it
     return vendorField;
   };
+  React.useEffect(() => {
+  const checkScroll = () => {
+    const container = document.getElementById("fleet-table-container");
+    if (!container) {
+      console.log("fleet-table: container not found");
+      setNeedsScroll(false);
+      return;
+    }
+    const scrollW = container.scrollWidth;
+    const clientW = container.clientWidth;
+    console.log("fleet-table: scrollWidth", scrollW, "clientWidth", clientW);
+    // small tolerance to avoid off-by-one layout reports
+    setNeedsScroll(scrollW > clientW + 1);
+  };
+
+  // run after paint/layout
+  const runCheck = () => {
+    requestAnimationFrame(checkScroll);
+    // also schedule a small timeout in case fonts/images changed layout
+    setTimeout(checkScroll, 50);
+  };
+
+  runCheck();
+  window.addEventListener("resize", runCheck);
+
+  return () => window.removeEventListener("resize", runCheck);
+}, [editedItems]);
 
 // Check if table needs horizontal scrolling
 React.useEffect(() => {
@@ -134,9 +165,15 @@ return (
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               Unit Price
             </th>
+             
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               Total Price
             </th>
+              {requestType !== "pettyCash" && (
+            <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+             PRN
+            </th>
+              )}
           </tr>
         </thead>
         <tbody>
@@ -210,6 +247,11 @@ return (
                   "N/A"
                 )}
               </td>
+                {requestType !== "pettyCash" && (
+              <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
+                {item.purchaseRequisitionNumber || "N/A"}
+              </td>
+                )}
             </tr>
           ))}
         </tbody>

@@ -14,6 +14,7 @@ import {
   MdShoppingCart,
   MdAttachMoney,
   MdCheckCircle,
+  MdInventory,
 } from "react-icons/md";
 import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
@@ -23,6 +24,7 @@ import Approved from "./Approved";
 import UsersSignature from "./UsersSignature";
 import VendorManagement from "./VendorManagement";
 import InventoryManagement from "./InventoryManagement";
+import RequesterMerged from "./RequesterMerged";
 
 // ManagerDashboard component
 const ManagerDashboard = () => {
@@ -145,6 +147,7 @@ const ManagerDashboard = () => {
   };
 
   // Approve a request
+  // ...existing code...
   const handleApprove = async (requestId) => {
     if (!window.confirm("Are you sure you want to approve this request?")) {
       return;
@@ -162,6 +165,24 @@ const ManagerDashboard = () => {
         }
       );
 
+      console.log("🔁 approve response:", response?.data);
+
+      // fetch the full request to inspect items after approve
+      try {
+        const reqResp = await axios.get(
+          `${API_BASE_URL}/requests/${requestId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        console.log(
+          "🔁 request after approve:",
+          reqResp?.data?.data ?? reqResp?.data
+        );
+      } catch (fetchErr) {
+        console.error("Error fetching request after approve:", fetchErr);
+      }
+
       alert("Request approved successfully!");
 
       setView("list");
@@ -174,7 +195,7 @@ const ManagerDashboard = () => {
       setActionLoading(false);
     }
   };
-
+  // ...existing code...
   // Reject a request
   const handleReject = async (requestId) => {
     if (!window.confirm("Are you sure you want to reject this request?")) {
@@ -250,6 +271,26 @@ const ManagerDashboard = () => {
     setView("detail");
   };
 
+  const getTagColor = (tag) => {
+    if (!tag) return "bg-slate-100 text-slate-600 border-slate-200";
+    switch (String(tag).toLowerCase()) {
+      case "shipping":
+        return "bg-teal-100 text-teal-600 border-teal-200";
+      default:
+        return "bg-slate-100 text-slate-600 border-slate-200";
+    }
+  };
+
+  const getTagIcon = (tag) => {
+    if (!tag) return null;
+    switch (String(tag).toLowerCase()) {
+      case "shipping":
+        return <MdDirectionsBoat className="text-sm" />;
+      default:
+        return null;
+    }
+  };
+
   // Get CSS color classes for request type
   const getTypeColor = (type) => {
     switch (type) {
@@ -284,6 +325,14 @@ const ManagerDashboard = () => {
       default:
         return type;
     }
+  };
+
+  const getInStockColor = () => {
+    return "bg-green-100 text-green-700 border-green-200";
+  };
+
+  const getInStockIcon = () => {
+    return <MdInventory className="text-sm" />;
   };
 
   // Get vessel name from vesselId
@@ -505,7 +554,8 @@ const ManagerDashboard = () => {
 
                 {activeView !== "signature" &&
                   activeView !== "vendorManagement" &&
-                  activeView !== "inventoryManagement" && (
+                  activeView !== "inventoryManagement" &&
+                  activeView !== "merged" && (
                     <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
                       <div className="flex flex-col md:flex-row gap-4">
                         <div className="flex-1 relative">
@@ -554,6 +604,13 @@ const ManagerDashboard = () => {
                     filterType={filterType}
                     onOpenDetail={handleOpenDetail}
                   />
+                ) : activeView === "merged" ? (
+                  <RequesterMerged
+                    user={user}
+                    getToken={getToken}
+                    API_BASE_URL={API_BASE_URL}
+                    onOpenDetail={handleOpenDetail}
+                  />
                 ) : activeView !== "signature" &&
                   activeView !== "vendorManagement" &&
                   activeView !== "inventoryManagement" ? (
@@ -570,8 +627,36 @@ const ManagerDashboard = () => {
                                 {request.requestId}
                               </span>
 
+                              {/* Tag badge (shows first, when present) */}
+                              {request.tag && (
+                                <span
+                                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTagColor(
+                                    request.tag
+                                  )}`}
+                                >
+                                  {getTagIcon(request.tag)}
+                                  <span>
+                                    {String(request.tag).replace(
+                                      /(^\w|\s\w)/g,
+                                      (m) => m.toUpperCase()
+                                    )}
+                                  </span>
+                                </span>
+                              )}
+                              {request.items &&
+                                request.items.some(
+                                  (it) => it && it.inStock
+                                ) && (
+                                  <span
+                                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getInStockColor()}`}
+                                  >
+                                    {getInStockIcon()}
+                                    <span>In Stock</span>
+                                  </span>
+                                )}
+
                               <span
-                                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
+                                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
                                   request.requestType
                                 )}`}
                               >

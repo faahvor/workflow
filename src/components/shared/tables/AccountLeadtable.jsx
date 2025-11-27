@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const AccountTable = ({
+const AccountLeadTable = ({
   items = [],
   onEditItem,
   isReadOnly = false,
@@ -10,16 +10,11 @@ const AccountTable = ({
   onRefreshRequest = () => {},
   vendors = [],
   requestType = "",
-  currentState = "",
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const isSecondApproval = currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2";
-  const isPettyCash = requestType === "pettyCash";
-  const showPaymentColumns =
-    requestType === "purchaseOrder" || (isPettyCash && isSecondApproval);
 
   // ...existing code...
   const buildChangesForAccountItem = (editedItem) => {
@@ -286,37 +281,12 @@ const AccountTable = ({
               <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                 Unit Price
               </th>
-              {showPaymentColumns && (
-                <>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-                    Payment Status
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-                    Percentage Paid
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    Paid
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    Balance
-                  </th>
-                </>
-              )}
-              {showPaymentStatus && (
-                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                  Total Price
-                </th>
-              )}
-              {requestType !== "pettyCash" && (
-                <>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    PRN
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    PON
-                  </th>
-                </>
-              )}
+
+              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                Total Price
+              </th>
+
+          
             </tr>
           </thead>
           <tbody>
@@ -385,106 +355,7 @@ const AccountTable = ({
                     "N/A"
                   )}
                 </td>
-                {showPaymentColumns && (
-                  <>
-                    {/* Payment Status */}
-                    <td className="border border-slate-200 px-4 py-3 text-center">
-                      {allowPaymentEditing ? (
-                        <select
-                          value={item.paymentStatus || "notpaid"}
-                          onChange={async (e) => {
-                            handlePaymentStatusChange(index, e.target.value);
-                            // ✅ Save immediately after change
-                            await handleSaveClick(index);
-                          }}
-                          className="border-2 border-emerald-300 px-3 py-1 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                          <option value="notpaid">Not Paid</option>
-                          <option value="paid">Paid</option>
-                          <option value="partpayment">Partially Paid</option>
-                        </select>
-                      ) : (
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            item.paymentStatus === "paid"
-                              ? "bg-green-100 text-green-800"
-                              : item.paymentStatus === "part"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {item.paymentStatus === "paid"
-                            ? "Paid"
-                            : item.paymentStatus === "partpayment"
-                            ? "Part"
-                            : "Not Paid"}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Percentage Paid */}
-                    <td className="border border-slate-200 px-4 py-3 text-center">
-                      {item.paymentStatus === "partpayment" ? (
-                        allowPaymentEditing ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="1" // ✅ Changed from 0.01 to 1 for whole numbers only
-                              value={item.percentagePaid || ""}
-                              onChange={(e) => {
-                                handlePercentagePaidChange(
-                                  index,
-                                  e.target.value
-                                );
-                              }}
-                              onKeyDown={(e) => {
-                                // ✅ Save on Enter key
-                                if (e.key === "Enter") {
-                                  e.target.blur();
-                                  handleSaveClick(index);
-                                }
-                              }}
-                              onBlur={() => {
-                                // ✅ Save when user clicks away
-                                handleSaveClick(index);
-                              }}
-                              className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                            <span className="text-sm text-slate-600">%</span>
-                          </div>
-                        ) : (
-                          <span className="font-semibold text-slate-900">
-                            {item.percentagePaid
-                              ? `${item.percentagePaid}%`
-                              : "0"}
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-
-                    {/* Paid Amount */}
-                    <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-green-700">
-                      {item.currency || "NGN"}{" "}
-                      {Number(item.paid || 0).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-
-                    {/* Balance */}
-                    <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-red-700">
-                      {item.currency || "NGN"}{" "}
-                      {Number(item.balance || 0).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-                  </>
-                )}
+            
 
                 {/* Total Price - Calculated */}
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700">
@@ -497,17 +368,7 @@ const AccountTable = ({
                   )}
                 </td>
 
-                {requestType !== "pettyCash" && (
-                  <>
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseRequisitionNumber || "N/A"}
-                    </td>
-
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseOrderNumber || "N/A"}
-                    </td>
-                  </>
-                )}
+            
               </tr>
             ))}
           </tbody>
@@ -530,19 +391,6 @@ const AccountTable = ({
           >
             ◄
           </button>
-          <div className="flex items-center justify-center">
-            <button
-              onClick={handleSaveAll}
-              disabled={isSaving}
-              className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
-                isSaving
-                  ? "bg-gray-300 text-gray-700 cursor-not-allowed"
-                  : "bg-[#036173] text-white hover:bg-[#024f57]"
-              }`}
-            >
-              {isSaving ? "Saving..." : "Save Changes"}
-            </button>
-          </div>
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
@@ -562,4 +410,4 @@ const AccountTable = ({
   );
 };
 
-export default AccountTable;
+export default AccountLeadTable;

@@ -11,7 +11,8 @@ const VesselManagerTable = ({
   requestId,
   isReadOnly = false,
   currentState = "",
-    vendors = [], // ✅ ADD THIS PROP
+  requestType = "",
+  vendors = [], // ✅ ADD THIS PROP
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
@@ -19,9 +20,9 @@ const VesselManagerTable = ({
 
   // ✅ Check if we're in second approval stage
   const isSecondApproval = currentState === "PENDING_VESSEL_MANAGER_APPROVAL_2";
+  const isPettyCash = requestType === "pettyCash";
 
-
-   const vendorsById = React.useMemo(() => {
+  const vendorsById = React.useMemo(() => {
     const map = new Map();
     (vendors || []).forEach((v) => {
       const id = v.vendorId || v._id || v.id;
@@ -30,14 +31,36 @@ const VesselManagerTable = ({
     return map;
   }, [vendors]);
 
+  // ...existing code...
   const resolveVendorName = (vendorField) => {
     if (!vendorField) return "N/A";
+
+    // if an object, prefer name then try vendorId/id fallback
+    if (typeof vendorField === "object") {
+      const name =
+        vendorField.name ||
+        vendorField.vendorName ||
+        vendorField.label ||
+        vendorField.vendor ||
+        null;
+      if (name) return String(name);
+      const id = vendorField.vendorId ?? vendorField._id ?? vendorField.id;
+      if (id && vendorsById.has(String(id))) {
+        const found = vendorsById.get(String(id));
+        return found?.name || String(id);
+      }
+      return "N/A";
+    }
+
+    // string or id
     const key = String(vendorField);
-    const found = vendorsById.get(key);
-    if (found) return found.name || found.vendorName || key;
-    // fallback: if vendorField already looks like a name, return it
-    return vendorField;
+    if (vendorsById.has(key)) {
+      const found = vendorsById.get(key);
+      return found?.name || key;
+    }
+    return key;
   };
+  // ...existing code...
   // Update editedItems when items prop changes
   React.useEffect(() => {
     setEditedItems(items);
@@ -47,23 +70,71 @@ const VesselManagerTable = ({
     setEditingIndex(index);
   };
 
+  // ...existing code...
   const handleSaveClick = async (index) => {
     const item = editedItems[index];
 
-    if (!item.quantity || item.quantity < 1) {
+    // ensure a valid quantity
+    const quantity = Number(item.quantity) || 0;
+    if (quantity < 1) {
       alert("Quantity must be at least 1");
       return;
     }
 
+    // Build minimal, sanitized payload (only send fields you intend to change)
+    const payload = {
+      itemId: item.itemId || item._id,
+      quantity,
+      requestId, // include requestId explicitly
+    };
+
+    // optionally include vendorId if present
+    if (
+      item.vendorId !== undefined &&
+      item.vendorId !== null &&
+      item.vendorId !== ""
+    ) {
+      payload.vendorId = item.vendorId;
+    }
+
+    console.log("VesselManagerTable -> sending PATCH payload:", payload);
+
     try {
-      await onEditItem(item);
+      const result = await onEditItem(payload);
+
+      console.log("VesselManagerTable -> edit result:", result);
+
+      // Update local copy immediately so UI reflects saved quantity
+      setEditedItems((prev) =>
+        prev.map((it, i) => (i === index ? { ...it, quantity } : it))
+      );
+
       setEditingIndex(null);
       alert("✅ Item updated successfully!");
     } catch (error) {
-      console.error("❌ Error saving item:", error);
-      alert("❌ Failed to update item");
+      console.error("❌ Error saving item:", {
+        message: error.message,
+        status: error.response?.status,
+        responseData: error.response?.data,
+        payload,
+      });
+
+      const serverErrors = error.response?.data?.errors;
+      if (Array.isArray(serverErrors) && serverErrors.length) {
+        const msgs = serverErrors
+          .map((e) => {
+            const field = e.path || e.param || e.location || "field";
+            const msg = e.msg || e.message || JSON.stringify(e);
+            return `${field}: ${msg}`;
+          })
+          .join("; ");
+        alert(`Server validation errors: ${msgs}`);
+      } else {
+        alert("❌ Failed to update item");
+      }
     }
   };
+  // ...existing code...
 
   const handleCancelEdit = () => {
     setEditedItems(items); // Reset to original
@@ -76,23 +147,12 @@ const VesselManagerTable = ({
     setEditedItems(newItems);
   };
 
-  const handleDeleteClick = async (item) => {
-    if (!window.confirm(`Are you sure you want to delete "${item.name}"?`)) {
-      return;
-    }
-
-    const reason = prompt("Please provide a reason for deleting this item:");
-    if (!reason || reason.trim() === "") {
-      alert("Deletion reason is required");
-      return;
-    }
-
-    try {
-      await onDeleteItem(requestId, item.itemId, reason);
-      alert("✅ Item deleted successfully!");
-    } catch (error) {
-      console.error("❌ Error deleting item:", error);
-      alert("❌ Failed to delete item");
+  const handleDeleteClick = (item) => {
+    // delegate deletion flow to parent (parent will open modal and call API)
+    if (typeof onDeleteItem === "function") {
+      onDeleteItem(item);
+    } else {
+      console.warn("onDeleteItem not provided");
     }
   };
 
@@ -137,7 +197,7 @@ const VesselManagerTable = ({
       <div className="overflow-x-auto" id="vessel-table-container">
         <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
           <thead>
-          <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
+            <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                 SN
               </th>
@@ -158,28 +218,41 @@ const VesselManagerTable = ({
               </th>
 
               {/* ✅ Show pricing columns in second approval */}
-              {isSecondApproval && (
+              {(isSecondApproval || isPettyCash) && (
                 <>
-                  <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-                    Vendor
-                  </th>
+                  {!isPettyCash && (
+                    <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
+                      Vendor
+                    </th>
+                  )}
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Unit Price
                   </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
-                    Discount (%)
-                  </th>
+
+                  {!isPettyCash && (
+                    <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                      Discount (%)
+                    </th>
+                  )}
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Total Price
                   </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    VAT Amount
-                  </th>
+
+                  {!isPettyCash && (
+                    <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                      VAT Amount
+                    </th>
+                  )}
                 </>
+              )}
+              {isSecondApproval && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  PRN
+                </th>
               )}
 
               {/* ✅ Hide Actions column in second approval */}
-              {!isReadOnly && !isSecondApproval && (
+              {!isReadOnly && !(isSecondApproval || isPettyCash) && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Actions
                 </th>
@@ -237,33 +310,38 @@ const VesselManagerTable = ({
                 </td>
 
                 {/* ✅ Pricing Columns (only in second approval) */}
-                {isSecondApproval && (
+                {(isSecondApproval || isPettyCash) && (
                   <>
                     {/* ✅ Vendor Column */}
-                     <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                      {resolveVendorName(item.vendor)}
-                    </td>
+
+                    {!isPettyCash && (
+                      <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                        {resolveVendorName(item.vendor)}
+                      </td>
+                    )}
                     {/* Unit Price */}
-                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-900">
-                      <span className="font-semibold">
-                        {item.currency || "NGN"}{" "}
-                        {Number(item.unitPrice || 0).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
+                    <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                      {item.currency || "NGN"}{" "}
+                      {Number(item.unitPrice || 0).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </td>
 
                     {/* Discount */}
-                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                      {item.discount ? `${item.discount}%` : "0%"}
-                    </td>
+                    {!isPettyCash && (
+                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                        {item.discount ? `${item.discount}%` : "0%"}
+                      </td>
+                    )}
 
                     {/* Total Price */}
                     <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-900">
                       <span className="font-semibold">
                         {item.currency || "NGN"}{" "}
-                        {Number(item.totalPrice || 0).toLocaleString(undefined, {
+                        {Number(
+                          item.totalPrice || item.total || 0
+                        ).toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
@@ -271,27 +349,36 @@ const VesselManagerTable = ({
                     </td>
 
                     {/* VAT Amount */}
-                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                      {item.vatted ? (
-                        <span>
-                          {item.currency || "NGN"}{" "}
-                          {Number(calculateVatAmount(item)).toLocaleString(
-                            undefined,
-                            {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            }
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">N/A</span>
-                      )}
-                    </td>
+                    {!isPettyCash && (
+                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                        {item.vatted ? (
+                          <span>
+                            {item.currency || "NGN"}{" "}
+                            {Number(calculateVatAmount(item)).toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">N/A</span>
+                        )}
+                      </td>
+                    )}
                   </>
+                )}
+                {isSecondApproval && (
+                  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    {item.purchaseRequisitionNumber ||
+                      item.purchaseRequisitionNumber ||
+                      "N/A"}
+                  </td>
                 )}
 
                 {/* ✅ Actions (hidden in second approval) */}
-                {!isReadOnly && !isSecondApproval && (
+                {!isReadOnly && !isSecondApproval && !isPettyCash && (
                   <td className="border border-slate-200 px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       {editingIndex === index ? (

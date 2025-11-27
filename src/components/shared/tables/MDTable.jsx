@@ -8,10 +8,39 @@ const MDTable = ({
   onEditItem,
   isReadOnly = false ,
     vendors = [],
+    requestType = "",
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
+
+  React.useEffect(() => {
+  const checkScroll = () => {
+    const container = document.getElementById("fleet-table-container");
+    if (!container) {
+      console.log("fleet-table: container not found");
+      setNeedsScroll(false);
+      return;
+    }
+    const scrollW = container.scrollWidth;
+    const clientW = container.clientWidth;
+    console.log("fleet-table: scrollWidth", scrollW, "clientWidth", clientW);
+    // small tolerance to avoid off-by-one layout reports
+    setNeedsScroll(scrollW > clientW + 1);
+  };
+
+  // run after paint/layout
+  const runCheck = () => {
+    requestAnimationFrame(checkScroll);
+    // also schedule a small timeout in case fonts/images changed layout
+    setTimeout(checkScroll, 50);
+  };
+
+  runCheck();
+  window.addEventListener("resize", runCheck);
+
+  return () => window.removeEventListener("resize", runCheck);
+}, [editedItems]);
 
    const vendorsById = React.useMemo(() => {
     const map = new Map();
@@ -137,6 +166,9 @@ return (
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               Total Price
             </th>
+            <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+              PRN
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -202,7 +234,7 @@ return (
               </td>
 
               {/* Total Price - Calculated */}
-              <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
+              <td className="border border-slate-200 px-4 py-3 text-right text-sm  text-slate-700">
                 {item.total || item.unitPrice ? (
                   <>
                     {item.currency || "NGN"} {calculateTotal(item)}
@@ -210,6 +242,9 @@ return (
                 ) : (
                   "N/A"
                 )}
+              </td>
+              <td className="border border-slate-200 px-4 py-3 text-center text-sm  text-slate-700">
+                {item.purchaseRequisitionNumber || "N/A"}
               </td>
             </tr>
           ))}

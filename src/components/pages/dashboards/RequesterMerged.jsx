@@ -2,29 +2,17 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import { IoMdSearch } from "react-icons/io";
-import {
-  MdFilterList,
-  MdExpandMore,
-  MdDirectionsBoat,
-  MdArrowForward,
-  MdPendingActions,
-  MdCancel,
-  MdLocalShipping,
-  MdInventory,
-   MdHelpOutline,
-} from "react-icons/md";
+import { MdFilterList, MdExpandMore, MdCheckCircle, MdDirectionsBoat } from "react-icons/md";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-const RequesterPending = ({
-  searchQuery = "",
-  filterType = "all",
-  onOpenDetail = () => {},
-}) => {
-  const { getToken } = useAuth();
+const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
+  const { getToken, user } = useAuth();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+    console.log("RequesterMerged mounted - user role:", user?.role);
+
 
   // pagination
   const [page, setPage] = useState(1);
@@ -33,53 +21,64 @@ const RequesterPending = ({
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [localFilter, setLocalFilter] = useState(filterType);
 
-    const getInStockColor = () => {
-    return "bg-green-100 text-green-700 border-green-200";
-  };
+  useEffect(() => setLocalSearch(searchQuery), [searchQuery]);
+  useEffect(() => setLocalFilter(filterType), [filterType]);
 
-  const getInStockIcon = () => {
-    return <MdInventory className="text-sm" />;
-  };
-    const getQueriedColor = () => {
-    return "bg-yellow-100 text-yellow-700 border-yellow-200";
-  };
-
-  const getQueriedIcon = () => {
-    return <MdHelpOutline className="text-sm" />;
-  };
-
-
-  useEffect(() => {
-    setLocalSearch(searchQuery);
-  }, [searchQuery]);
-
-  useEffect(() => {
-    setLocalFilter(filterType);
-  }, [filterType]);
-
-  const fetchPending = async () => {
+// ...existing code...
+  const fetchMerged = async () => {
     try {
       setLoading(true);
       const token = getToken();
       if (!token) return;
-      const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
+      const resp = await axios.get(`${API_BASE_URL}/requests/merged`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setRequests(resp.data.data || []);
+      let items = resp.data.data || [];
+
+      // determine role
+      const role = (user?.role || "").toString().toLowerCase();
+      const isAccountingLead = ["accountinglead", "accounting lead", "account lead"].includes(role);
+            console.log("RequesterMerged: API returned merged count =", (items || []).length, { role, isAccountingLead });
+
+ console.log("RequesterMerged: after role filter, merged count =", (items || []).length);
+      setRequests(items);
+      if (isAccountingLead) {
+        // for Accounting Lead: exclude any request with tag === "shipping"
+        items = items.filter((r) => {
+          if (!r) return false;
+          if (Array.isArray(r.tags) && r.tags.length) {
+            return !r.tags.map((t) => String(t).toLowerCase()).includes("shipping");
+          }
+          const tag = (r.tag || "").toString().toLowerCase();
+          return !tag.includes("shipping");
+        });
+      } else {
+        // for other users (operations/requester): include only shipping-tagged merged requests
+        items = items.filter((r) => {
+          if (!r) return false;
+          if (Array.isArray(r.tags) && r.tags.length) {
+            return r.tags.map((t) => String(t).toLowerCase()).includes("shipping");
+          }
+          const tag = (r.tag || "").toString().toLowerCase();
+          return tag.includes("shipping");
+        });
+      }
+
+      setRequests(items);
       setError(null);
       setPage(1);
     } catch (err) {
-      console.error("Error fetching pending requests:", err);
-      setError(
-        err.response?.data?.message || "Failed to fetch pending requests"
-      );
+      console.error("Error fetching merged requests:", err);
+      setError(err.response?.data?.message || "Failed to fetch merged requests");
     } finally {
       setLoading(false);
     }
   };
+// ...existing code...
 
   useEffect(() => {
-    fetchPending();
+    fetchMerged();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = (requests || []).filter((req) => {
@@ -99,6 +98,10 @@ const RequesterPending = ({
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
 
+  const handleCardClick = (req) => {
+    window.alert("This request has been merged and cannot be opened.");
+  };
+
   return (
     <div>
       <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6">
@@ -108,7 +111,7 @@ const RequesterPending = ({
             <input
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="Search by request ID, requester, or department..."
+              placeholder="Search merged requests..."
               className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl"
             />
           </div>
@@ -132,7 +135,7 @@ const RequesterPending = ({
         <div className="flex items-center justify-center py-20">
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading requests...</p>
+            <p className="text-gray-600">Loading merged requests...</p>
           </div>
         </div>
       ) : error ? (
@@ -143,8 +146,8 @@ const RequesterPending = ({
             {paged.map((request) => (
               <div
                 key={request.requestId || request.id}
-                className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer"
-                onClick={() => onOpenDetail(request)}
+                className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg transition-all duration-200 cursor-pointer opacity-90 hover:opacity-100"
+                onClick={() => handleCardClick(request)}
               >
                 <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                   <div className="flex-1 min-w-0">
@@ -153,39 +156,12 @@ const RequesterPending = ({
                         {request.requestId || request.id}
                       </span>
 
-                      {request.isRejected && (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200">
-                          <MdCancel className="text-sm" />
-                          <span>Rejected</span>
-                        </span>
-                      )}
-                       {request.isQueried && (
-                        <span
-                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${getQueriedColor()}`}
-                        >
-                          {getQueriedIcon()}
-                          <span>Queried</span>
-                        </span>
-                      )}
-                      {(request.tag?.includes?.("Shipping") ||
-                        request.tag === "Shipping") && (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-blue-100 text-blue-700 border-blue-200">
-                          <MdLocalShipping className="text-sm" />
-                          <span>Shipping</span>
-                        </span>
-                      )}
-                      {request.items &&
-                        request.items.some((it) => it && it.inStock) && (
-                          <span
-                            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getInStockColor()}`}
-                          >
-                            {getInStockIcon()}
-                            <span>In Stock</span>
-                          </span>
-                        )}
+                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-slate-50 text-slate-700">
+                        <MdCheckCircle className="text-sm" />
+                        <span>Merged</span>
+                      </span>
 
                       <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-100 text-emerald-700">
-                        <MdPendingActions className="text-sm" />
                         <span>
                           {request.requestType === "purchaseOrder"
                             ? "Purchase Order"
@@ -206,7 +182,7 @@ const RequesterPending = ({
                         <span className="text-slate-900 font-semibold text-xs md:text-sm">
                           {request.department}
                         </span>
-                        <MdArrowForward className="text-emerald-500" />
+                        <span className="text-emerald-500">→</span>
                         <span className="text-slate-900 font-semibold text-xs md:text-sm">
                           {request.destination}
                         </span>
@@ -231,17 +207,6 @@ const RequesterPending = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenDetail(request);
-                      }}
-                      className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-sm font-bold rounded-lg hover:shadow-xl transition-all duration-200"
-                    >
-                      View Details
-                    </button>
-                  </div>
                 </div>
               </div>
             ))}
@@ -278,4 +243,4 @@ const RequesterPending = ({
   );
 };
 
-export default RequesterPending;
+export default RequesterMerged;

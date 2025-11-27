@@ -22,18 +22,14 @@ const getVendorDisplayName = (vendorOrName) => {
   return String(vendorOrName);
 };
 
-const RequisitionPreview = forwardRef(
+const PurchaseOrderPreview = forwardRef(
   ({ request = {}, items = [], requestId = null, token = null, apiBase = "https://hdp-backend-1vcl.onrender.com/api" }, ref) => {
-    // live state that will replace the static props when requestId provided
     const [liveRequest, setLiveRequest] = useState(request || {});
     const [liveItems, setLiveItems] = useState(items || []);
     const [signaturesPrepared, setSignaturesPrepared] = useState([]);
     const [vendorInfo, setVendorInfo] = useState(null);
     const [loading, setLoading] = useState(false);
 
-    
-
-    // helper: convert ArrayBuffer -> base64 for browser
     const arrayBufferToBase64 = (buffer) => {
       let binary = "";
       const bytes = new Uint8Array(buffer);
@@ -50,47 +46,38 @@ const RequisitionPreview = forwardRef(
         const base64 = arrayBufferToBase64(resp.data);
         return `data:${contentType};base64,${base64}`;
       } catch (err) {
-        // silently fail and return null so we fallback to name rendering
-        console.warn("RequisitionPreview: failed to fetch signature image", url, err);
+        console.warn("PurchaseOrderPreview: failed to fetch signature image", url, err);
         return null;
       }
     };
 
+  // ...existing code...
     useEffect(() => {
       let mounted = true;
       const load = async () => {
         setLoading(true);
         try {
-          let sourceRequest = request || {};
-          let sourceItems = Array.isArray(items) ? items.slice() : [];
-
-          // if a requestId is provided, re-fetch latest request from API (old behaviour)
-          if (requestId) {
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-            const resp = await axios.get(`${apiBase}/requests/${encodeURIComponent(requestId)}`, { headers });
-            sourceRequest = resp.data?.data ?? resp.data ?? {};
-            sourceItems = Array.isArray(sourceRequest.items) ? sourceRequest.items : items || [];
-          }
+          // DO NOT fetch the request from the server — always use provided props (live preview)
+          const sourceRequest = request || {};
+          const sourceItems = Array.isArray(items) ? items.slice() : [];
 
           if (!mounted) return;
           setLiveRequest(sourceRequest || {});
           setLiveItems(sourceItems || []);
 
-          // vendor info: prefer vendorId found in first item of the provided items list
-           const firstItem = Array.isArray(sourceItems) && sourceItems.length ? sourceItems[0] : null;
+          // keep vendor lookup behavior (if vendor is an id string/number) so vendor details can display
+          const firstItem = Array.isArray(sourceItems) && sourceItems.length ? sourceItems[0] : null;
           if (firstItem && firstItem.vendor) {
-            // vendor may already be an object on the item
             if (typeof firstItem.vendor === "object") {
               setVendorInfo(firstItem.vendor);
             } else {
-              // vendor is an id string -> fetch vendor
               try {
                 const headers = token ? { Authorization: `Bearer ${token}` } : {};
                 const vResp = await axios.get(`${apiBase}/vendors/${encodeURIComponent(firstItem.vendor)}`, { headers });
                 if (!mounted) return;
                 setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
               } catch (verr) {
-                console.warn("RequisitionPreview: vendor fetch failed", verr);
+                console.warn("PurchaseOrderPreview: vendor fetch failed", verr);
                 setVendorInfo(null);
               }
             }
@@ -101,14 +88,14 @@ const RequisitionPreview = forwardRef(
               if (!mounted) return;
               setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
             } catch (verr) {
-              console.warn("RequisitionPreview: vendor fetch failed", verr);
+              console.warn("PurchaseOrderPreview: vendor fetch failed", verr);
               setVendorInfo(null);
             }
           } else {
             setVendorInfo(null);
           }
 
-          // prepare signatures — use signatures from the source request (works whether we fetched or were passed request)
+          // prepare signatures from the provided request object (if any)
           const rawSignatures = Array.isArray(sourceRequest.signatures) ? sourceRequest.signatures.slice() : [];
           rawSignatures.sort((a, b) => {
             const ta = a.timestamp || a.time || a.createdAt || 0;
@@ -118,7 +105,7 @@ const RequisitionPreview = forwardRef(
 
           const prepared = await Promise.all(
             rawSignatures.map(async (s) => {
-              const img = s.signatureUrl ? await fetchImageAsDataUrl(s.signatureUrl) : null;
+              const img = s.signatureUrl ? await fetchImageAsDataUrl(s.signatureUrl, token) : null;
               return {
                 userId: s.userId,
                 name: s.name || s.userName || s.displayName || s.requesterName || "",
@@ -132,47 +119,47 @@ const RequisitionPreview = forwardRef(
           if (!mounted) return;
           setSignaturesPrepared(prepared);
         } catch (err) {
-          console.error("RequisitionPreview: failed to load request or signatures", err);
+          console.error("PurchaseOrderPreview: failed to prepare preview", err);
         } finally {
           if (mounted) setLoading(false);
         }
       };
 
       load();
-
       return () => {
         mounted = false;
       };
-    }, [requestId, request, items, token, apiBase]); // react to provided request/items or a requestId
+    }, [request, items, token, apiBase]);
+// ...existing code...
 
     const req = liveRequest || {};
     const usedItems = Array.isArray(liveItems) && liveItems.length > 0 ? liveItems : items || [];
-   const getPrFromItems = () => {
+       const getPoFromItems = () => {
       if (!Array.isArray(usedItems)) return null;
       for (const it of usedItems) {
         const candidate =
-          it.purchaseRequisitionNumber ||
-          it.purchaseReqNumber ||
-          it.prn ||
-          it.requisitionNumber ||
-          it.requisitionNo ||
+          it.purchaseOrderNumber ||
+          it.purchaseOrderNo ||
+          it.pon ||
+          it.poNumber ||
+          it.po ||
           null;
         if (candidate) return candidate;
       }
       return null;
     };
 
-    const itemPr = getPrFromItems();
+    const itemPo = getPoFromItems();
     const reqIdStr =
-      itemPr ||
-      req.purchaseRequisitionNumber ||
-      req.purchaseReqNumber ||
-      req.prn ||
+      itemPo ||
+      req.purchaseOrderNumber ||
+      req.purchaseOrderNo ||
+      req.pon ||
       req.requestId ||
       req.id ||
       requestId ||
-      "N/A"; 
-       const createdAt = req.createdAt ? new Date(req.createdAt) : new Date();
+      "N/A";
+    const createdAt = req.createdAt ? new Date(req.createdAt) : new Date();
     const dateStr = createdAt.toLocaleDateString();
     const requiredDate = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString();
     const reference = req.reference || "N/A";
@@ -182,14 +169,13 @@ const RequisitionPreview = forwardRef(
       return s + (isNaN(total) ? 0 : total);
     }, 0);
 
-   const getVendorAddressLines = (v) => {
+    const getVendorAddressLines = (v) => {
       if (!v) return null;
       const address = v.address;
       if (!address) return null;
       if (typeof address === "string") {
         return address;
       }
-      // address is an object: prefer common keys
       const street = address.street || address.line1 || address.address1 || "";
       const city = address.city || address.town || "";
       const state = address.state || address.region || "";
@@ -197,7 +183,7 @@ const RequisitionPreview = forwardRef(
       return parts.length ? parts.join("\n") : null;
     };
 
-       const vendorNameLine = vendorInfo
+    const vendorNameLine = vendorInfo
       ? getVendorDisplayName(vendorInfo)
       : usedItems[0]
       ? getVendorDisplayName(usedItems[0].vendor || usedItems[0].vendorName)
@@ -211,10 +197,11 @@ const RequisitionPreview = forwardRef(
         : null;
 
     const issuedToLines = [vendorNameLine, addressPart].filter(Boolean).join("\n");
+
     return (
       <div ref={ref} className="bg-white p-6 print:p-8 text-slate-900">
         <div className="px-4 py-4 border-b bg-gradient-to-r from-white to-slate-50">
-          <h2 className="text-2xl font-extrabold">Requisition Form</h2>
+          <h2 className="text-2xl font-extrabold">Purchase Order</h2>
         </div>
 
         <div className="px-6 py-5 border-b">
@@ -235,7 +222,7 @@ const RequisitionPreview = forwardRef(
 
             <div className="text-right shrink-0 flex flex-col justify-start items-start">
               <div className="flex justify-center items-center gap-2">
-                <div className="font-semibold">PRN:</div>
+                <div className="font-semibold">PON:</div>
                 <div className="text-sm text-slate-500">{reqIdStr}</div>
               </div>
               <div className="flex justify-center items-center gap-2 mt-1">
@@ -261,17 +248,18 @@ const RequisitionPreview = forwardRef(
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
             <div className="text-sm font-semibold text-slate-800 mb-2">Issued To:</div>
- <div>
-           <div className="text-base font-semibold text-slate-800">{vendorNameLine}</div>
-           {addressPart ? (
-             <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
-               {addressPart}
-             </div>
-           ) : null}
-         </div>          </div>
+            <div>
+              <div className="text-base font-semibold text-slate-800">{vendorNameLine}</div>
+              {addressPart ? (
+                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+                  {addressPart}
+                </div>
+              ) : null}
+            </div>
+          </div>
 
           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
-             <div className="text-sm font-semibold text-slate-800 mb-2">Ship To:</div>
+            <div className="text-sm font-semibold text-slate-800 mb-2">Ship To:</div>
             <div>
               <div className="text-base font-semibold text-slate-800">
                 {req.company?.name || "Hydrodive Nigeria Limited"}
@@ -297,7 +285,7 @@ const RequisitionPreview = forwardRef(
 
         <div className="p-6 space-y-4">
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-            <h4 className="text-sm font-semibold mb-3">Requisition Items</h4>
+            <h4 className="text-sm font-semibold mb-3">Purchase Order Items</h4>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -342,7 +330,6 @@ const RequisitionPreview = forwardRef(
             <div className="flex-1">
               <p className="text-xs text-slate-500 mb-2">Approved by</p>
 
-              {/* signatures grid (live) */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {loading ? (
                   <div className="text-sm text-slate-500">Loading signatures…</div>
@@ -371,8 +358,6 @@ const RequisitionPreview = forwardRef(
                 )}
               </div>
             </div>
-
-           
           </div>
         </div>
 
@@ -381,4 +366,5 @@ const RequisitionPreview = forwardRef(
     );
   }
 );
-export default RequisitionPreview;
+
+export default PurchaseOrderPreview;

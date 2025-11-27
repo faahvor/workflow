@@ -19,9 +19,10 @@ import RequesterSidebar from "../../shared/layout/RequesterSidebar";
 import CompletedRequests from "./CompletedRequests";
 import RequestDetailView from "./RequestDetailView";
 import RequesterPending from "./RequesterPending";
+import RequesterMerged from "./RequesterMerged";
+
 import RequesterHistory from "./RequesterHistory";
 import UsersSignature from "./UsersSignature";
-
 
 const RequesterDashboard = () => {
   const { user, getToken } = useAuth();
@@ -36,10 +37,9 @@ const RequesterDashboard = () => {
   const dropdownRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
-    const [selectedRequestReadOnly, setSelectedRequestReadOnly] = useState(false);
-    const [vendors, setVendors] = useState([]);
-const [loadingVendors, setLoadingVendors] = useState(false);
-
+  const [selectedRequestReadOnly, setSelectedRequestReadOnly] = useState(false);
+  const [vendors, setVendors] = useState([]);
+  const [loadingVendors, setLoadingVendors] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -52,6 +52,7 @@ const [loadingVendors, setLoadingVendors] = useState(false);
     priority: "normal",
     reference: "",
     purpose: "",
+    jobNo: "",
   });
 
   const [selectedItems, setSelectedItems] = useState([]);
@@ -64,6 +65,11 @@ const [loadingVendors, setLoadingVendors] = useState(false);
   const [vessels, setVessels] = useState([]);
   const [loadingVessels, setLoadingVessels] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [currencies, setCurrencies] = useState([]);
+  const [loadingCurrencies, setLoadingCurrencies] = useState(true);
+  const [invoiceFiles, setInvoiceFiles] = useState([]); // items: { id, file, previewUrl }
+  const fileInputRef = useRef(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -98,13 +104,53 @@ const [loadingVendors, setLoadingVendors] = useState(false);
     }
   };
 
-  const companies = ["HNL", "HOIL", "SCS"];
+  const [companiesList, setCompaniesList] = useState([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
 
+  useEffect(() => {
+    // Set fixed valid currencies
+    const validCurrencies = [
+      "NGN",
+      "USD",
+      "GBP",
+      "EUR",
+      "JPY",
+      "CNY",
+      "CAD",
+      "AUD",
+    ];
+    setCurrencies(validCurrencies.map((c) => ({ value: c, label: c })));
+    setLoadingCurrencies(false);
+  }, []);
   // Priority options
   const priorities = [
     { value: "normal", label: "Normal" },
     { value: "high", label: "High" },
   ];
+  const fetchCompanies = async () => {
+    try {
+      setLoadingCompanies(true);
+      const token = getToken();
+      if (!token) {
+        console.error("No token found");
+        return;
+      }
+      const resp = await axios.get(`${API_BASE_URL}/companies`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCompaniesList(resp.data?.data || resp.data || []);
+    } catch (err) {
+      console.error("❌ Error fetching companies:", err);
+    } finally {
+      setLoadingCompanies(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchCompanies();
+    }
+  }, [user]);
 
   // Fetch vessels
   const fetchVessels = async () => {
@@ -183,22 +229,22 @@ const [loadingVendors, setLoadingVendors] = useState(false);
     }
   };
 
-const handleOpenDetail = async (request, opts = {}) => {
-  const readOnly = !!opts.readOnly;
-  const origin = opts.origin || null;
-  try {
-    const flow = await fetchRequestFlow(request.requestId);
-    setSelectedRequest({ ...request, flow, origin });
-    setSelectedRequestReadOnly(readOnly);
-    setActiveView("detail");
-  } catch (err) {
-    console.error("Error opening request detail:", err);
-    // fallback: still open detail with minimal data but include origin
-    setSelectedRequest({ ...request, origin });
-    setSelectedRequestReadOnly(readOnly);
-    setActiveView("detail");
-  }
-};
+  const handleOpenDetail = async (request, opts = {}) => {
+    const readOnly = !!opts.readOnly;
+    const origin = opts.origin || null;
+    try {
+      const flow = await fetchRequestFlow(request.requestId);
+      setSelectedRequest({ ...request, flow, origin });
+      setSelectedRequestReadOnly(readOnly);
+      setActiveView("detail");
+    } catch (err) {
+      console.error("Error opening request detail:", err);
+      // fallback: still open detail with minimal data but include origin
+      setSelectedRequest({ ...request, origin });
+      setSelectedRequestReadOnly(readOnly);
+      setActiveView("detail");
+    }
+  };
   // Fetch inventory and vessels on mount
   useEffect(() => {
     if (user) {
@@ -256,6 +302,9 @@ const handleOpenDetail = async (request, opts = {}) => {
       {
         ...item,
         quantity: 1,
+        unitPrice: 0,
+        currency: "NGN",
+        totalPrice: 0,
         uniqueId: `${item._id}-${Date.now()}`,
       },
     ]);
@@ -266,8 +315,26 @@ const handleOpenDetail = async (request, opts = {}) => {
   // Handle quantity change
   const handleQuantityChange = (index, quantity) => {
     const updatedItems = [...selectedItems];
-    updatedItems[index].quantity = quantity;
+    const q = Number(quantity) || 0;
+    updatedItems[index].quantity = q;
+    const unit = Number(updatedItems[index].unitPrice || 0);
+    updatedItems[index].totalPrice = Math.round(unit * q);
     setSelectedItems(updatedItems);
+  };
+
+  const handleUnitPriceChange = (index, value) => {
+    const updated = [...selectedItems];
+    const unit = Number(value) || 0;
+    updated[index].unitPrice = unit;
+    const qty = Number(updated[index].quantity || 0);
+    updated[index].totalPrice = Math.round(unit * qty);
+    setSelectedItems(updated);
+  };
+
+  const handleCurrencyChange = (index, currency) => {
+    const updated = [...selectedItems];
+    updated[index].currency = currency;
+    setSelectedItems(updated);
   };
 
   // Handle remove item
@@ -285,58 +352,132 @@ const handleOpenDetail = async (request, opts = {}) => {
   );
 
   // Submit new request
-  const handleSubmitRequest = async (e) => {
-    e.preventDefault();
+// ...existing code...
+const handleSubmitRequest = async (e) => {
+  e.preventDefault();
 
-    // Validation
-    if (!formData.destination) {
-      alert("Please select a destination");
-      return;
-    }
+  // Validation
+  if (!formData.destination) {
+    alert("Please select a destination");
+    return;
+  }
 
-    if (!formData.company) {
-      alert("Please select a company");
-      return;
-    }
+  if (!formData.company) {
+    alert("Please select a company");
+    return;
+  }
 
-    if (
-      (formData.destination === "Marine" ||
-        formData.destination === "Project") &&
-      !formData.vesselId
-    ) {
-      alert("Please select a vessel");
-      return;
-    }
+  if (
+    (formData.destination === "Marine" ||
+      formData.destination === "Project") &&
+    !formData.vesselId
+  ) {
+    alert("Please select a vessel");
+    return;
+  }
 
-    if (formData.destination === "Project" && !formData.projectManager) {
-      alert("Please select a project manager");
-      return;
-    }
+  if (formData.destination === "Project" && !formData.projectManager) {
+    alert("Please select a project manager");
+    return;
+  }
 
-    if (selectedItems.length === 0) {
-      alert("Please add at least one item from inventory");
-      return;
-    }
+  if (selectedItems.length === 0) {
+    alert("Please add at least one item from inventory");
+    return;
+  }
 
-    // Check all items have valid quantity
-    const invalidItems = selectedItems.filter(
-      (item) => !item.quantity || item.quantity < 1
+  const invalidItems = selectedItems.filter(
+    (item) => !item.quantity || item.quantity < 1
+  );
+  if (invalidItems.length > 0) {
+    alert("All items must have a quantity of at least 1");
+    return;
+  }
+
+  if (formData.requestType === "pettyCash") {
+    const badPrice = selectedItems.find(
+      (it) => !it.unitPrice || Number(it.unitPrice) <= 0
     );
-    if (invalidItems.length > 0) {
-      alert("All items must have a quantity of at least 1");
+    if (badPrice) {
+      alert(
+        "For petty cash requests each item must have a unit price greater than 0."
+      );
       return;
     }
+  } else {
+    // If this is not pettyCash ensure each item has a positive unit price only when required
+    if (formData.requestType === "pettyCash") {
+      const badPrice = selectedItems.find(
+        (it) => !it.unitPrice || Number(it.unitPrice) <= 0
+      );
+      if (badPrice) {
+        alert(
+          "For petty cash requests each item must have a unit price greater than 0."
+        );
+        return;
+      }
+    }
+  }
 
-    try {
-      setSubmitting(true);
-      const token = getToken();
+  try {
+    setSubmitting(true);
+    const token = getToken();
 
-      // Prepare items for API
-      const items = selectedItems.map((item) => ({
+    // Prepare items for API
+    const items = selectedItems.map((item) => {
+      const qty = Number(item.quantity || 0);
+      const unit = Number(item.unitPrice || 0);
+      const total = Math.round(unit * qty);
+
+      return {
         name: item.name,
-        quantity: item.quantity,
-      }));
+        quantity: qty,
+        unitPrice: unit,
+        totalPrice: total,
+        inventoryId: item._id || item.itemId || null,
+      };
+    });
 
+    // If pettyCash and invoice files exist, send multipart/form-data
+    if (formData.requestType === "pettyCash" && invoiceFiles.length > 0) {
+      if (invoiceFiles.length > 5) {
+        alert("You can upload up to 5 invoice files when creating a request.");
+        setSubmitting(false);
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("department", formData.department);
+      fd.append("destination", formData.destination);
+      fd.append("requestType", formData.requestType);
+      fd.append("purpose", formData.purpose || "");
+      if (formData.vesselId) fd.append("vesselId", formData.vesselId);
+      if (formData.priority) fd.append("priority", formData.priority);
+      if (formData.reference) fd.append("reference", formData.reference);
+      if (formData.company) fd.append("companyId", formData.company);
+      if (formData.projectManager) fd.append("projectManager", formData.projectManager);
+
+      // items must be a JSON string when using multipart
+      fd.append("items", JSON.stringify(items));
+
+      // attach files under invoiceFiles key
+      invoiceFiles.forEach((f) => {
+        if (f && f.file) {
+          fd.append("invoiceFiles", f.file);
+        }
+      });
+
+      const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      console.log("✅ Request Created (with files):", response.data);
+      alert("Request created successfully!");
+
+    } else {
+      // JSON path (no files)
       const payload = {
         department: formData.department,
         destination: formData.destination,
@@ -345,7 +486,6 @@ const handleOpenDetail = async (request, opts = {}) => {
         items: items,
       };
 
-      // Add optional fields
       if (formData.vesselId) {
         payload.vesselId = formData.vesselId;
       }
@@ -359,14 +499,12 @@ const handleOpenDetail = async (request, opts = {}) => {
       }
 
       if (formData.company) {
-        payload.company = formData.company;
+        payload.companyId = formData.company;
       }
 
       if (formData.projectManager) {
         payload.projectManager = formData.projectManager;
       }
-
-      console.log("📤 Submitting Request:", payload);
 
       const response = await axios.post(`${API_BASE_URL}/requests`, payload, {
         headers: { Authorization: `Bearer ${token}` },
@@ -374,30 +512,33 @@ const handleOpenDetail = async (request, opts = {}) => {
 
       console.log("✅ Request Created:", response.data);
       alert("Request created successfully!");
-
-      // Reset form
-      setFormData({
-        department: user?.department || "",
-        destination: "",
-        company: "",
-        vesselId: "",
-        projectManager: "",
-        requestType: "purchaseOrder",
-        priority: "normal",
-        reference: "",
-        purpose: "",
-      });
-      setSelectedItems([]);
-
-      // Switch to My Requests view
-      setActiveView("pending");
-    } catch (err) {
-      console.error("❌ Error creating request:", err);
-      alert(err.response?.data?.message || "Failed to create request");
-    } finally {
-      setSubmitting(false);
     }
-  };
+
+    // Reset form
+    setFormData({
+      department: user?.department || "",
+      destination: "",
+      company: "",
+      vesselId: "",
+      projectManager: "",
+      requestType: "purchaseOrder",
+      priority: "normal",
+      reference: "",
+      purpose: "",
+    });
+    setSelectedItems([]);
+    setInvoiceFiles([]);
+
+    // Switch to My Requests view
+    setActiveView("pending");
+  } catch (err) {
+    console.error("❌ Error creating request:", err);
+    alert(err.response?.data?.message || "Failed to create request");
+  } finally {
+    setSubmitting(false);
+  }
+};
+// ...existing code...
 
   // Fetch my requests
   const fetchMyRequests = async () => {
@@ -433,31 +574,49 @@ const handleOpenDetail = async (request, opts = {}) => {
     }
   }, [user, activeView]);
 
-  const handleApprove = async (requestId) => {
-    try {
-      setLoading(true);
-      const token = getToken();
-      if (!token) {
-        navigate("/login");
-        return;
-      }
-      await axios.post(
-        `${API_BASE_URL}/requests/${requestId}/approve`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      // refresh lists so UI updates
-      await fetchMyRequests();
-      setActiveView("pending");
-    } catch (err) {
-      console.error("Error approving request:", err);
-      alert(err?.response?.data?.message || "Failed to approve request");
-    } finally {
-      setLoading(false);
-    }
-  };
+const handleApprove = async (requestId) => {
+  const ok = window.confirm("Are you sure you want to approve this request?");
+  if (!ok) return;
 
-   const handleReject = async (requestId) => {
+  try {
+    setLoading(true);
+    const token = getToken();
+    console.debug("handleApprove: token present?", !!token, "requestId:", requestId);
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    const url = `${API_BASE_URL}/requests/${encodeURIComponent(requestId)}/approve`;
+    console.debug("handleApprove: POST ->", url);
+
+    const resp = await axios.post(url, {}, { headers: { Authorization: `Bearer ${token}` } });
+
+    console.debug("handleApprove: response:", resp?.status, resp?.data);
+    if (resp?.status === 200 || resp?.status === 201) {
+      // success: refresh lists and navigate back
+      await fetchMyRequests();
+      alert(resp.data?.message || "Request approved successfully");
+      setActiveView("pending");
+      return;
+    }
+
+    // non-2xx status
+    console.warn("handleApprove: unexpected response", resp);
+    alert(resp.data?.message || "Unexpected response from server");
+  } catch (err) {
+    console.error("Error approving request:", {
+      message: err.message,
+      status: err.response?.status,
+      responseData: err.response?.data,
+    });
+    alert(err?.response?.data?.message || "Failed to approve request");
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const handleReject = async (requestId) => {
     try {
       setLoading(true);
       const token = getToken();
@@ -480,7 +639,7 @@ const handleOpenDetail = async (request, opts = {}) => {
     }
   };
 
-   const handleQuery = async (requestId) => {
+  const handleQuery = async (requestId) => {
     try {
       setLoading(true);
       const token = getToken();
@@ -503,7 +662,6 @@ const handleOpenDetail = async (request, opts = {}) => {
     }
   };
 
-
   const pendingCount = myRequests.filter(
     (r) => String(r.status).toLowerCase() === "pending"
   ).length;
@@ -511,6 +669,67 @@ const handleOpenDetail = async (request, opts = {}) => {
   const approvedCount = myRequests.filter(
     (r) => String(r.status).toLowerCase() === "approved"
   ).length;
+
+  const handleBrowseClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleInvoiceInputChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const entries = files.map((file) => ({
+      id: `${file.name}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      file,
+      previewUrl: file.type.startsWith("image/")
+        ? URL.createObjectURL(file)
+        : null,
+    }));
+    setInvoiceFiles((prev) => [...prev, ...entries]);
+    // reset input so same file can be selected again if needed
+    e.target.value = null;
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length === 0) return;
+    const entries = files.map((file) => ({
+      id: `${file.name}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      file,
+      previewUrl: file.type.startsWith("image/")
+        ? URL.createObjectURL(file)
+        : null,
+    }));
+    setInvoiceFiles((prev) => [...prev, ...entries]);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = () => {
+    setDragActive(false);
+  };
+
+  const removeInvoiceFile = (id) => {
+    setInvoiceFiles((prev) => {
+      const found = prev.find((p) => p.id === id);
+      if (found?.previewUrl) {
+        try {
+          URL.revokeObjectURL(found.previewUrl);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+      return prev.filter((p) => p.id !== id);
+    });
+  };
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
@@ -541,8 +760,7 @@ const handleOpenDetail = async (request, opts = {}) => {
           setActiveView={setActiveView}
           pendingCount={myRequests.length}
           isRequester={true}
-            selectedRequestOrigin={selectedRequest?.origin}
-
+          selectedRequestOrigin={selectedRequest?.origin}
         />
 
         {/* Main Content */}
@@ -568,7 +786,7 @@ const handleOpenDetail = async (request, opts = {}) => {
                   ? "View and track your submitted requests"
                   : activeView === "overview"
                   ? "Requester dashboard"
-                      : activeView === "shipping"
+                  : activeView === "shipping"
                   ? "Shipping  dashboard"
                   : ``}
               </p>
@@ -625,20 +843,36 @@ const handleOpenDetail = async (request, opts = {}) => {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                      Request Type *
-                    </label>
-                    <select
-                      name="requestType"
-                      value={formData.requestType}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
-                      required
-                    >
-                      <option value="purchaseOrder">Purchase Order</option>
-                      <option value="pettyCash">Petty Cash</option>
-                    </select>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                        Request Type *
+                      </label>
+                      <select
+                        name="requestType"
+                        value={formData.requestType}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
+                        required
+                      >
+                        <option value="purchaseOrder">Purchase Order</option>
+                        <option value="pettyCash">Petty Cash</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                        Job Number
+                      </label>
+                      <input
+                        type="text"
+                        name="jobNo"
+                        value={formData.jobNo}
+                        onChange={handleInputChange}
+                        placeholder="Enter job number "
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
+                      />
+                    </div>
                   </div>
 
                   {/* Row 2: Company & Vessel */}
@@ -655,10 +889,17 @@ const handleOpenDetail = async (request, opts = {}) => {
                         className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
                         required
                       >
-                        <option value="">Select Company</option>
-                        {companies.map((comp) => (
-                          <option key={comp} value={comp}>
-                            {comp}
+                        <option value="">
+                          {loadingCompanies
+                            ? "Loading companies..."
+                            : "Select Company"}
+                        </option>
+                        {companiesList.map((comp) => (
+                          <option
+                            key={comp.companyId || comp._id || comp.name}
+                            value={comp.companyId || comp._id || comp.name}
+                          >
+                            {comp.name}
                           </option>
                         ))}
                       </select>
@@ -842,6 +1083,10 @@ const handleOpenDetail = async (request, opts = {}) => {
                         items={selectedItems}
                         onQuantityChange={handleQuantityChange}
                         onRemoveItem={handleRemoveItem}
+                        onUnitPriceChange={handleUnitPriceChange}
+                        onCurrencyChange={handleCurrencyChange}
+                        currencies={currencies}
+                        requestType={formData.requestType} // <-- add this prop
                       />
                     )}
                   </div>
@@ -859,6 +1104,118 @@ const handleOpenDetail = async (request, opts = {}) => {
                       className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm resize-none"
                     />
                   </div>
+
+                  {formData.requestType === "pettyCash" && (
+                    <div className="mb-4">
+                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                        Upload Invoice(s) (optional)
+                      </label>
+
+                      <div
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onClick={handleBrowseClick}
+                        role="button"
+                        tabIndex={0}
+                        className={`w-full cursor-pointer rounded-2xl p-4 flex items-center justify-between gap-4 transition-all duration-200 ${
+                          dragActive
+                            ? "border-2 border-emerald-400 bg-emerald-50"
+                            : "border-2 border-dashed border-slate-200 bg-white/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                            📎
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {invoiceFiles.length > 0
+                                ? `${invoiceFiles.length} file(s) selected`
+                                : "Drag & drop invoice(s) here, or click to browse"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleBrowseClick}
+                            className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
+                          >
+                            Add Files
+                          </button>
+
+                          {invoiceFiles.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setInvoiceFiles([])}
+                              className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 text-sm"
+                            >
+                              Clear All
+                            </button>
+                          )}
+                        </div>
+
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".pdf,.doc,.docx,image/*"
+                          multiple
+                          onChange={handleInvoiceInputChange}
+                          className="hidden"
+                        />
+                      </div>
+
+                      {invoiceFiles.length > 0 && (
+                        <div className="mt-3 grid gap-2">
+                          {invoiceFiles.map((f) => (
+                            <div
+                              key={f.id}
+                              className="flex items-center justify-between bg-white border border-slate-100 rounded-lg p-3"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden">
+                                  {f.previewUrl ? (
+                                    <img
+                                      src={f.previewUrl}
+                                      alt={f.file.name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="text-slate-600 text-sm px-2 text-center">
+                                      {f.file.type === "application/pdf"
+                                        ? "PDF"
+                                        : "FILE"}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900 truncate w-56">
+                                    {f.file.name}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {Math.round(f.file.size / 1024)} KB
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => removeInvoiceFile(f.id)}
+                                  className="px-3 py-1 bg-red-50 text-red-600 rounded-md text-sm"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Submit Button */}
                   <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-slate-200">
@@ -887,7 +1244,7 @@ const handleOpenDetail = async (request, opts = {}) => {
                 </div>
               </form>
             )}
-          {activeView === "detail" && selectedRequest && (
+            {activeView === "detail" && selectedRequest && (
               <RequestDetailView
                 request={selectedRequest}
                 onBack={() => {
@@ -898,7 +1255,7 @@ const handleOpenDetail = async (request, opts = {}) => {
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onQuery={handleQuery}
-                  vendors={vendors}
+                vendors={vendors}
               />
             )}
             {activeView === "completed" && (
@@ -934,11 +1291,13 @@ const handleOpenDetail = async (request, opts = {}) => {
                 <CompletedRequests
                   searchQuery={searchQuery}
                   filterType={filterType}
-                  onOpenDetail={(req) => handleOpenDetail(req, { readOnly: true })}
+                  onOpenDetail={(req) =>
+                    handleOpenDetail(req, { readOnly: true })
+                  }
                 />
               </>
             )}
-             {activeView === "myrequests" && (
+            {activeView === "myrequests" && (
               <RequesterHistory
                 searchQuery={searchQuery}
                 filterType={filterType}
@@ -958,11 +1317,15 @@ const handleOpenDetail = async (request, opts = {}) => {
               />
             )}
             
-         
-             {/* Signature Manager */}
-            {activeView === "signature" && (
-              <UsersSignature />
+            {activeView === "merged" && (
+              <RequesterMerged
+                searchQuery={searchQuery}
+                filterType={filterType}
+              />
             )}
+
+            {/* Signature Manager */}
+            {activeView === "signature" && <UsersSignature />}
 
             {/* Overview - Placeholder */}
             {activeView === "overview" && (

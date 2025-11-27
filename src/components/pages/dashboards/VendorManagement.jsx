@@ -47,7 +47,7 @@ const VendorManagement = () => {
     department: "",
     type: "registered",
     phone: "",
-    address: "",
+    address: { street: "", city: "", state: "" },
     serviceType: "",
   });
   const [sourceSundryId, setSourceSundryId] = useState(null);
@@ -75,6 +75,32 @@ const VendorManagement = () => {
   // helper: normalize vendor id (vendorId preferred)
   const getVendorId = (v) => v.vendorId ?? v._id ?? v.id;
 
+  // helper: normalize address input (string or object) -> { street, city, state }
+  const normalizeAddress = (value) => {
+    if (!value) return { street: "", city: "", state: "" };
+    if (typeof value === "object") {
+      return {
+        street: value.street || "",
+        city: value.city || "",
+        state: value.state || "",
+      };
+    }
+    // best-effort split for legacy string addresses: "street, city, state"
+    const parts = String(value)
+      .split(",")
+      .map((p) => p.trim());
+    return {
+      street: parts[0] || "",
+      city: parts[1] || "",
+      state: parts[2] || "",
+    };
+  };
+
+  // helper: convert address object to single string for display/search
+  const addressToString = (addr) => {
+    const a = normalizeAddress(addr);
+    return [a.street, a.city, a.state].filter(Boolean).join(", ");
+  };
   // fetch registered vendors (supports pagination & search)
   const fetchRegistered = async (p = 1, search = "") => {
     setLoading(true);
@@ -108,8 +134,11 @@ const VendorManagement = () => {
           new Date(
             new Date().setDate(new Date().getDate() + 365)
           ).toISOString(),
+        // normalize address to object shape
+        address: normalizeAddress(r.address),
       }));
       setRegistered(filled);
+   
       // pagination meta
       setPage(body.page ?? p);
       setTotalPages(
@@ -155,20 +184,22 @@ const VendorManagement = () => {
     }
   };
 
-  const filteredRegistered = registered.filter((v) =>
-    `${v.name} ${v.address || ""} ${v.phone || ""}`
+ const filteredRegistered = registered.filter((v) =>
+    `${v.name} ${addressToString(v.address)} ${v.phone || ""}`
       .toLowerCase()
       .includes(filterQuery.toLowerCase())
   );
   const filteredSundry = sundry.filter((s) =>
-    `${s.name} ${s.address || ""} ${s.phone || ""}`
+    `${s.name} ${addressToString(s.address)} ${s.phone || ""}`
       .toLowerCase()
       .includes(filterQuery.toLowerCase())
   );
-
   // Open edit modal prefilled
   const openEdit = (vendor) => {
-    setEditingVendor(vendor);
+    setEditingVendor({
+      ...vendor,
+      address: normalizeAddress(vendor.address),
+    });
     setShowEdit(true);
   };
 
@@ -256,94 +287,111 @@ const VendorManagement = () => {
     }
   };
 
- // ...existing code...
-const addVendor = async () => {
-  setLoading(true);
-  try {
-    // use available token (admin or normal user)
-    const token = getToken ? getToken() : sessionStorage.getItem("userToken");
-    if (!token) {
-      alert("Authentication required to create a vendor.");
-      return;
-    }
-
-    // build exact payload per docs
-    const payload = {
-      name: form.name,
-      department: form.department,
-      type: form.type,
-      phone: form.phone,
-      address: form.address,
-      serviceType: form.serviceType,
-    };
-
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    };
-
-    const resp = await axios.post(`${API_BASE_URL}/admin/vendors`, payload, {
-      headers,
-    });
-
-    const created = resp?.data?.data || resp?.data || null;
-    if (created) {
-      const filled = {
-        ...created,
-        contractStart: created.contractStart || new Date().toISOString(),
-        contractEnd:
-          created.contractEnd ||
-          new Date(new Date().setDate(new Date().getDate() + 365)).toISOString(),
-      };
-      setRegistered((p) => [filled, ...p]);
-
-      if (sourceSundryId) {
-        setSundry((p) => p.filter((s) => s.id !== sourceSundryId));
-        setSourceSundryId(null);
+  // ...existing code...
+  const addVendor = async () => {
+    setLoading(true);
+    try {
+      // use available token (admin or normal user)
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      if (!token) {
+        alert("Authentication required to create a vendor.");
+        return;
       }
 
-      resetForm();
-      setShowAdd(false);
-      alert("Vendor created.");
-      return;
+      // build exact payload per docs
+      const payload = {
+        name: form.name,
+        department: form.department,
+        type: form.type,
+        phone: form.phone,
+        address: form.address,
+        serviceType: form.serviceType,
+      };
+
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+
+      const resp = await axios.post(`${API_BASE_URL}/admin/vendors`, payload, {
+        headers,
+      });
+
+      const created = resp?.data?.data || resp?.data || null;
+      if (created) {
+        const filled = {
+          ...created,
+          contractStart: created.contractStart || new Date().toISOString(),
+          contractEnd:
+            created.contractEnd ||
+            new Date(
+              new Date().setDate(new Date().getDate() + 365)
+            ).toISOString(),
+        };
+        setRegistered((p) => [filled, ...p]);
+
+        if (sourceSundryId) {
+          setSundry((p) => p.filter((s) => s.id !== sourceSundryId));
+          setSourceSundryId(null);
+        }
+
+        resetForm();
+        setShowAdd(false);
+        alert("Vendor created.");
+        return;
+      }
+
+      throw new Error("Create vendor returned unexpected response.");
+    } catch (err) {
+      console.error("Error creating vendor:", err);
+      const serverMsg =
+        err?.response?.data?.message ||
+        JSON.stringify(err?.response?.data) ||
+        err.message;
+      alert(serverMsg || "Failed to create vendor (check console).");
+    } finally {
+      setLoading(false);
     }
+  };
+  // ...existing code...
 
-    throw new Error("Create vendor returned unexpected response.");
-  } catch (err) {
-    console.error("Error creating vendor:", err);
-    const serverMsg =
-      err?.response?.data?.message || JSON.stringify(err?.response?.data) || err.message;
-    alert(serverMsg || "Failed to create vendor (check console).");
-  } finally {
-    setLoading(false);
-  }
-};
-// ...existing code...
-
-const deleteVendor = async (vendorId) => {
-  if (!vendorId) return;
-  if (!window.confirm("Permanently delete this vendor? This action cannot be undone.")) return;
-  setLoading(true);
-  try {
-    const token = getToken ? getToken() : sessionStorage.getItem("userToken");
-    if (!token) {
-      alert("Authentication required to delete a vendor.");
+  const deleteVendor = async (vendorId) => {
+    if (!vendorId) return;
+    if (
+      !window.confirm(
+        "Permanently delete this vendor? This action cannot be undone."
+      )
+    )
       return;
+    setLoading(true);
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      if (!token) {
+        alert("Authentication required to delete a vendor.");
+        return;
+      }
+
+      const resp = await axios.delete(
+        `${API_BASE_URL}/admin/vendors/${vendorId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      alert(resp?.data?.message || "Vendor deleted successfully.");
+      setRegistered((prev) =>
+        prev.filter((v) => getVendorId(v) !== vendorId && v.id !== vendorId)
+      );
+    } catch (err) {
+      console.error("Error deleting vendor:", err);
+      alert(
+        err?.response?.data?.message ||
+          "Failed to delete vendor (check console)."
+      );
+    } finally {
+      setLoading(false);
     }
-
-    const resp = await axios.delete(`${API_BASE_URL}/admin/vendors/${vendorId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    alert(resp?.data?.message || "Vendor deleted successfully.");
-    setRegistered((prev) => prev.filter((v) => getVendorId(v) !== vendorId && v.id !== vendorId));
-  } catch (err) {
-    console.error("Error deleting vendor:", err);
-    alert(err?.response?.data?.message || "Failed to delete vendor (check console).");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleRegisterSundry = (id) => {
     const item = sundry.find((s) => s.id === id);
@@ -352,8 +400,8 @@ const deleteVendor = async (vendorId) => {
       name: item.name || "",
       department: "",
       type: "registered",
-      phone: "",
-      address: "",
+      phone: item.phone || "",
+      address: normalizeAddress(item.address),
       serviceType: "",
     });
     setSourceSundryId(id);
@@ -381,7 +429,7 @@ const deleteVendor = async (vendorId) => {
       department: "",
       type: "registered",
       phone: "",
-      address: "",
+      address: { street: "", city: "", state: "" },
       serviceType: "",
     });
 
@@ -392,7 +440,7 @@ const deleteVendor = async (vendorId) => {
         <div>
           <h2 className="text-3xl font-extrabold text-slate-900">Vendors</h2>
           <p className="text-slate-500 mt-1">
-            Manage registered vendors and sundry suppliers
+            Manage registered vendors and Un-Registered Vendors
           </p>
         </div>
 
@@ -457,7 +505,7 @@ const deleteVendor = async (vendorId) => {
             <MdListAlt />
           </div>
           <div>
-            <div className="text-xs text-slate-500">Sundry Suppliers</div>
+            <div className="text-xs text-slate-500">Un-Registered Vendors</div>
             <div
               className={`text-2xl font-bold ${
                 activeTab === "sundry" ? "text-white" : "text-slate-900"
@@ -529,13 +577,15 @@ const deleteVendor = async (vendorId) => {
                             <div className="font-semibold text-slate-900">
                               {v.name}
                             </div>
-                            
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">{v.serviceType || "N/A"}</td>
                       <td className="px-4 py-3">{v.phone || "N/A"}</td>
-                      <td className="px-4 py-3">{v.address || "N/A"}</td>
+                      <td className="px-4 py-3">
+                        {" "}
+                        {addressToString(v.address) || "N/A"}
+                      </td>
                       <td className="px-4 py-3">
                         {v.contractEnd ? (
                           <span className="text-sm font-medium text-slate-900">
@@ -554,8 +604,7 @@ const deleteVendor = async (vendorId) => {
                             <MdEdit /> Edit
                           </button>
                           <button
-                             onClick={() => deleteVendor(getVendorId(v) || v.id)}
-
+                            onClick={() => deleteVendor(getVendorId(v) || v.id)}
                             className="px-3 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-100 flex items-center gap-2"
                           >
                             <MdDelete /> Delete
@@ -655,8 +704,7 @@ const deleteVendor = async (vendorId) => {
                   setSourceSundryId(null);
                 }}
                 className="p-2"
-              >
-              </button>
+              ></button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -705,13 +753,62 @@ const deleteVendor = async (vendorId) => {
               </div>
               <div className="md:col-span-2">
                 <label className="text-xs text-slate-500">Address</label>
-                <input
-                  value={form.address}
-                  onChange={(e) =>
-                    setForm({ ...form, address: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  <div>
+                    <input
+                      placeholder="Street"
+                      value={normalizeAddress(form.address).street}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          address: {
+                            ...(typeof form.address === "object"
+                              ? form.address
+                              : normalizeAddress(form.address)),
+                            street: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      placeholder="City"
+                      value={normalizeAddress(form.address).city}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          address: {
+                            ...(typeof form.address === "object"
+                              ? form.address
+                              : normalizeAddress(form.address)),
+                            city: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      placeholder="State"
+                      value={normalizeAddress(form.address).state}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          address: {
+                            ...(typeof form.address === "object"
+                              ? form.address
+                              : normalizeAddress(form.address)),
+                            state: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                </div>
               </div>
               <div className="md:col-span-2">
                 <label className="text-xs text-slate-500">Service Type</label>
@@ -756,8 +853,10 @@ const deleteVendor = async (vendorId) => {
           <div className="relative bg-white rounded-2xl shadow-2xl w-[95%] md:w-[680px] p-6 z-10">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold">Edit Vendor</h3>
-              <button onClick={() => setShowEdit(false)} className="p-2">
-              </button>
+              <button
+                onClick={() => setShowEdit(false)}
+                className="p-2"
+              ></button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -821,16 +920,62 @@ const deleteVendor = async (vendorId) => {
               </div>
               <div className="md:col-span-2">
                 <label className="text-xs text-slate-500">Address</label>
-                <input
-                  value={editingVendor.address || ""}
-                  onChange={(e) =>
-                    setEditingVendor({
-                      ...editingVendor,
-                      address: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  <div>
+                    <input
+                      placeholder="Street"
+                      value={normalizeAddress(editingVendor.address).street}
+                      onChange={(e) =>
+                        setEditingVendor({
+                          ...editingVendor,
+                          address: {
+                            ...(typeof editingVendor.address === "object"
+                              ? editingVendor.address
+                              : normalizeAddress(editingVendor.address)),
+                            street: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      placeholder="City"
+                      value={normalizeAddress(editingVendor.address).city}
+                      onChange={(e) =>
+                        setEditingVendor({
+                          ...editingVendor,
+                          address: {
+                            ...(typeof editingVendor.address === "object"
+                              ? editingVendor.address
+                              : normalizeAddress(editingVendor.address)),
+                            city: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      placeholder="State"
+                      value={normalizeAddress(editingVendor.address).state}
+                      onChange={(e) =>
+                        setEditingVendor({
+                          ...editingVendor,
+                          address: {
+                            ...(typeof editingVendor.address === "object"
+                              ? editingVendor.address
+                              : normalizeAddress(editingVendor.address)),
+                            state: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             <div className="mt-6 flex items-center justify-end gap-3">

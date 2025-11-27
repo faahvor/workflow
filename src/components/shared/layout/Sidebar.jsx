@@ -13,6 +13,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { FaFileSignature } from "react-icons/fa";
+import { IoAttach } from "react-icons/io5";
 
 const Sidebar = ({
   activeView,
@@ -24,6 +25,9 @@ const Sidebar = ({
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isProcurement = String(user?.role || "") === "Procurement Manager";
+    const isAccountingLead = ["accountinglead", "accounting lead", "account lead"].includes(
+    String(user?.role || "").toLowerCase()
+  );
 
   const handleLogout = () => {
     logout();
@@ -152,6 +156,24 @@ const Sidebar = ({
               <MdCheckCircle className="text-xl shrink-0" />
               <span className="font-medium text-sm">Approved</span>
             </button>
+              {isAccountingLead && (
+              <button
+                onClick={() => {
+                  setActiveView("merged");
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
+                  activeView === "merged"
+                    ? "bg-gray-800/80 text-white"
+                    : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                }`}
+              >
+                <div className="flex items-center space-x-3">
+                  <IoAttach className="text-xl shrink-0" />
+                  <span className="font-medium text-sm">Merged</span>
+                </div>
+              </button>
+            )}
             {/* Completed Requests */}
             <button
               onClick={() => {

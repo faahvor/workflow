@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const AccountTable = ({
+const CFOTable = ({
   items = [],
   onEditItem,
   isReadOnly = false,
@@ -16,7 +16,7 @@ const AccountTable = ({
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const isSecondApproval = currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2";
+  const isSecondApproval = currentState === "PENDING_ACCOUNTING_APPROVAL_2";
   const isPettyCash = requestType === "pettyCash";
   const showPaymentColumns =
     requestType === "purchaseOrder" || (isPettyCash && isSecondApproval);
@@ -307,16 +307,7 @@ const AccountTable = ({
                   Total Price
                 </th>
               )}
-              {requestType !== "pettyCash" && (
-                <>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    PRN
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    PON
-                  </th>
-                </>
-              )}
+             
             </tr>
           </thead>
           <tbody>
@@ -497,17 +488,7 @@ const AccountTable = ({
                   )}
                 </td>
 
-                {requestType !== "pettyCash" && (
-                  <>
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseRequisitionNumber || "N/A"}
-                    </td>
-
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseOrderNumber || "N/A"}
-                    </td>
-                  </>
-                )}
+               
               </tr>
             ))}
           </tbody>
@@ -531,17 +512,8 @@ const AccountTable = ({
             ◄
           </button>
           <div className="flex items-center justify-center">
-            <button
-              onClick={handleSaveAll}
-              disabled={isSaving}
-              className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
-                isSaving
-                  ? "bg-gray-300 text-gray-700 cursor-not-allowed"
-                  : "bg-[#036173] text-white hover:bg-[#024f57]"
-              }`}
-            >
-              {isSaving ? "Saving..." : "Save Changes"}
-            </button>
+
+           
           </div>
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
@@ -562,4 +534,4 @@ const AccountTable = ({
   );
 };
 
-export default AccountTable;
+export default CFOTable;

@@ -4,7 +4,6 @@ import Select from "react-select";
 import CreatableSelect from "react-select/creatable";
 import axios from "axios";
 import { MdCheckCircle } from "react-icons/md";
-import { generateAndUploadRequisition } from "../generateAndUploadRequisition";
 import { useAuth } from "../../context/AuthContext";
 
 const ProcurementTable = ({
@@ -87,6 +86,11 @@ const ProcurementTable = ({
   ];
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const vendorOptions = (vendors || []).map((v) => {
+    const id = v?.vendorId ?? v?._id ?? v?.id ?? String(v);
+    const label = typeof v?.name === "string" ? v.name : String(v?.name ?? id);
+    return { value: id, label };
+  });
 
   const extractVendorFromFilename = (urlOrName) => {
     try {
@@ -108,11 +112,31 @@ const ProcurementTable = ({
     }
   };
 
+  // ...existing code...
   const normalizeVendorKey = (vendor) =>
     String(vendor || "")
       .trim()
       .toLowerCase()
       .replace(/\s+/g, "_");
+
+  // new helper: always return a string for vendor display
+  const getVendorDisplayName = (vendorOrName) => {
+    if (!vendorOrName) return "";
+    if (typeof vendorOrName === "string") return vendorOrName;
+    if (typeof vendorOrName === "object") {
+      return (
+        vendorOrName.name ||
+        vendorOrName.vendorName ||
+        vendorOrName.label ||
+        vendorOrName.vendor ||
+        vendorOrName.vendorId ||
+        vendorOrName.id ||
+        ""
+      );
+    }
+    return String(vendorOrName);
+  };
+  // ...existing code...
 
   const capitalizeFirstLetter = (str) => {
     if (!str) return "";
@@ -146,6 +170,27 @@ const ProcurementTable = ({
           ...(changes.total !== undefined ? { totalPrice: changes.total } : {}),
           requestId,
         };
+
+        if (payload.inStockLocation !== undefined) {
+          payload.storeLocation = payload.inStockLocation;
+          delete payload.inStockLocation;
+        }
+        const localItem =
+          editedRequests.find((it) => (it.itemId || it._id) === itemId) || null;
+        if (localItem) {
+          if (payload.vendorId === undefined && localItem.vendorId) {
+            payload.vendorId = localItem.vendorId;
+          }
+          // if vendor name present but vendorId not included in changes, prefer sending vendorId
+          if (
+            payload.vendor &&
+            payload.vendorId === undefined &&
+            localItem.vendorId
+          ) {
+            payload.vendorId = localItem.vendorId;
+          }
+        }
+
         if (
           Object.prototype.hasOwnProperty.call(payload, "inStock") &&
           payload.inStock === false
@@ -190,13 +235,13 @@ const ProcurementTable = ({
             totalPrice: it.totalPrice ?? it.total ?? 0,
           }))
         );
-      } else if (selectedRequest?.items) {
-        setEditedRequests(
-          selectedRequest.items.map((it) => ({
+      } else {
+        // Server didn't return items — keep local edits but clear dirty flags (they were saved)
+        setEditedRequests((prev) =>
+          prev.map((it) => ({
             ...it,
-            itemId: it.itemId || it._id,
-            total: it.totalPrice ?? it.total ?? 0,
-            totalPrice: it.totalPrice ?? it.total ?? 0,
+            _dirty: false,
+            _pendingVendor: undefined,
           }))
         );
       }
@@ -209,7 +254,7 @@ const ProcurementTable = ({
     }
   };
 
-  // Build minimal changes for an edited item by comparing to original requests prop
+  // ...existing code...
   const buildChangesForItem = (editedItem) => {
     const orig =
       requests.find(
@@ -231,46 +276,102 @@ const ProcurementTable = ({
       "vendorId",
       "vendor",
       "shippingFee",
+      "itemType",
+      "destination",
     ];
 
     const changes = {};
+
     fieldsToCheck.forEach((f) => {
       const a = orig[f];
       const b = editedItem[f];
-      // normalize numbers/strings for comparison
-      const aNorm =
-        typeof a === "number" ? Number(a) : a === undefined ? "" : String(a);
-      const bNorm =
-        typeof b === "number" ? Number(b) : b === undefined ? "" : String(b);
-      if (aNorm !== bNorm) {
-        // prefer numeric types when appropriate
-        if (
-          [
-            "quantity",
-            "unitPrice",
-            "inStockQuantity",
-            "shippingQuantity",
-            "shippingFee",
-          ].includes(f)
-        ) {
-          changes[f] = b === "" ? 0 : Number(b) || 0;
-        } else if (f === "discount") {
-          changes[f] = b === "" ? "" : Number(b);
-        } else if (f === "vatted" || f === "inStock") {
-          changes[f] = !!b;
-        } else {
-          changes[f] = b;
+
+      // vendorId: normalize and detect null/empty removal
+      if (f === "vendorId") {
+        const aNorm = a === undefined || a === null ? "" : String(a);
+        const bNorm = b === undefined || b === null ? "" : String(b);
+        if (aNorm !== bNorm) {
+          // send explicit null when vendor cleared
+          changes.vendorId = b === "" ? null : b;
         }
+        return;
+      }
+
+      // vendor name: normalize
+      if (f === "vendor") {
+        const aNorm = a === undefined || a === null ? "" : String(a).trim();
+        const bNorm = b === undefined || b === null ? "" : String(b).trim();
+        if (aNorm !== bNorm) {
+          changes.vendor = bNorm;
+          // if vendor was cleared, ensure vendorId is also cleared
+          if (bNorm === "") {
+            changes.vendorId = null;
+          }
+        }
+        return;
+      }
+
+      // numeric fields
+      if (
+        [
+          "quantity",
+          "unitPrice",
+          "inStockQuantity",
+          "shippingQuantity",
+          "shippingFee",
+        ].includes(f)
+      ) {
+        const aNum = a === "" || a === undefined ? 0 : Number(a || 0);
+        const bNum = b === "" || b === undefined ? 0 : Number(b || 0);
+        if (Number.isNaN(aNum) ? !Number.isNaN(bNum) : aNum !== bNum) {
+          changes[f] = b === "" ? 0 : Number(b) || 0;
+        }
+        return;
+      }
+
+      // boolean
+      if (f === "vatted" || f === "inStock") {
+        if (!!a !== !!b) changes[f] = !!b;
+        return;
+      }
+
+      // discount allow empty string or numeric
+      if (f === "discount") {
+        const aNum = a === "" || a === undefined ? "" : Number(a);
+        const bNum = b === "" || b === undefined ? "" : Number(b);
+        if (String(aNum) !== String(bNum))
+          changes[f] = b === "" ? "" : Number(b);
+        return;
+      }
+
+      // fallback: string compare
+      const aStr = a === undefined || a === null ? "" : String(a);
+      const bStr = b === undefined || b === null ? "" : String(b);
+      if (aStr !== bStr) {
+        changes[f] = b;
       }
     });
 
+    // final safeguard: if vendor was given as cleared in vendor field but vendorId not set above, set vendorId = null
+    if (
+      changes.vendor !== undefined &&
+      changes.vendor === "" &&
+      changes.vendorId === undefined
+    ) {
+      changes.vendorId = null;
+    }
+
     return changes;
   };
+  // ...existing code...
 
   const handleSaveAll = async () => {
     if (!window.confirm("Save all changes to the items?")) return;
 
     const dirty = editedRequests.filter((it) => it._dirty);
+    console.log("handleSaveAll - editedRequests snapshot:", editedRequests);
+    console.log("handleSaveAll - dirty items:", dirty);
+
     if (!dirty || dirty.length === 0) {
       alert("No changes to save.");
       return;
@@ -278,6 +379,11 @@ const ProcurementTable = ({
 
     try {
       setIsSaving(true);
+      console.log("DEBUG: original requests prop:", requests);
+      console.log(
+        "DEBUG: local editedRequests snapshot before save:",
+        editedRequests
+      );
 
       // 1) Create any new vendors that were created locally (deferred create)
       if (typeof handleCreateVendor === "function") {
@@ -329,12 +435,23 @@ const ProcurementTable = ({
         .filter((it) => it._dirty)
         .map((it) => {
           const changes = buildChangesForItem(it);
+          if (
+            changes.inStockLocation !== undefined &&
+            changes.storeLocation === undefined
+          ) {
+            changes.storeLocation = changes.inStockLocation;
+            delete changes.inStockLocation;
+          }
+
           return {
             itemId: it.itemId || it._id,
             changes,
           };
         })
         .filter((u) => Object.keys(u.changes).length > 0);
+
+      // debug: show payload that will be sent to server
+      console.log("handleSaveAll - updates payload:", updates);
 
       if (updates.length === 0) {
         alert("No actual field changes detected to save.");
@@ -355,249 +472,12 @@ const ProcurementTable = ({
 
       alert("Saved successfully");
 
-      // --- after save: delete old requisition files not referenced and replace where needed ---
-      (async () => {
-        try {
-          const token = getToken
-            ? getToken()
-            : sessionStorage.getItem("userToken") || null;
-          const reqId = selectedRequest?.requestId;
-          if (!reqId) return;
-
-          const groups = groupAndSortRequests(editedRequests || []);
-
-          // helper to resolve vendor name (from item or vendorId via vendors prop)
-          const resolveVendorName = (itOrIdOrName) => {
-            if (!itOrIdOrName) return null;
-            // if it's an item-like object
-            if (typeof itOrIdOrName === "object") {
-              if (
-                itOrIdOrName.vendor &&
-                String(itOrIdOrName.vendor).trim() !== ""
-              )
-                return itOrIdOrName.vendor;
-              const vid = itOrIdOrName.vendorId || itOrIdOrName.vendor || null;
-              if (!vid) return null;
-              const found = (vendors || []).find(
-                (v) =>
-                  String(v.vendorId) === String(vid) ||
-                  String(v._id) === String(vid) ||
-                  String(v.id) === String(vid)
-              );
-              return found?.name || String(vid);
-            }
-            // if it's a bare id or name string
-            const s = String(itOrIdOrName);
-            if (s.indexOf("v-") === 0 || s.match(/^[0-9a-fA-F]{24}$/)) {
-              const found = (vendors || []).find(
-                (v) =>
-                  String(v.vendorId) === s ||
-                  String(v._id) === s ||
-                  String(v.id) === s
-              );
-              return found?.name || s;
-            }
-            return s;
-          };
-
-          // vendors we will upload for (persisted vendorId present) -> normalize names
-          const vendorsToUploadNorm = new Set(
-            groups
-              .map((g) => {
-                const it = g.items[0];
-                // only upload for groups with a persisted vendorId
-                if (!it?.vendorId) return null;
-                return normalizeVendorKey(resolveVendorName(it));
-              })
-              .filter(Boolean)
-          );
-
-          // fetch latest request items (server) to know accurate vendor presence
-          let serverItems = [];
-          try {
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-            const resp = await axios.get(`${API_BASE_URL}/requests/${reqId}`, {
-              headers,
-            });
-            const data = resp.data?.data ?? resp.data ?? resp.data;
-            serverItems = data?.items || data?.request?.items || [];
-          } catch (err) {
-            console.warn(
-              "Could not fetch latest request items, falling back to local editedRequests",
-              err
-            );
-            serverItems = [];
-          }
-
-          const vendorsPresentList =
-            serverItems && serverItems.length > 0
-              ? serverItems.map((it) => resolveVendorName(it)).filter(Boolean)
-              : groups
-                  .map((g) => resolveVendorName(g.items[0]))
-                  .filter(Boolean);
-
-          const vendorsPresentNorm = new Set(
-            vendorsPresentList.map((v) => normalizeVendorKey(v))
-          );
-
-          // fetch existing requisition files (primary endpoint)
-          let existingUrls = [];
-          try {
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-            const resp = await axios.get(
-              `${API_BASE_URL}/requests/${reqId}/requisition-files`,
-              { headers }
-            );
-            const data = resp.data?.data ?? resp.data ?? resp.data;
-            if (Array.isArray(data) && data.length > 0) existingUrls = data;
-            else {
-              // fallback to request object
-              const resp2 = await axios.get(
-                `${API_BASE_URL}/requests/${reqId}`,
-                { headers }
-              );
-              const rd = resp2.data?.data ?? resp2.data ?? resp2.data;
-              existingUrls = Array.isArray(rd?.requisitionFiles)
-                ? rd.requisitionFiles
-                : [];
-            }
-          } catch (err) {
-            console.error(
-              "Error fetching existing requisition files (or fallback):",
-              err
-            );
-            existingUrls = [];
-          }
-
-          // map existing files to vendor keys using filename parsing
-          const existingFileMetas = (existingUrls || [])
-            .map((url) => {
-              const name = String(url).split("/").pop().split("?")[0];
-              const vendor = extractVendorFromFilename(name);
-              return {
-                url,
-                name,
-                vendor,
-                vendorKey: normalizeVendorKey(vendor),
-              };
-            })
-            .filter(Boolean);
-
-          // build list of files to delete:
-          // - vendor not present anymore (vendorMissing)
-          // - vendor present but we will replace (willReplace)
-          const filesToDelete = existingFileMetas.filter((f) => {
-            if (!f.vendorKey) return false;
-            const vendorMissing = !vendorsPresentNorm.has(f.vendorKey);
-            const willReplace = vendorsToUploadNorm.has(f.vendorKey);
-            return vendorMissing || willReplace;
-          });
-
-          if (filesToDelete.length > 0) {
-            const deletePromises = filesToDelete.map((f) =>
-              axios
-                .delete(`${API_BASE_URL}/requests/${reqId}/requisition-files`, {
-                  headers: {
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                    "Content-Type": "application/json",
-                  },
-                  data: { fileUrl: f.url },
-                })
-                .then(() => ({ url: f.url, ok: true }))
-                .catch((err) => ({ url: f.url, ok: false, err }))
-            );
-            const settled = await Promise.allSettled(deletePromises);
-            settled.forEach((r) => {
-              if (r.status === "fulfilled" && r.value && r.value.ok === false) {
-                console.error(
-                  "Failed to delete requisition file:",
-                  r.value.url,
-                  r.value.err
-                );
-              } else if (r.status === "rejected") {
-                console.error("Delete promise rejected:", r.reason);
-              }
-            });
-
-            // refresh parent (AttachedDocuments) immediately after deletions so UI reflects removed files
-            try {
-              if (typeof onFilesChanged === "function") onFilesChanged();
-            } catch (cbErr) {
-              console.error(
-                "onFilesChanged callback error after deletions:",
-                cbErr
-              );
-            }
-          }
-
-          // upload new requisitions for vendor groups with a persisted vendorId
-          const uploadPromises = groups
-            .map((g) => {
-              const vendorId = g.items[0]?.vendorId;
-              const vendorName = resolveVendorName(g.items[0]) || "vendor";
-              if (!vendorId) return null;
-              const itemsForVendor = g.items.map((it) => ({
-                ...it,
-                quantity: Number(it.quantity || 0),
-                unitPrice: Number(it.unitPrice || 0),
-                discount: it.discount === "" ? null : Number(it.discount || 0),
-              }));
-              return generateAndUploadRequisition({
-                request: selectedRequest,
-                items: itemsForVendor,
-                requestId: reqId,
-                vendorName,
-                token,
-              }).then((uploadedFiles) => ({ vendorName, uploadedFiles }));
-            })
-            .filter(Boolean);
-
-          if (uploadPromises.length === 0) {
-            try {
-              if (typeof onFilesChanged === "function") onFilesChanged();
-            } catch (cbErr) {
-              console.error(
-                "onFilesChanged callback error (no uploads):",
-                cbErr
-              );
-            }
-            return;
-          }
-
-          setIsSaving(true);
-          const results = await Promise.allSettled(uploadPromises);
-
-          const succeeded = results.filter(
-            (r) => r.status === "fulfilled"
-          ).length;
-          const failed = results.filter((r) => r.status === "rejected").length;
-
-          if (succeeded > 0) {
-            try {
-              if (typeof onFilesChanged === "function") onFilesChanged();
-            } catch (cbErr) {
-              console.error(
-                "onFilesChanged callback error after uploads:",
-                cbErr
-              );
-            }
-          }
-
-          if (failed > 0) {
-            console.error("Some requisition uploads failed:", results);
-            alert(
-              `${failed} requisition upload(s) failed. Check console for details.`
-            );
-          }
-        } catch (err) {
-          console.error(
-            "Error uploading/replacing requisitions after save:",
-            err
-          );
-        } finally {
-          setIsSaving(false);
-        }
-      })();
+      // Notify parent to refresh attached-files list / live preview (no uploads here)
+      try {
+        if (typeof onFilesChanged === "function") onFilesChanged();
+      } catch (cbErr) {
+        console.error("onFilesChanged callback error after save:", cbErr);
+      }
     } catch (err) {
       console.error("Error in handleSaveAll:", err);
       alert("Error saving changes. See console for details.");
@@ -622,33 +502,33 @@ const ProcurementTable = ({
             updatedItem.vatted = !!value;
           } else {
             updatedItem[field] = value;
-          if (field === "inStock") {
-            if (value === false) {
-              updatedItem.inStockQuantity = 0;
-              updatedItem.storeLocation = "";
-            } else if (value === true) {
-              if (
-                updatedItem.inStockQuantity === "" ||
-                updatedItem.inStockQuantity === null ||
-                parseInt(updatedItem.inStockQuantity, 10) === 0
-              ) {
-                updatedItem.inStockQuantity = 1;
+            if (field === "inStock") {
+              if (value === false) {
+                updatedItem.inStockQuantity = 0;
+                updatedItem.storeLocation = "";
+              } else if (value === true) {
+                if (
+                  updatedItem.inStockQuantity === "" ||
+                  updatedItem.inStockQuantity === null ||
+                  parseInt(updatedItem.inStockQuantity, 10) === 0
+                ) {
+                  updatedItem.inStockQuantity = 1;
+                }
+
+                // Keep pricing cleared for in-stock items
+                updatedItem.unitPrice = 0;
+                updatedItem.currency = "";
+                updatedItem.discount = "";
+                updatedItem.vatted = false;
+                updatedItem.total = 0;
               }
 
-              // Keep pricing cleared for in-stock items
-              updatedItem.unitPrice = 0;
-              updatedItem.currency = "";
-              updatedItem.discount = "";
-              updatedItem.vatted = false;
-              updatedItem.total = 0;
+              console.log("handleChange - inStock toggle:", {
+                itemId,
+                value,
+                updatedItem,
+              });
             }
-
-            console.log("handleChange - inStock toggle:", {
-              itemId,
-              value,
-              updatedItem,
-            });
-          }
           }
 
           // Recalculate total
@@ -715,12 +595,16 @@ const ProcurementTable = ({
 
   const groupAndSortRequests = (requests) => {
     const vendorGroups = {};
-    requests.forEach((request, index) => {
-      const key = request.vendor || "No Vendor";
+    requests.forEach((req, index) => {
+      const key =
+        getVendorDisplayName(
+          // prefer shippingVendor when used, else vendor or vendorId
+          req.shippingVendor || req.vendor || req.vendorId || "No Vendor"
+        ) || "No Vendor";
       if (!vendorGroups[key]) {
         vendorGroups[key] = { order: index, items: [] };
       }
-      vendorGroups[key].items.push(request);
+      vendorGroups[key].items.push(req);
     });
     return Object.values(vendorGroups).sort((a, b) => a.order - b.order);
   };
@@ -765,8 +649,16 @@ const ProcurementTable = ({
     fetchVat();
   }, []);
 
+  // ...existing code...
   useEffect(() => {
-    // Initialize shipping fees from items data
+    // If there are local unsaved edits, don't overwrite them
+    if (editedRequests.some((it) => it && it._dirty)) {
+      console.log(
+        "Skipping re-init of editedRequests because local edits exist"
+      );
+      return;
+    }
+
     const vendorShippingFees = {};
 
     if (requests && requests.length > 0) {
@@ -792,24 +684,31 @@ const ProcurementTable = ({
 
         // Resolve vendorId and vendor name:
         const resolvedVendorId =
-          existingItem?.vendorId ?? request.vendorId ?? request.vendor ?? null;
-        const resolvedVendorName =
-          existingItem?.vendor ||
-          (resolvedVendorId
+          existingItem?.vendorId ??
+          request.vendorId ??
+          (request.vendor && (request.vendor.vendorId || request.vendor.id)) ??
+          null;
+
+        const vendorFromCatalog =
+          resolvedVendorId && vendors && vendors.length
             ? (vendors || []).find(
                 (v) =>
                   String(v.vendorId) === String(resolvedVendorId) ||
                   String(v._id) === String(resolvedVendorId) ||
                   String(v.id) === String(resolvedVendorId)
-              )?.name
-            : null) ||
-          request.vendor ||
+              )
+            : null;
+
+        const resolvedVendorName =
+          existingItem?.vendor ||
+          (vendorFromCatalog ? vendorFromCatalog.name : null) ||
+          (request.vendor ? getVendorDisplayName(request.vendor) : "") ||
+          request.vendorName ||
           "";
 
         return {
           ...request,
           itemId: request.itemId || request._id,
-          // vendor and vendorId normalized so UI shows name immediately
           vendor: resolvedVendorName,
           vendorId: resolvedVendorId,
           currency: existingItem?.currency || request.currency || "",
@@ -828,13 +727,11 @@ const ProcurementTable = ({
             existingItem?.inStockQuantity || request.inStockQuantity || 0,
           storeLocation:
             existingItem?.storeLocation || request.storeLocation || "",
-          logisticsType:
-            existingItem?.logisticsType || request.logisticsType || "local",
+          logisticsType: existingItem?.logisticsType ?? "local",
           shippingQuantity:
             existingItem?.shippingQuantity || request.shippingQuantity || 0,
           discount: existingItem?.discount || request.discount || "",
           vatted: existingItem?.vatted || request.vatted || false,
-          // prefer request.totalPrice from backend, fall back to request.total
           total:
             existingItem?.total ?? request.totalPrice ?? request.total ?? 0,
           totalPrice:
@@ -848,12 +745,13 @@ const ProcurementTable = ({
             existingItem?.purchaseOrderNumber ||
             request.purchaseOrderNumber ||
             "",
-          shippingFee: request.shippingFee || 0,
+          shippingFee: existingItem?.shippingFee ?? 0,
         };
       });
       return updatedRequests;
     });
   }, [requests, selectedRequest, vendors]);
+  // ...existing code...
 
   const handleEditClick = (itemId) => {
     setEditingIndex(String(itemId));
@@ -874,6 +772,9 @@ const ProcurementTable = ({
         purchaseOrderNumber: updatedItem.purchaseOrderNumber || "",
         requestId: selectedRequest?.requestId,
       };
+      payload.vendorId = updatedItem.vendorId ?? null;
+      console.log("handleSaveClick -> sending payload:", payload);
+
       onEditItem(payload);
     }
     setEditingIndex(null);
@@ -881,26 +782,18 @@ const ProcurementTable = ({
   };
 
   const getVendorKey = (item) => {
-    if (
-      selectedRequest?.clearing === false &&
-      selectedRequest?.shipping === true
-    ) {
-      return item.shippingVendor || item.vendor || "No Vendor";
-    } else if (
-      selectedRequest?.clearing === true &&
-      selectedRequest?.shipping === false
-    ) {
-      if (
-        selectedRequest?.shippingItems &&
-        selectedRequest.shippingItems.length > 0
-      ) {
-        return item.shippingVendor || item.vendor || "No Vendor";
-      } else {
-        return item.vendor || "No Vendor";
-      }
-    } else {
-      return item.vendor || "No Vendor";
-    }
+    const raw =
+      (selectedRequest?.clearing === false &&
+        selectedRequest?.shipping === true &&
+        (item.shippingVendor || item.vendor)) ||
+      (selectedRequest?.clearing === true && selectedRequest?.shipping === false
+        ? item.shippingVendor || item.vendor
+        : item.vendor) ||
+      item.vendorId ||
+      "No Vendor";
+
+    // normalize to a simple display string
+    return getVendorDisplayName(raw) || String(item.vendorId || "No Vendor");
   };
 
   const vendorGroups = {};
@@ -1092,21 +985,27 @@ const ProcurementTable = ({
                           style={{ minWidth: "150px" }}
                         >
                           {allowVendorSelection && (
+                            // ...existing code...
                             <CreatableSelect
-                              options={vendors.map((vendor) => ({
-                                value: vendor.vendorId,
-                                label: vendor.name,
-                              }))}
+                              options={vendorOptions}
                               value={(() => {
                                 const currentItem = editedRequests.find(
                                   (item) => item.itemId === request.itemId
                                 );
+                                if (!currentItem) return null;
+                                // prefer vendorId match; fallback to vendor text
+                                const match = vendorOptions.find(
+                                  (opt) =>
+                                    String(opt.value) ===
+                                    String(currentItem.vendorId)
+                                );
+                                if (match) return match;
                                 return currentItem?.vendor
                                   ? {
                                       value:
                                         currentItem.vendorId ||
                                         currentItem.vendor,
-                                      label: currentItem.vendor,
+                                      label: String(currentItem.vendor),
                                     }
                                   : null;
                               })()}
@@ -1116,15 +1015,29 @@ const ProcurementTable = ({
                                     item.itemId === request.itemId
                                       ? {
                                           ...item,
-                                          vendor: selectedOption?.label || null,
+                                          vendor: selectedOption?.label
+                                            ? String(selectedOption.label)
+                                            : null,
                                           vendorId:
-                                            selectedOption?.value || null,
+                                            selectedOption?.value !==
+                                              undefined &&
+                                            selectedOption?.value !== null
+                                              ? String(selectedOption.value)
+                                              : null,
                                           _dirty: true,
                                           _pendingVendor: selectedOption
                                             ? {
-                                                name: selectedOption.label,
+                                                name: String(
+                                                  selectedOption.label
+                                                ),
                                                 id:
-                                                  selectedOption.value || null,
+                                                  selectedOption?.value !==
+                                                    undefined &&
+                                                  selectedOption?.value !== null
+                                                    ? String(
+                                                        selectedOption.value
+                                                      )
+                                                    : null,
                                                 isNew: false,
                                               }
                                             : null,
@@ -1132,24 +1045,38 @@ const ProcurementTable = ({
                                       : item
                                   )
                                 );
+
+                                console.log(
+                                  "Vendor select changed for item",
+                                  request.itemId,
+                                  "selectedOption:",
+                                  selectedOption
+                                );
                               }}
-                              onCreateOption={(inputValue) => {
+                              onCreateOption={async (inputValue) => {
                                 setEditedRequests((prev) =>
                                   prev.map((item) =>
                                     item.itemId === request.itemId
                                       ? {
                                           ...item,
-                                          vendor: inputValue,
+                                          vendor: String(inputValue),
                                           vendorId: null,
                                           _dirty: true,
                                           _pendingVendor: {
-                                            name: inputValue,
+                                            name: String(inputValue),
                                             id: null,
                                             isNew: true,
                                           },
                                         }
                                       : item
                                   )
+                                );
+
+                                console.log(
+                                  "Vendor create (optimistic) for item",
+                                  request.itemId,
+                                  "name:",
+                                  inputValue
                                 );
                               }}
                               className={`w-[170px] text-black ${
@@ -1188,6 +1115,7 @@ const ProcurementTable = ({
                                 request.inStock
                               }
                             />
+                            // ...existing code...
                           )}
                         </td>
                         <td
@@ -1360,11 +1288,17 @@ const ProcurementTable = ({
                                   if (!/^\d+$/.test(raw)) return;
                                   const parsed = parseInt(raw, 10);
                                   const minVal = 1;
-                                  const maxVal = parseInt(request.quantity || 0, 10) || 0;
+                                  const maxVal =
+                                    parseInt(request.quantity || 0, 10) || 0;
                                   let newVal = parsed;
                                   if (newVal < minVal) newVal = minVal;
-                                  if (maxVal > 0 && newVal > maxVal) newVal = maxVal;
-                                  handleChange(itemId, "inStockQuantity", newVal);
+                                  if (maxVal > 0 && newVal > maxVal)
+                                    newVal = maxVal;
+                                  handleChange(
+                                    itemId,
+                                    "inStockQuantity",
+                                    newVal
+                                  );
                                 }}
                                 onBlur={(e) => {
                                   const raw = e.target.value;
@@ -1378,14 +1312,22 @@ const ProcurementTable = ({
                                   }
                                   const parsed = parseInt(raw, 10);
                                   const minVal = 1;
-                                  const maxVal = parseInt(request.quantity || 0, 10) || 0;
+                                  const maxVal =
+                                    parseInt(request.quantity || 0, 10) || 0;
                                   let newVal = parsed;
                                   if (newVal < minVal) newVal = minVal;
-                                  if (maxVal > 0 && newVal > maxVal) newVal = maxVal;
-                                  handleChange(itemId, "inStockQuantity", newVal);
+                                  if (maxVal > 0 && newVal > maxVal)
+                                    newVal = maxVal;
+                                  handleChange(
+                                    itemId,
+                                    "inStockQuantity",
+                                    newVal
+                                  );
                                 }}
                                 className="border px-2 py-1 rounded-md w-28 text-black"
-                                disabled={isPreview || readOnly || !request.inStock}
+                                disabled={
+                                  isPreview || readOnly || !request.inStock
+                                }
                               />
                             ) : (
                               <div className="text-sm text-slate-500">N/A</div>
@@ -1768,40 +1710,18 @@ const ProcurementTable = ({
                             </span>
                           </td>
                         )}
-                        {showPRN && getVendorInfo(request).isFirstRow && (
+                          {showPRN && getVendorInfo(request).isFirstRow && (
                           <td
                             className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900"
                             rowSpan={getVendorInfo(request).rowspan}
                             style={{ verticalAlign: "middle" }}
                           >
-                            {canEditPRN ? (
-                              <input
-                                type="text"
-                                value={request.purchaseReqNumber || ""}
-                                onChange={(e) => {
-                                  const newPRN = e.target.value;
-                                  setEditedRequests((prev) =>
-                                    prev.map((itm) =>
-                                      getVendorKey(itm) ===
-                                      getVendorInfo(request).vendorKey
-                                        ? { ...itm, purchaseReqNumber: newPRN }
-                                        : itm
-                                    )
-                                  );
-                                  vendorGroups[
-                                    getVendorInfo(request).vendorKey
-                                  ].forEach((itm) => {
-                                    onEditItem({
-                                      ...itm,
-                                      purchaseReqNumber: newPRN,
-                                    });
-                                  });
-                                }}
-                                className="border px-2 py-1 rounded-md w-24"
-                              />
-                            ) : (
-                              <span>{request.purchaseReqNumber || "N/A"}</span>
-                            )}
+                            <span>
+                              {request.purchaseRequisitionNumber ||
+                                request.purchaseReqNumber ||
+                                request.prn ||
+                                "N/A"}
+                            </span>
                           </td>
                         )}
                         {showPON && (
@@ -1852,64 +1772,72 @@ const ProcurementTable = ({
                         className="border border-slate-200 p-3 text-center font-bold"
                       >
                         Shipping Fee -{" "}
-                        {vendorGroup.items[0]?.vendor || "No Vendor"}
+                        {getVendorDisplayName(
+                          vendorGroup.items[0]?.vendor ||
+                            vendorGroup.items[0]?.vendorId ||
+                            "No Vendor"
+                        ) || "No Vendor"}
                       </td>
-                        <td className="border border-slate-200 p-3 text-center">
-                          <input
-                            type="number"
-                            value={
-                              shippingFees[
-                                vendorGroup.items[0]?.vendor || "No Vendor"
-                              ] || ""
+                      <td className="border border-slate-200 p-3 text-center">
+                        <input
+                          type="number"
+                          value={
+                            shippingFees[
+                              vendorGroup.items[0]?.vendor || "No Vendor"
+                            ] || ""
+                          }
+                          onChange={(e) => {
+                            const vendor =
+                              vendorGroup.items[0]?.vendor || "No Vendor";
+                            const value =
+                              e.target.value === ""
+                                ? 0
+                                : parseFloat(e.target.value) || 0;
+
+                            // Update local UI state immediately
+                            setShippingFees((prev) => ({
+                              ...prev,
+                              [vendor]: value,
+                            }));
+
+                            // Update editedRequests locally and mark as dirty.
+                            // Do NOT call handleUnifiedEdit here; saving happens on Save Changes.
+                            setEditedRequests((prev) =>
+                              prev.map((item) =>
+                                (item.vendor || "No Vendor") === vendor
+                                  ? {
+                                      ...item,
+                                      shippingFee: value,
+                                      _dirty: true,
+                                    }
+                                  : item
+                              )
+                            );
+                          }}
+                          onFocus={(e) => {
+                            if (
+                              e.target.value === "0" ||
+                              e.target.value === "0.00"
+                            ) {
+                              e.target.value = "";
                             }
-                            onChange={(e) => {
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value === "") {
                               const vendor =
                                 vendorGroup.items[0]?.vendor || "No Vendor";
-                              const value =
-                                e.target.value === ""
-                                  ? 0
-                                  : parseFloat(e.target.value) || 0;
-
-                              // Update local UI state immediately
                               setShippingFees((prev) => ({
                                 ...prev,
-                                [vendor]: value,
+                                [vendor]: 0,
                               }));
-
-                              // Update editedRequests locally and mark as dirty.
-                              // Do NOT call handleUnifiedEdit here; saving happens on Save Changes.
-                              setEditedRequests((prev) =>
-                                prev.map((item) =>
-                                  (item.vendor || "No Vendor") === vendor
-                                    ? { ...item, shippingFee: value, _dirty: true }
-                                    : item
-                                )
-                              );
-                            }}
-                            onFocus={(e) => {
-                              if (
-                                e.target.value === "0" ||
-                                e.target.value === "0.00"
-                              ) {
-                                e.target.value = "";
-                              }
-                            }}
-                            onBlur={(e) => {
-                              if (e.target.value === "") {
-                                const vendor =
-                                  vendorGroup.items[0]?.vendor || "No Vendor";
-                                setShippingFees((prev) => ({
-                                  ...prev,
-                                  [vendor]: 0,
-                                }));
-                              }
-                            }}
-                            className="border px-2 py-1 rounded-md w-24 border-slate-200 text-center"
-                            placeholder="0.00"
-                            step="0.01"
-                            min="0"
-                          />
-                        </td>
+                            }
+                          }}
+                          className="border px-2 py-1 rounded-md w-24 border-slate-200 text-center"
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                        />
+                      </td>
                     </tr>
                   </tbody>
                 )}

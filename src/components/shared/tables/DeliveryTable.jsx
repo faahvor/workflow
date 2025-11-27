@@ -14,12 +14,24 @@ const DeliveryTable = ({
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
 
-  React.useEffect(() => {
-  if (onDeliveryStatusChange) {
-    const allFullyDelivered = checkAllFullyDelivered();
-    onDeliveryStatusChange(allFullyDelivered);
-  }
-}, [editedItems]);
+   React.useEffect(() => {
+    const incoming = Array.isArray(items) ? items : [];
+    const existing = Array.isArray(editedItems) ? editedItems : [];
+
+    const sameLength = existing.length === incoming.length;
+    const sameIds =
+      sameLength &&
+      incoming.every((it, idx) => {
+        const inId = it.itemId ?? it._id ?? it.id ?? `__idx_${idx}`;
+        const exId = existing[idx] && (existing[idx].itemId ?? existing[idx]._id ?? existing[idx].id ?? `__idx_${idx}`);
+        return String(inId) === String(exId);
+      });
+
+    // Only overwrite local editedItems when the incoming list actually changed
+    if (!sameIds) {
+      setEditedItems(incoming);
+    }
+  }, [items]);
 
   // Check if table needs horizontal scrolling
   React.useEffect(() => {
@@ -42,18 +54,15 @@ const DeliveryTable = ({
   }, [items]);
 
   // Determine the delivered field based on user role
-  const deliveredField =
-    userRole === "deliverybase"
-      ? "deliverybaseDeliveredQuantity"
-      : userRole === "deliveryjetty"
-      ? "deliveryjettyDeliveredQuantity"
-      : "deliveryvesselDeliveredQuantity";
+  const deliveredField = "deliveredQuantity";
+
 
   // Handle delivery quantity change
   const handleDeliveryQuantityChange = (itemId, value) => {
+    const numeric = Number(value) || 0;
     const newItems = editedItems.map(item => 
       item.itemId === itemId 
-        ? { ...item, [deliveredField]: parseFloat(value) || 0 }
+        ? { ...item, [deliveredField]: numeric }
         : item
     );
     
@@ -61,7 +70,16 @@ const DeliveryTable = ({
     
     // Call parent handler if provided
     if (onDeliveryQuantityChange) {
-      onDeliveryQuantityChange(requestId, itemId, value);
+      // pass numeric value; parent expects (requestId, itemId, quantity, outstanding)
+      const updatedItem = newItems.find(it => it.itemId === itemId) || {};
+      const qtyVal = Number(updatedItem.quantity || 0);
+      const outstandingVal = Math.max(0, qtyVal - numeric);
+      onDeliveryQuantityChange(requestId, itemId, numeric, outstandingVal);
+    }
+
+    // notify parent about overall delivery completeness
+    if (onDeliveryStatusChange) {
+      onDeliveryStatusChange(checkAllFullyDelivered());
     }
   };
 
@@ -79,6 +97,20 @@ const DeliveryTable = ({
       isNone: delivered === 0,
     };
   };
+
+    const checkAllFullyDelivered = () => {
+    return editedItems.every(item => {
+      const status = getDeliveryStatus(item);
+      return status.isFull;
+    });
+  };
+
+  // Notify parent when local editedItems change (keeps footer in sync instantly)
+  React.useEffect(() => {
+    if (typeof onDeliveryStatusChange === "function") {
+      onDeliveryStatusChange(checkAllFullyDelivered());
+    }
+  }, [editedItems]);
 
   // Get column headers based on role
   const getDeliveredColumnHeader = () => {
@@ -107,13 +139,7 @@ const DeliveryTable = ({
     );
   }
 
-  // Check if all items have full delivery
-const checkAllFullyDelivered = () => {
-  return editedItems.every(item => {
-    const status = getDeliveryStatus(item);
-    return status.isFull;
-  });
-};
+
 
   return (
     <div className="relative">

@@ -18,6 +18,7 @@ import {
 import { HiClock } from "react-icons/hi";
 import Select from "react-select";
 import axios from "axios";
+import RequestForm from "./RequestForm"; // <-- add import
 
 const RequestDetailDemo = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -75,7 +76,8 @@ const RequestDetailDemo = () => {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [selectedExternalRequest, setSelectedExternalRequest] = useState(null);
-  // small fallback mock if API not available (for demo)
+
+
   const mockRequests = [
     {
       requestId: "REQ-2024-B",
@@ -122,6 +124,11 @@ const RequestDetailDemo = () => {
   const [showRequisition, setShowRequisition] = useState(false);
   const openRequisition = () => setShowRequisition(true);
   const closeRequisition = () => setShowRequisition(false);
+
+  // RequestForm preview state
+  const [showRequestFormPreview, setShowRequestFormPreview] = useState(false);
+  const openRequestFormPreview = () => setShowRequestFormPreview(true);
+  const closeRequestFormPreview = () => setShowRequestFormPreview(false);
 
   // Demo request data
   const request = {
@@ -454,6 +461,120 @@ const RequestDetailDemo = () => {
       }
     }
   };
+
+  // Comments UI state
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+
+    const COMMENTS_PER_PAGE = 3;
+  const [commentsPage, setCommentsPage] = useState(1);
+
+  useEffect(() => {
+    setCommentsPage(1);
+  }, [comments]);
+
+  // derived values (use where rendering happens)
+  const totalCommentPages = Math.max(
+    1,
+    Math.ceil((comments?.length || 0) / COMMENTS_PER_PAGE)
+  );
+  const paginatedComments = (comments || []).slice(
+    (commentsPage - 1) * COMMENTS_PER_PAGE,
+    commentsPage * COMMENTS_PER_PAGE
+  );
+
+  // small mock fallback for demo
+  const mockComments = [
+    {
+      id: "c1",
+      author: "John Smith",
+      text: "Please ensure filters are available for immediate replacement.",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "c2",
+      author: "Procurement Officer",
+      text: "Noted. Will confirm supplier lead time before approval.",
+      createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+    },
+     {
+      id: "c2",
+      author: "Procurement Officer",
+      text: "Noted. Will confirm supplier lead time before approval.",
+      createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+    },
+  ];
+
+  const fetchComments = async () => {
+    setCommentsLoading(true);
+    try {
+      const token = sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      // try several id shapes used in the demo
+      const id = request?.id || request?.requestId || "REQ-2024-001";
+      const resp = await axios.get(
+        `${API_BASE}/requests/${encodeURIComponent(id)}/comments`,
+        { headers }
+      );
+      const data = resp?.data?.data ?? resp?.data ?? [];
+      setComments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn("Failed to fetch comments, using mock:", err);
+      setComments(mockComments);
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const postComment = async () => {
+    const text = (newComment || "").trim();
+    if (!text) return;
+    setPostingComment(true);
+    // optimistic UI
+    const temp = {
+      id: `temp-${Date.now()}`,
+      author: "You",
+      text,
+      createdAt: new Date().toISOString(),
+      _temp: true,
+    };
+    setComments((c) => [temp, ...c]);
+    setNewComment("");
+    try {
+      const token = sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const id = request?.id || request?.requestId || "REQ-2024-001";
+      const resp = await axios.post(
+        `${API_BASE}/requests/${encodeURIComponent(id)}/comments`,
+        { text },
+        { headers }
+      );
+      // replace temp comment with server response when available
+      const created = resp?.data?.data ?? resp?.data ?? null;
+      if (created) {
+        setComments((prev) => [created, ...prev.filter((x) => !x._temp)]);
+      } else {
+        // keep optimistic but remove temp flag
+        setComments((prev) =>
+          prev.map((c) => (c.id === temp.id ? { ...c, _temp: false } : c))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+      // rollback optimistic comment if desired (here we keep it and show error)
+      alert("Failed to submit comment (demo fallback). Comment saved locally.");
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  // fetch comments when demo request mounts
+  useEffect(() => {
+    fetchComments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.id, request?.requestId]);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
@@ -1013,115 +1134,143 @@ const RequestDetailDemo = () => {
               </div>
             </div>
 
-            {/* Attach items from another request (search by vendor or PON) */}
+            {/* Comments */}
             <div className="mb-8">
               <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                🔗 Attach Items from Another Request
+                💬 Comments
               </h3>
-              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
-                <div className="flex gap-3 items-start">
-                  <input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by vendor name or PON and press Enter / Search"
-                    className="flex-1 px-4 py-3 border rounded-xl"
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg space-y-4">
+                {/* Add Comment */}
+                <div className="space-y-3">
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Add a comment... (be polite and concise)"
+                    rows={4}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                   />
-                  <button
-                    onClick={performSearch}
-                    disabled={searching || !searchTerm.trim()}
-                    className="px-4 py-3 bg-[#036173] text-white rounded-xl"
-                  >
-                    {searching ? "Searching..." : "Search"}
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-slate-500">
+                      {newComment.length}/1000
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setNewComment("");
+                        }}
+                        className="px-4 py-2 bg-gray-100 text-slate-700 rounded-md hover:bg-gray-200 text-sm"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        onClick={postComment}
+                        disabled={postingComment || !newComment.trim()}
+                        className={`px-4 py-2 rounded-md text-sm font-semibold ${
+                          postingComment
+                            ? "bg-gray-300 text-slate-600 cursor-not-allowed"
+                            : "bg-[#036173] text-white hover:bg-[#024f57]"
+                        }`}
+                      >
+                        {postingComment ? "Posting..." : "Post Comment"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Results */}
-                {searchResults.length > 0 && (
-                  <div className="mt-4 grid gap-2">
-                    {searchResults.map((res) => (
-                      <div
-                        key={res.requestId}
-                        className="p-3 rounded-lg border hover:bg-slate-50 cursor-pointer flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="text-sm font-semibold">
-                            {res.summary}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {res.vendor}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() =>
-                              fetchAndAttachRequest(
-                                res.requestId ||
-                                  res.purchaseOrderNumber ||
-                                  res.vendor
-                              )
-                            }
-                            className="px-3 py-1 rounded-md bg-emerald-50 text-emerald-700"
+                {/* Comments List */}
+                <div className="pt-2 border-t border-slate-100">
+                  {commentsLoading ? (
+                    <div className="py-6 text-center text-slate-500">
+                      Loading comments...
+                    </div>
+                  ) : comments && comments.length > 0 ? (
+                    <>
+                      <ul className="space-y-3">
+                        {paginatedComments.map((c) => (
+                          <li
+                            key={c.id}
+                            className="flex items-start gap-3 bg-white rounded-lg p-3 border border-slate-100"
                           >
-                            Attach
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                              {(c.author || "U")
+                                .toString()
+                                .split(" ")
+                                .map((s) => s[0])
+                                .slice(0, 2)
+                                .join("")
+                                .toUpperCase()}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-semibold text-slate-900">
+                                    {c.author || "Unknown"}
+                                  </div>
+                                  <div className="text-xs text-slate-400">
+                                    {new Date(
+                                      c.createdAt || Date.now()
+                                    ).toLocaleString()}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-2 text-sm text-slate-700 whitespace-pre-line">
+                                {c.text}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
 
-            {/* Delivery assignment dropdown - placed below requested items */}
-            <div className="mb-8">
-              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <MdDirectionsBoat className="text-xl" />
-                Assign Delivery
-              </h3>
-              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-                <div className="max-w-md">
-                  <Select
-                    options={deliveryOptions}
-                    value={deliveryTarget}
-                    onChange={setDeliveryTarget}
-                    isClearable
-                    placeholder="Select delivery target..."
-                    styles={{
-                      control: (provided) => ({
-                        ...provided,
-                        minHeight: "48px",
-                        borderRadius: 12,
-                        boxShadow: "none",
-                      }),
-                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                    }}
-                    menuPortalTarget={document.body}
-                  />
-                  {deliveryTarget && (
-                    <p className="mt-3 text-sm text-slate-600">
-                      Selected:{" "}
-                      <span className="font-semibold">
-                        {deliveryTarget.label}
-                      </span>
-                    </p>
+                      {/* Pagination controls */}
+                      <div className="mt-4 flex items-center justify-end gap-2">
+                        <button
+                          onClick={() =>
+                            setCommentsPage((p) => Math.max(1, p - 1))
+                          }
+                          disabled={commentsPage === 1}
+                          className="px-3 py-1 rounded-md bg-slate-100 text-slate-700 disabled:opacity-50"
+                        >
+                          Prev
+                        </button>
+
+                        {Array.from({ length: totalCommentPages }).map(
+                          (_, i) => {
+                            const pageIndex = i + 1;
+                            return (
+                              <button
+                                key={pageIndex}
+                                onClick={() => setCommentsPage(pageIndex)}
+                                className={`px-3 py-1 rounded-md text-sm ${
+                                  commentsPage === pageIndex
+                                    ? "bg-[#036173] text-white"
+                                    : "bg-slate-100 text-slate-700"
+                                }`}
+                              >
+                                {pageIndex}
+                              </button>
+                            );
+                          }
+                        )}
+
+                        <button
+                          onClick={() =>
+                            setCommentsPage((p) =>
+                              Math.min(totalCommentPages, p + 1)
+                            )
+                          }
+                          disabled={commentsPage === totalCommentPages}
+                          className="px-3 py-1 rounded-md bg-slate-100 text-slate-700 disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="py-6 text-center text-slate-500">
+                      No comments yet. Be the first to comment.
+                    </div>
                   )}
                 </div>
-              </div>
-            </div>
-
-            {/* Additional Notes */}
-            <div className="mb-8">
-              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <MdDescription className="text-xl" />
-                Additional Notes
-              </h3>
-              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-                <p className="text-slate-700 leading-relaxed">
-                  This request is for essential maintenance supplies needed for
-                  the vessel's scheduled service. All items are required to meet
-                  safety and operational standards. Priority delivery requested
-                  due to upcoming voyage schedule.
-                </p>
               </div>
             </div>
 
@@ -1132,7 +1281,16 @@ const RequestDetailDemo = () => {
                 Attached Documents
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-xl p-4 hover:border-slate-400 transition-all cursor-pointer group shadow-lg">
+                {/* Request Form - open preview like Requisition */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={openRequestFormPreview}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") openRequestFormPreview();
+                  }}
+                  className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-xl p-4 hover:border-slate-400 transition-all cursor-pointer group shadow-lg"
+                >
                   <div className="w-12 h-12 bg-red-500/10 rounded-lg flex items-center justify-center mb-3">
                     <span className="text-2xl">📄</span>
                   </div>
@@ -1157,6 +1315,21 @@ const RequestDetailDemo = () => {
                   </p>
                   <p className="text-xs text-slate-500">128 KB</p>
                 </div>
+
+                {/* RequestForm Preview Modal (mirrors Requisition overlay) */}
+                {showRequestFormPreview && (
+                  <>
+                    <div
+                      className="fixed inset-0 bg-black/60 z-40"
+                      onClick={closeRequestFormPreview}
+                    />
+                    <div className="fixed left-1/2 transform -translate-x-1/2 top-16 z-50 w-[95%] md:w-[80%] lg:w-[70%] max-h-[80vh] overflow-auto">
+                      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                        <RequestForm request={request} items={items} />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-xl p-4 hover:border-slate-400 transition-all cursor-pointer group shadow-lg">
                   <div className="w-12 h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center mb-3">

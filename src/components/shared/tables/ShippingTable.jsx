@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import CreatableSelect from "react-select/creatable";
 import Select from "react-select";
 import { MdCheckCircle } from "react-icons/md";
-import { generateAndUploadRequisition } from "../generateAndUploadRequisition";
 import { useAuth } from "../../context/AuthContext";
 import axios from "axios";
 
@@ -23,31 +22,41 @@ const ShippingTable = ({
   const tableRef = useRef(null);
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-   useEffect(() => {
-    // init editedRequests from items
+  // ...existing code...
+  useEffect(() => {
+    // Do not re-init if there are unsaved local edits
+    if (editedRequests.some((it) => it && it._dirty)) {
+      console.log(
+        "ShippingTable: skipping re-init because local unsaved edits exist"
+      );
+      return;
+    }
+
+    // Build shippingFees map from items (use vendorId first, fallback to vendor text)
+    const fees = {};
+    (items || []).forEach((it) => {
+      const key = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (it.shippingFee !== undefined && fees[key] === undefined) {
+        fees[key] = it.shippingFee;
+      }
+    });
+    setShippingFees(fees);
+
+    // Initialize local editedRequests from items (take shippingFee from each item)
     setEditedRequests(
       (items || []).map((it) => ({
         ...it,
         itemId: it.itemId || it._id || it.id,
         vendor: it.vendor || it.vendorName || "",
-        vendorId: it.vendorId || it.vendor || null,
-        purchaseReqNumber:
-          it.purchaseReqNumber || it.prn || it.purchaseReqNumber || "",
-        shippingQuantity: it.shippingQuantity || it.shippingQty || 0,
-        shippingFee: it.shippingFee || 0,
+        vendorId: it.vendorId ?? it.vendor ?? null,
+        purchaseReqNumber: it.purchaseReqNumber || it.prn || "",
+        shippingQuantity: it.shippingQuantity ?? it.shippingQty ?? 0,
+        shippingFee: it.shippingFee ?? 0,
         _dirty: false,
       }))
     );
-
-    // init shippingFees map (use vendorId first for the key)
-    const fees = {};
-    (items || []).forEach((it) => {
-      const key = it.vendorId ?? it.vendor ?? "No Vendor";
-       if (it.shippingFee !== undefined && fees[key] === undefined)
-         fees[key] = it.shippingFee;
-    });
-    setShippingFees(fees);
   }, [items]);
+  // ...existing code...
 
   useEffect(() => {
     const checkScroll = () => {
@@ -60,8 +69,6 @@ const ShippingTable = ({
     return () => window.removeEventListener("resize", checkScroll);
   }, [editedRequests]);
 
-
-  
   const getVendorOptions = () =>
     (vendors || []).map((v) => ({
       value: v.vendorId ?? v._id ?? v.id,
@@ -133,8 +140,10 @@ const ShippingTable = ({
     return Promise.all(promises);
   };
 
+  // ...existing code...
   const handleSaveAll = async () => {
     if (!window.confirm("Save all changes to shipping items?")) return;
+
     const dirty = editedRequests.filter((it) => it._dirty);
     if (!dirty.length) {
       alert("No changes to save.");
@@ -156,8 +165,9 @@ const ShippingTable = ({
         for (const name of pendingNames) {
           try {
             const opt = await handleCreateVendor(name);
-            if (opt && opt.value !== undefined && opt.value !== null)
+            if (opt && opt.value !== undefined && opt.value !== null) {
               createdByName[name] = opt.value;
+            }
           } catch (err) {
             console.error("create vendor failed", name, err);
           }
@@ -185,14 +195,30 @@ const ShippingTable = ({
         );
       }
 
-      // 2) build updates
-      const updates = editedRequests
+      // 2) build updates from current snapshot
+      const snapshot = editedRequests.slice();
+      const updates = snapshot
         .filter((it) => it._dirty)
-        .map((it) => ({
-          itemId: it.itemId || it._id,
-          changes: buildChangesForItem(it),
-        }))
+        .map((it) => {
+          const changes = buildChangesForItem(it);
+
+          // normalize incorrect key if present
+          if (
+            changes.inStockLocation !== undefined &&
+            changes.storeLocation === undefined
+          ) {
+            changes.storeLocation = changes.inStockLocation;
+            delete changes.inStockLocation;
+          }
+
+          return {
+            itemId: it.itemId || it._id,
+            changes,
+          };
+        })
         .filter((u) => Object.keys(u.changes).length > 0);
+
+      console.log("ShippingTable handleSaveAll - updates payload:", updates);
 
       if (updates.length === 0) {
         alert("No actual changes detected to save.");
@@ -200,69 +226,83 @@ const ShippingTable = ({
         return;
       }
 
-      // 3) send updates
+      // 3) send updates via unified edit helper
       const results = await handleUnifiedEdit(updates);
 
-      // 4) after save, optionally generate & upload requisitions for vendor groups with vendorId
-      try {
-        const token = getToken();
-        const reqId = selectedRequest?.requestId;
-        if (token && reqId) {
-          const groups = groupByVendor(editedRequests);
-          const uploadPromises = groups
-            .map((g) => {
-              const vId = g.items[0]?.vendorId;
-              const vendorName = g.items[0]?.vendor || "vendor";
-              if (!vId) return null;
-              const itemsForVendor = g.items.map((it) => ({
-                ...it,
-                quantity: Number(it.quantity || 0),
-                shippingQuantity: Number(it.shippingQuantity || 0),
-                shippingFee: Number(it.shippingFee || 0),
-              }));
-              return generateAndUploadRequisition({
-                request: selectedRequest,
-                items: itemsForVendor,
-                requestId: reqId,
-                vendorName,
-                token,
-              }).then((uploaded) => ({ vendorName, uploaded }));
-            })
-            .filter(Boolean);
+      // 4) update local state from server response when possible
+      // handleUnifiedEdit may return updated request objects or item responses
+      const updatedRequest =
+        results && Array.isArray(results)
+          ? results.find((r) => r && (r.items || r.data)) || results[0] || null
+          : results || null;
 
-          if (uploadPromises.length > 0) {
-            const settled = await Promise.allSettled(uploadPromises);
-            const failed = settled.filter(
-              (s) => s.status === "rejected"
-            ).length;
-            if (failed > 0) {
-              console.warn(`${failed} requisition uploads failed`);
-              alert(`${failed} requisition upload(s) failed. Check console.`);
-            }
-            // notify parent to refresh attached files
-            try {
-              if (typeof onFilesChanged === "function") onFilesChanged();
-            } catch (cbErr) {
-              console.error("onFilesChanged error:", cbErr);
-            }
-          }
+      const itemsFromServer =
+        updatedRequest?.items || updatedRequest?.data?.items || null;
+
+      const latestItems =
+        itemsFromServer &&
+        Array.isArray(itemsFromServer) &&
+        itemsFromServer.length
+          ? itemsFromServer
+          : editedRequests || [];
+
+      const rebuiltFees = {};
+      (latestItems || []).forEach((it) => {
+        const key = it.vendorId ?? it.vendor ?? "No Vendor";
+        if (it.shippingFee !== undefined && it.shippingFee !== null) {
+          rebuiltFees[key] = it.shippingFee;
         }
-      } catch (err) {
-        console.error("Requisition generation/upload error:", err);
+      });
+      setShippingFees(rebuiltFees);
+
+      if (
+        itemsFromServer &&
+        Array.isArray(itemsFromServer) &&
+        itemsFromServer.length
+      ) {
+        // Replace editedRequests with server items to keep canonical shape
+        setEditedRequests(
+          itemsFromServer.map((it) => ({
+            ...it,
+            itemId: it.itemId || it._id,
+            shippingQuantity: it.shippingQuantity ?? it.shippingQty ?? 0,
+            shippingFee: it.shippingFee ?? 0,
+            purchaseReqNumber: it.purchaseReqNumber ?? it.prn ?? "",
+            vendor: it.vendor || it.vendorName || "",
+            vendorId: it.vendorId ?? (it.vendor && it.vendor.vendorId) ?? null,
+            _dirty: false,
+            _pendingVendor: undefined,
+          }))
+        );
+      } else {
+        // Server did not return full items: clear dirty flags locally
+        setEditedRequests((prev) =>
+          prev.map((it) => ({
+            ...it,
+            _dirty: false,
+            _pendingVendor: undefined,
+          }))
+        );
       }
 
-      // clear dirty flags
-      setEditedRequests((prev) =>
-        prev.map((it) => ({ ...it, _dirty: false, _pendingVendor: undefined }))
-      );
+      // Notify parent components if they rely on files or related updates
+      try {
+        if (typeof onFilesChanged === "function") onFilesChanged();
+      } catch (cbErr) {
+        console.error("onFilesChanged callback error after save:", cbErr);
+      }
+
       alert("Saved successfully");
+      return results;
     } catch (err) {
       console.error("Error saving shipping edits:", err);
       alert("Error saving changes. See console.");
+      throw err;
     } finally {
       setIsSaving(false);
     }
   };
+  // ...existing code...
 
   const vendorOptions = getVendorOptions();
 
@@ -284,235 +324,225 @@ const ShippingTable = ({
         </div>
       )}
 
-     {groups.map((g, gi) => {
-  const vendorKey = g.items[0]?.vendorId ?? g.items[0]?.vendor ?? "No Vendor";
-  // prefer matching by id, fallback to matching by label, else fallback to raw vendor text
-  const vendorOption =
-    vendorOptions.find((o) => String(o.value) === String(vendorKey)) ||
-    vendorOptions.find(
-      (o) =>
-        String(o.label).toLowerCase() ===
-        String(g.items[0]?.vendor || "").toLowerCase()
-    );
-  const vendorLabel = vendorOption
-    ? vendorOption.label
-    : g.items[0]?.vendor || vendorKey;
+      {groups.map((g, gi) => {
+        const vendorKey =
+          g.items[0]?.vendorId ?? g.items[0]?.vendor ?? "No Vendor";
+        // prefer matching by id, fallback to matching by label, else fallback to raw vendor text
+        const vendorOption =
+          vendorOptions.find((o) => String(o.value) === String(vendorKey)) ||
+          vendorOptions.find(
+            (o) =>
+              String(o.label).toLowerCase() ===
+              String(g.items[0]?.vendor || "").toLowerCase()
+          );
+        const vendorLabel = vendorOption
+          ? vendorOption.label
+          : g.items[0]?.vendor || vendorKey;
 
-  return (
-        <div key={gi} className="overflow-x-auto mb-4">
-          <table className="w-full border-collapse border-2 border-slate-200 text-sm">
-            <thead>
-              <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
-                <th className="p-3 border border-slate-200 text-center">SN</th>
-                <th className="p-3 border border-slate-200 text-left">
-                  Description
-                </th>
-                <th className="p-3 border border-slate-200 text-left">
-                  Item Type
-                </th>
-                <th className="p-3 border border-slate-200 text-left">Maker</th>
-                <th className="p-3 border border-slate-200 text-left">
-                  Maker's Part No
-                </th>
-                <th className="p-3 border border-slate-200 text-left">
-                  Vendor
-                </th>
-                <th className="p-3 border border-slate-200 text-center">
-                  Quantity
-                </th>
-                <th className="p-3 border border-slate-200 text-center">
-                  Shipping Qty
-                </th>
-                <th className="p-3 border border-slate-200 text-center">PRN</th>
-              </tr>
-            </thead>
-            <tbody>
-              {g.items.map((it, idx) => {
-                const itemId = it.itemId || it._id;
-                const isFirstRow = idx === 0;
-                return (
-                  <tr
-                    key={itemId}
-                    className="hover:bg-emerald-50 transition-colors duration-150"
-                  >
-                    <td className="border p-3 border-slate-200 text-center">
-                      {idx + 1}
-                    </td>
-                    <td className="border p-3 border-slate-200">
-                      {it.name || "N/A"}
-                    </td>
-                    <td className="border p-3 border-slate-200">
-                      {it.itemType || it.makersType || "N/A"}
-                    </td>
-                    <td className="border p-3 border-slate-200">
-                      {it.maker || "N/A"}
-                    </td>
-                    <td className="border p-3 border-slate-200">
-                      {it.makersPartNo || "N/A"}
-                    </td>
-                    <td className="border p-3 border-slate-200">
-                      <CreatableSelect
-                        options={vendorOptions}
-                        value={
-                          (() => {
+        return (
+          <div key={gi} className="overflow-x-auto mb-4">
+            <table className="w-full border-collapse border-2 border-slate-200 text-sm">
+              <thead>
+                <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
+                  <th className="p-3 border border-slate-200 text-center">
+                    SN
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Description
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Item Type
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Maker
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Maker's Part No
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Vendor
+                  </th>
+                  <th className="p-3 border border-slate-200 text-center">
+                    Quantity
+                  </th>
+                  <th className="p-3 border border-slate-200 text-center">
+                    Shipping Qty
+                  </th>
+                  <th className="p-3 border border-slate-200 text-center">
+                    PRN
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.items.map((it, idx) => {
+                  const itemId = it.itemId || it._id;
+                  const isFirstRow = idx === 0;
+                  return (
+                    <tr
+                      key={itemId}
+                      className="hover:bg-emerald-50 transition-colors duration-150"
+                    >
+                      <td className="border p-3 border-slate-200 text-center">
+                        {idx + 1}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.name || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.itemType || it.makersType || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.maker || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.makersPartNo || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        <CreatableSelect
+                          options={vendorOptions}
+                          value={(() => {
                             const key = it.vendorId ?? it.vendor;
-                            const byId = vendorOptions.find((o) => String(o.value) === String(key));
+                            const byId = vendorOptions.find(
+                              (o) => String(o.value) === String(key)
+                            );
                             if (byId) return byId;
                             const byLabel = vendorOptions.find(
-                              (o) => String(o.label).toLowerCase() === String(it.vendor || "").toLowerCase()
+                              (o) =>
+                                String(o.label).toLowerCase() ===
+                                String(it.vendor || "").toLowerCase()
                             );
                             if (byLabel) return byLabel;
-                            return it.vendor ? { value: it.vendorId || it.vendor, label: it.vendor } : null;
-                          })()
-                        }
-                        onChange={(sel) => {
-                          const vname = sel?.label || null;
-                          const vid = sel?.value || null;
-                          setEditedRequests((prev) =>
-                            prev.map((row) =>
-                              (row.itemId || row._id) === itemId
-                                ? {
-                                    ...row,
-                                    vendor: vname,
-                                    vendorId: vid,
-                                    _dirty: true,
-                                    _pendingVendor:
-                                      sel && sel.__isNew__
-                                        ? { name: vname, isNew: true }
-                                        : undefined,
-                                  }
-                                : row
-                            )
-                          );
-                        }}
-                        onCreateOption={(inputValue) => {
-                          setEditedRequests((prev) =>
-                            prev.map((row) =>
-                              (row.itemId || row._id) === itemId
-                                ? {
-                                    ...row,
-                                    vendor: inputValue,
-                                    vendorId: null,
-                                    _dirty: true,
-                                    _pendingVendor: {
-                                      name: inputValue,
-                                      isNew: true,
-                                    },
-                                  }
-                                : row
-                            )
-                          );
-                        }}
-                        isClearable
-                        menuPortalTarget={document.body}
-                        styles={{
-                          control: (p) => ({ ...p, minWidth: 160 }),
-                          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                        }}
-                      />
-                    </td>
-                    <td className="border p-3 border-slate-200 text-center">
-                      <span className="font-semibold text-slate-900">
-                        {it.quantity ?? it.qty ?? "0"}
-                      </span>
-                    </td>
-                    <td className="border p-3 border-slate-200 text-center">
-                      <input
-                        type="number"
-                        min="0"
-                        value={it.shippingQuantity || ""}
-                        onChange={(e) =>
-                          handleChange(
-                            itemId,
-                            "shippingQuantity",
-                            e.target.value
-                          )
-                        }
-                        className="w-20 border px-2 py-1 rounded"
-                      />
-                    </td>
-                    {isFirstRow ? (
-                      <td
-                        className="border p-3 border-slate-200 text-center"
-                        rowSpan={g.items.length}
-                        style={{ verticalAlign: "middle" }}
-                      >
-                        <input
-                          type="text"
-                          value={g.items[0].purchaseReqNumber || ""}
-                          onChange={(e) => {
-                            const val = e.target.value;
+                            return it.vendor
+                              ? {
+                                  value: it.vendorId || it.vendor,
+                                  label: it.vendor,
+                                }
+                              : null;
+                          })()}
+                          onChange={(sel) => {
+                            const vname = sel?.label || null;
+                            const vid = sel?.value || null;
                             setEditedRequests((prev) =>
-                              prev.map((r) =>
-                                r.vendor === g.items[0].vendor ||
-                                r.vendorId === g.items[0].vendorId
+                              prev.map((row) =>
+                                (row.itemId || row._id) === itemId
                                   ? {
-                                      ...r,
-                                      purchaseReqNumber: val,
+                                      ...row,
+                                      vendor: vname,
+                                      vendorId: vid,
                                       _dirty: true,
+                                      _pendingVendor:
+                                        sel && sel.__isNew__
+                                          ? { name: vname, isNew: true }
+                                          : undefined,
                                     }
-                                  : r
+                                  : row
                               )
                             );
                           }}
-                          className="border px-2 py-1 rounded w-36"
+                          onCreateOption={(inputValue) => {
+                            setEditedRequests((prev) =>
+                              prev.map((row) =>
+                                (row.itemId || row._id) === itemId
+                                  ? {
+                                      ...row,
+                                      vendor: inputValue,
+                                      vendorId: null,
+                                      _dirty: true,
+                                      _pendingVendor: {
+                                        name: inputValue,
+                                        isNew: true,
+                                      },
+                                    }
+                                  : row
+                              )
+                            );
+                          }}
+                          isClearable
+                          menuPortalTarget={document.body}
+                          styles={{
+                            control: (p) => ({ ...p, minWidth: 160 }),
+                            menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                          }}
                         />
                       </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
+                      <td className="border p-3 border-slate-200 text-center">
+                        <span className="font-semibold text-slate-900">
+                          {it.quantity ?? it.qty ?? "0"}
+                        </span>
+                      </td>
+                      <td className="border p-3 border-slate-200 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          value={it.shippingQuantity || ""}
+                          onChange={(e) =>
+                            handleChange(
+                              itemId,
+                              "shippingQuantity",
+                              e.target.value
+                            )
+                          }
+                          className="w-20 border px-2 py-1 rounded"
+                        />
+                      </td>
+                      {isFirstRow ? (
+                        <td
+                          className="border p-3 border-slate-200 text-center text-sm text-slate-700"
+                          rowSpan={g.items.length}
+                          style={{ verticalAlign: "middle" }}
+                        >
+                          <span>
+                            {g.items[0].purchaseRequisitionNumber ||
+                              g.items[0].purchaseReqNumber ||
+                              g.items[0].prn ||
+                              "N/A"}
+                          </span>
+                        </td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
+              </tbody>
 
-            {/* shipping fee row if any international items exist (simple unconditional row here) */}
-            <tbody>
-              <tr>
-               <td
-                  colSpan={6}
-                  className="border p-3 border-slate-200 text-center font-bold"
-                >
-                  Shipping Fee - {vendorLabel}
-                </td>
-                <td className="border p-3 border-slate-200 text-center">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={
-                      shippingFees[
-                        g.items[0]?.vendor ||
-                          g.items[0]?.vendorId ||
-                          "No Vendor"
-                      ] ?? ""
-                    }
-                    onChange={(e) => {
-                      const v =
-                        g.items[0]?.vendor ||
-                        g.items[0]?.vendorId ||
-                        "No Vendor";
-                      const val =
-                        e.target.value === ""
-                          ? 0
-                          : parseFloat(e.target.value) || 0;
-                      setShippingFees((prev) => ({ ...prev, [v]: val }));
-                      // apply to all items for this vendor
-                      setEditedRequests((prev) =>
-                        prev.map((it) =>
-                          (it.vendor || it.vendorId || "No Vendor") === v
-                            ? { ...it, shippingFee: val, _dirty: true }
-                            : it
-                        )
-                      );
-                    }}
-                    className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-  )
-})}
+              {/* shipping fee row if any international items exist (simple unconditional row here) */}
+              <tbody>
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="border p-3 border-slate-200 text-center font-bold"
+                  >
+                    Shipping Fee - {vendorLabel}
+                  </td>
+                  <td className="border p-3 border-slate-200 text-center">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={shippingFees[vendorKey] ?? ""}
+                      onChange={(e) => {
+                        const val =
+                          e.target.value === ""
+                            ? 0
+                            : parseFloat(e.target.value) || 0;
+                        const vkey = vendorKey;
+                        setShippingFees((prev) => ({ ...prev, [vkey]: val }));
+                        setEditedRequests((prev) =>
+                          prev.map((it) =>
+                            (it.vendorId ?? it.vendor ?? "No Vendor") === vkey
+                              ? { ...it, shippingFee: val, _dirty: true }
+                              : it
+                          )
+                        );
+                      }}
+                      className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
 
       {/* Save controls */}
       <div className="flex items-center justify-center mt-4">
