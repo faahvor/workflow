@@ -23,7 +23,16 @@ const getVendorDisplayName = (vendorOrName) => {
 };
 
 const PurchaseOrderPreview = forwardRef(
-  ({ request = {}, items = [], requestId = null, token = null, apiBase = "https://hdp-backend-1vcl.onrender.com/api" }, ref) => {
+  (
+    {
+      request = {},
+      items = [],
+      requestId = null,
+      token = null,
+      apiBase = "https://hdp-backend-1vcl.onrender.com/api",
+    },
+    ref
+  ) => {
     const [liveRequest, setLiveRequest] = useState(request || {});
     const [liveItems, setLiveItems] = useState(items || []);
     const [signaturesPrepared, setSignaturesPrepared] = useState([]);
@@ -39,19 +48,26 @@ const PurchaseOrderPreview = forwardRef(
     };
 
     const fetchImageAsDataUrl = async (url) => {
+      if (!url) return null;
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const resp = await axios.get(url, { responseType: "arraybuffer", headers });
-        const contentType = resp.headers && resp.headers["content-type"] ? resp.headers["content-type"] : "image/png";
+        const resp = await axios.get(url, {
+          responseType: "arraybuffer",
+          headers,
+        });
+        const contentType =
+          resp.headers && resp.headers["content-type"]
+            ? resp.headers["content-type"]
+            : "image/png";
         const base64 = arrayBufferToBase64(resp.data);
         return `data:${contentType};base64,${base64}`;
       } catch (err) {
-        console.warn("PurchaseOrderPreview: failed to fetch signature image", url, err);
-        return null;
+       
+        return url;
       }
     };
 
-  // ...existing code...
+    // ...existing code...
     useEffect(() => {
       let mounted = true;
       const load = async () => {
@@ -66,29 +82,38 @@ const PurchaseOrderPreview = forwardRef(
           setLiveItems(sourceItems || []);
 
           // keep vendor lookup behavior (if vendor is an id string/number) so vendor details can display
-          const firstItem = Array.isArray(sourceItems) && sourceItems.length ? sourceItems[0] : null;
+          const firstItem =
+            Array.isArray(sourceItems) && sourceItems.length
+              ? sourceItems[0]
+              : null;
           if (firstItem && firstItem.vendor) {
             if (typeof firstItem.vendor === "object") {
               setVendorInfo(firstItem.vendor);
             } else {
               try {
-                const headers = token ? { Authorization: `Bearer ${token}` } : {};
-                const vResp = await axios.get(`${apiBase}/vendors/${encodeURIComponent(firstItem.vendor)}`, { headers });
+                const headers = token
+                  ? { Authorization: `Bearer ${token}` }
+                  : {};
+                const vResp = await axios.get(
+                  `${apiBase}/vendors/${encodeURIComponent(firstItem.vendor)}`,
+                  { headers }
+                );
                 if (!mounted) return;
                 setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
               } catch (verr) {
-                console.warn("PurchaseOrderPreview: vendor fetch failed", verr);
                 setVendorInfo(null);
               }
             }
           } else if (firstItem && firstItem.vendorId) {
             try {
               const headers = token ? { Authorization: `Bearer ${token}` } : {};
-              const vResp = await axios.get(`${apiBase}/vendors/${encodeURIComponent(firstItem.vendorId)}`, { headers });
+              const vResp = await axios.get(
+                `${apiBase}/vendors/${encodeURIComponent(firstItem.vendorId)}`,
+                { headers }
+              );
               if (!mounted) return;
               setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
             } catch (verr) {
-              console.warn("PurchaseOrderPreview: vendor fetch failed", verr);
               setVendorInfo(null);
             }
           } else {
@@ -96,7 +121,9 @@ const PurchaseOrderPreview = forwardRef(
           }
 
           // prepare signatures from the provided request object (if any)
-          const rawSignatures = Array.isArray(sourceRequest.signatures) ? sourceRequest.signatures.slice() : [];
+          const rawSignatures = Array.isArray(sourceRequest.signatures)
+            ? sourceRequest.signatures.slice()
+            : [];
           rawSignatures.sort((a, b) => {
             const ta = a.timestamp || a.time || a.createdAt || 0;
             const tb = b.timestamp || b.time || b.createdAt || 0;
@@ -105,10 +132,17 @@ const PurchaseOrderPreview = forwardRef(
 
           const prepared = await Promise.all(
             rawSignatures.map(async (s) => {
-              const img = s.signatureUrl ? await fetchImageAsDataUrl(s.signatureUrl, token) : null;
+              const img = s.signatureUrl
+                ? await fetchImageAsDataUrl(s.signatureUrl)
+                : null;
               return {
                 userId: s.userId,
-                name: s.name || s.userName || s.displayName || s.requesterName || "",
+                name:
+                  s.name ||
+                  s.userName ||
+                  s.displayName ||
+                  s.requesterName ||
+                  "",
                 role: s.role || s.position || "",
                 timestamp: s.timestamp || s.time || s.createdAt || null,
                 signatureUrl: s.signatureUrl || null,
@@ -117,9 +151,17 @@ const PurchaseOrderPreview = forwardRef(
             })
           );
           if (!mounted) return;
-          setSignaturesPrepared(prepared);
+          // keep only procurement officer signatures (case-insensitive, also allow 'procurement' substring)
+          const procurementOnly = prepared.filter((p) => {
+            const r = (p.role || "").toString().toLowerCase();
+            // require "procurement" and either "officer" or "manager"
+            return (
+              r.includes("procurement") &&
+               r.includes("manager")
+            );
+          });
+          setSignaturesPrepared(procurementOnly);
         } catch (err) {
-          console.error("PurchaseOrderPreview: failed to prepare preview", err);
         } finally {
           if (mounted) setLoading(false);
         }
@@ -130,11 +172,14 @@ const PurchaseOrderPreview = forwardRef(
         mounted = false;
       };
     }, [request, items, token, apiBase]);
-// ...existing code...
+    // ...existing code...
 
     const req = liveRequest || {};
-    const usedItems = Array.isArray(liveItems) && liveItems.length > 0 ? liveItems : items || [];
-       const getPoFromItems = () => {
+    const usedItems =
+      Array.isArray(liveItems) && liveItems.length > 0
+        ? liveItems
+        : items || [];
+    const getPoFromItems = () => {
       if (!Array.isArray(usedItems)) return null;
       for (const it of usedItems) {
         const candidate =
@@ -161,11 +206,14 @@ const PurchaseOrderPreview = forwardRef(
       "N/A";
     const createdAt = req.createdAt ? new Date(req.createdAt) : new Date();
     const dateStr = createdAt.toLocaleDateString();
-    const requiredDate = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString();
+    const requiredDate = new Date(
+      createdAt.getTime() + 24 * 60 * 60 * 1000
+    ).toLocaleDateString();
     const reference = req.reference || "N/A";
     const grandTotal = usedItems.reduce((s, it) => {
       const qty = Number(it.quantity || 0);
-      const total = it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
+      const total =
+        it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
       return s + (isNaN(total) ? 0 : total);
     }, 0);
 
@@ -192,11 +240,15 @@ const PurchaseOrderPreview = forwardRef(
     const addressPart =
       vendorInfo && vendorInfo.address
         ? getVendorAddressLines(vendorInfo)
-        : usedItems[0] && usedItems[0].vendor && typeof usedItems[0].vendor === "object"
+        : usedItems[0] &&
+          usedItems[0].vendor &&
+          typeof usedItems[0].vendor === "object"
         ? getVendorAddressLines(usedItems[0].vendor)
         : null;
 
-    const issuedToLines = [vendorNameLine, addressPart].filter(Boolean).join("\n");
+    const issuedToLines = [vendorNameLine, addressPart]
+      .filter(Boolean)
+      .join("\n");
 
     return (
       <div ref={ref} className="bg-white p-6 print:p-8 text-slate-900">
@@ -207,11 +259,17 @@ const PurchaseOrderPreview = forwardRef(
         <div className="px-6 py-5 border-b">
           <div className="grid gap-2 md:grid-cols-[1fr_250px] grid-cols-1 md:gap-4">
             <div className="flex flex-col items-start gap-4 min-w-0">
-              <div className="w-16 h-16 flex-shrink-0 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                G
+              <div className="w-32 h-16 flex-shrink-0 rounded-md overflow-hidden  flex items-center justify-center">
+                <img
+                  src="/logo.png"
+                  alt="Hydrodive Nigeria Ltd logo"
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div className="min-w-0">
-                <div className="text-lg font-bold leading-tight">Hydrodive Nigeria Ltd</div>
+                <div className="text-lg font-bold leading-tight">
+                  Hydrodive Nigeria Ltd
+                </div>
                 <div className="text-sm text-slate-500 mt-1 leading-relaxed">
                   17, Wharf Road, <br />
                   Apapa, Lagos <br />
@@ -247,9 +305,13 @@ const PurchaseOrderPreview = forwardRef(
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
-            <div className="text-sm font-semibold text-slate-800 mb-2">Issued To:</div>
+            <div className="text-sm font-semibold text-slate-800 mb-2">
+              Issued To:
+            </div>
             <div>
-              <div className="text-base font-semibold text-slate-800">{vendorNameLine}</div>
+              <div className="text-base font-semibold text-slate-800">
+                {vendorNameLine}
+              </div>
               {addressPart ? (
                 <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
                   {addressPart}
@@ -259,7 +321,9 @@ const PurchaseOrderPreview = forwardRef(
           </div>
 
           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
-            <div className="text-sm font-semibold text-slate-800 mb-2">Ship To:</div>
+            <div className="text-sm font-semibold text-slate-800 mb-2">
+              Ship To:
+            </div>
             <div>
               <div className="text-base font-semibold text-slate-800">
                 {req.company?.name || "Hydrodive Nigeria Limited"}
@@ -306,18 +370,37 @@ const PurchaseOrderPreview = forwardRef(
                       <td className="py-3 text-slate-700">{i + 1}</td>
                       <td className="py-3 text-slate-900">{it.name}</td>
                       <td className="py-3 text-slate-700">{it.quantity}</td>
-                      <td className="py-3 text-slate-700">{it.unit || "pcs"}</td>
-                      <td className="py-3 text-right text-slate-700">{formatCurrency(it.unitPrice, req.currency)}</td>
-                      <td className="py-3 text-right text-slate-700">{it.discount ? formatCurrency(it.discount, req.currency) : "-"}</td>
-                      <td className="py-3 text-right text-slate-700">{it.vat ? `${it.vat}%` : "-"}</td>
-                      <td className="py-3 text-right font-semibold text-slate-900">{formatCurrency(it.total || (it.unitPrice * it.quantity), req.currency)}</td>
+                      <td className="py-3 text-slate-700">
+                        {it.unit || "pcs"}
+                      </td>
+                      <td className="py-3 text-right text-slate-700">
+                        {formatCurrency(it.unitPrice, req.currency)}
+                      </td>
+                      <td className="py-3 text-right text-slate-700">
+                        {it.discount
+                          ? formatCurrency(it.discount, req.currency)
+                          : "-"}
+                      </td>
+                      <td className="py-3 text-right text-slate-700">
+                        {it.vat ? `${it.vat}%` : "-"}
+                      </td>
+                      <td className="py-3 text-right font-semibold text-slate-900">
+                        {formatCurrency(
+                          it.total || it.unitPrice * it.quantity,
+                          req.currency
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={7} className="pt-4 text-right font-bold">Grand Total</td>
-                    <td className="pt-4 text-right text-xl font-bold">{formatCurrency(grandTotal, req.currency)}</td>
+                    <td colSpan={7} className="pt-4 text-right font-bold">
+                      Grand Total
+                    </td>
+                    <td className="pt-4 text-right text-xl font-bold">
+                      {formatCurrency(grandTotal, req.currency)}
+                    </td>
                   </tr>
                 </tfoot>
               </table>
@@ -332,20 +415,43 @@ const PurchaseOrderPreview = forwardRef(
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {loading ? (
-                  <div className="text-sm text-slate-500">Loading signatures…</div>
-                ) : signaturesPrepared.length === 0 ? (
-                  <div className="text-sm text-slate-500">No signatures yet</div>
+                  <div className="text-sm text-slate-500">
+                    Loading signatures…
+                  </div>
                 ) : (
                   signaturesPrepared.map((s, idx) => {
-                    const ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : "";
+                    const ts = s.timestamp
+                      ? new Date(s.timestamp).toLocaleString()
+                      : "";
                     return (
-                      <div key={s.userId || idx} className="bg-white p-3 rounded-xl border border-slate-100">
+                      <div
+                        key={s.userId || idx}
+                        className="bg-white p-3 rounded-xl border border-slate-100"
+                      >
                         {s.imageData ? (
                           <div style={{ height: 40 }}>
-                            <img src={s.imageData} alt={s.name} style={{ maxWidth: 160, height: 36, objectFit: "contain" }} />
+                            <img
+                              src={s.imageData}
+                              alt={s.name}
+                              style={{
+                                maxWidth: 160,
+                                height: 36,
+                                objectFit: "contain",
+                              }}
+                            />
                           </div>
                         ) : (
-                          <div style={{ height: 36, fontFamily: "Brush Script MT, Lucida Handwriting, cursive", fontSize: 20, color: "#036173" }}>{s.name}</div>
+                          <div
+                            style={{
+                              height: 36,
+                              fontFamily:
+                                "Brush Script MT, Lucida Handwriting, cursive",
+                              fontSize: 20,
+                              color: "#036173",
+                            }}
+                          >
+                            {s.name}
+                          </div>
                         )}
                         <div className="mt-2">
                           <div className="text-sm font-semibold">{s.name}</div>
@@ -361,7 +467,9 @@ const PurchaseOrderPreview = forwardRef(
           </div>
         </div>
 
-        {loading && <div className="text-xs text-slate-500 mt-2">Refreshing preview…</div>}
+        {loading && (
+          <div className="text-xs text-slate-500 mt-2">Refreshing preview…</div>
+        )}
       </div>
     );
   }

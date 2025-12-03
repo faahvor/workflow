@@ -19,6 +19,7 @@ import { HiClock } from "react-icons/hi";
 import Select from "react-select";
 import axios from "axios";
 import RequestForm from "./RequestForm"; // <-- add import
+import EmailComposer from "./EmailComposer"; // <-- NEW import
 
 const RequestDetailDemo = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -77,7 +78,6 @@ const RequestDetailDemo = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedExternalRequest, setSelectedExternalRequest] = useState(null);
 
-
   const mockRequests = [
     {
       requestId: "REQ-2024-B",
@@ -129,6 +129,42 @@ const RequestDetailDemo = () => {
   const [showRequestFormPreview, setShowRequestFormPreview] = useState(false);
   const openRequestFormPreview = () => setShowRequestFormPreview(true);
   const closeRequestFormPreview = () => setShowRequestFormPreview(false);
+
+  // NEW: Email composer state and attachments
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [emailInitialAttachments, setEmailInitialAttachments] = useState([]);
+
+  // NEW: create a demo "PDF" File for the attachment (demo-only, simple blob)
+  const createDemoPdfAttachment = (req) => {
+    const txt = `
+      Requisition Demo PDF
+      Request ID: ${req.id}
+      Title: ${req.title}
+      Requested by: ${req.requester}
+      Amount: ${req.amount}
+      Date: ${req.date}
+    `;
+    const blob = new Blob([txt], { type: "application/pdf" }); // demo PDF-like blob
+    const fileName = `RequestForm-${req.id}.pdf`;
+    try {
+      // File constructor for better UX when supported
+      return new File([blob], fileName, { type: "application/pdf" });
+    } catch (e) {
+      // fallback for older browsers
+      const f = blob;
+      f.name = fileName;
+      return f;
+    }
+  };
+
+  // NEW: handler for Send as Mail button
+  const handleSendAsMailFromPreview = () => {
+    const demoPdf = createDemoPdfAttachment(request);
+    setEmailInitialAttachments([demoPdf]);
+    closeRequestFormPreview();
+    // small delay to allow modal to close visually before opening composer
+    setTimeout(() => setShowEmailComposer(true), 120);
+  };
 
   // Demo request data
   const request = {
@@ -468,7 +504,7 @@ const RequestDetailDemo = () => {
   const [newComment, setNewComment] = useState("");
   const [postingComment, setPostingComment] = useState(false);
 
-    const COMMENTS_PER_PAGE = 3;
+  const COMMENTS_PER_PAGE = 3;
   const [commentsPage, setCommentsPage] = useState(1);
 
   useEffect(() => {
@@ -499,7 +535,7 @@ const RequestDetailDemo = () => {
       text: "Noted. Will confirm supplier lead time before approval.",
       createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
     },
-     {
+    {
       id: "c2",
       author: "Procurement Officer",
       text: "Noted. Will confirm supplier lead time before approval.",
@@ -1325,10 +1361,34 @@ const RequestDetailDemo = () => {
                     />
                     <div className="fixed left-1/2 transform -translate-x-1/2 top-16 z-50 w-[95%] md:w-[80%] lg:w-[70%] max-h-[80vh] overflow-auto">
                       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-                        <RequestForm request={request} items={items} />
+                        {/* NEW: wrap RequestForm so we can place the Send button top-left */}
+                        <div className="relative">
+                          <div className="absolute left-4 top-4 z-20">
+                            <button
+                              onClick={handleSendAsMailFromPreview}
+                              className="px-3 py-2 bg-emerald-500 text-white rounded-lg shadow-md hover:bg-emerald-600 transition text-sm flex items-center gap-2"
+                            >
+                              ✉️ Send as Mail
+                            </button>
+                          </div>
+                          <RequestForm request={request} items={items} />
+                        </div>
                       </div>
                     </div>
                   </>
+                )}
+
+                {/* NEW: Email Composer modal */}
+                {showEmailComposer && (
+                  <EmailComposer
+                    initialAttachments={emailInitialAttachments}
+                    subject={`Requisition ${request.id} • ${request.title}`}
+                    onClose={() => setShowEmailComposer(false)}
+                    onSent={() => {
+                      setShowEmailComposer(false);
+                      alert("Demo email sent (simulated).");
+                    }}
+                  />
                 )}
 
                 <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-xl p-4 hover:border-slate-400 transition-all cursor-pointer group shadow-lg">

@@ -11,7 +11,7 @@ import {
   MdCancel,
   MdLocalShipping,
   MdInventory,
-   MdHelpOutline,
+  MdHelpOutline,
 } from "react-icons/md";
 import { FaHouseFloodWaterCircleArrowRight } from "react-icons/fa6";
 
@@ -34,14 +34,14 @@ const RequesterPending = ({
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [localFilter, setLocalFilter] = useState(filterType);
 
-    const getInStockColor = () => {
+  const getInStockColor = () => {
     return "bg-green-100 text-green-700 border-green-200";
   };
 
   const getInStockIcon = () => {
     return <MdInventory className="text-sm" />;
   };
-    const getQueriedColor = () => {
+  const getQueriedColor = () => {
     return "bg-yellow-100 text-yellow-700 border-yellow-200";
   };
 
@@ -49,7 +49,7 @@ const RequesterPending = ({
     return <MdHelpOutline className="text-sm" />;
   };
 
- const getClearingColor = () => {
+  const getClearingColor = () => {
     return "bg-purple-100 text-blue-700 border-purple-200";
   };
 
@@ -166,7 +166,7 @@ const RequesterPending = ({
                           <span>Rejected</span>
                         </span>
                       )}
-                       {request.isQueried && (
+                      {request.isQueried && (
                         <span
                           className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${getQueriedColor()}`}
                         >
@@ -183,7 +183,9 @@ const RequesterPending = ({
                       )}
                       {(request.tag?.includes?.("Clearing") ||
                         request.tag === "Clearing") && (
-                        <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getClearingColor()}`}>
+                        <span
+                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getClearingColor()}`}
+                        >
                           {getClearingIcon()}
                           <span>Clearing</span>
                         </span>

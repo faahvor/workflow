@@ -1,60 +1,21 @@
-// src/components/tables/MDTable.jsx
+// src/components/tables/TechnicalManagerTable.jsx
 
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const MDTable = ({ 
+const TechnicalManagerTable = ({ 
   items = [], 
   onEditItem,
   isReadOnly = false ,
-    vendors = [],
-    requestType = "",
-    tag = ""
+  vendors =[],
+   requestType = "",
+  
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
-  const hidePrices = ["shipping", "clearing"].includes(String(tag || "").toLowerCase());
+ 
 
-  const tagLower = String(tag || "").toLowerCase();
-  const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
-  const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
-  const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
-
-  const getFeeValue = (item) => {
-    if (!item) return 0;
-    const v = item[feeFieldName];
-    return typeof v === "number" ? v : Number(v || 0);
-  };
-
-
-  React.useEffect(() => {
-  const checkScroll = () => {
-    const container = document.getElementById("fleet-table-container");
-    if (!container) {
-      console.log("fleet-table: container not found");
-      setNeedsScroll(false);
-      return;
-    }
-    const scrollW = container.scrollWidth;
-    const clientW = container.clientWidth;
-    console.log("fleet-table: scrollWidth", scrollW, "clientWidth", clientW);
-    // small tolerance to avoid off-by-one layout reports
-    setNeedsScroll(scrollW > clientW + 1);
-  };
-
-  // run after paint/layout
-  const runCheck = () => {
-    requestAnimationFrame(checkScroll);
-    // also schedule a small timeout in case fonts/images changed layout
-    setTimeout(checkScroll, 50);
-  };
-
-  runCheck();
-  window.addEventListener("resize", runCheck);
-
-  return () => window.removeEventListener("resize", runCheck);
-}, [editedItems]);
 
    const vendorsById = React.useMemo(() => {
     const map = new Map();
@@ -73,11 +34,38 @@ const MDTable = ({
     // fallback: if vendorField already looks like a name, return it
     return vendorField;
   };
+  React.useEffect(() => {
+  const checkScroll = () => {
+    const container = document.getElementById("technical-table-container");
+    if (!container) {
+      console.log("technical-table: container not found");
+      setNeedsScroll(false);
+      return;
+    }
+    const scrollW = container.scrollWidth;
+    const clientW = container.clientWidth;
+    console.log("technical-table: scrollWidth", scrollW, "clientWidth", clientW);
+    // small tolerance to avoid off-by-one layout reports
+    setNeedsScroll(scrollW > clientW + 1);
+  };
+
+  // run after paint/layout
+  const runCheck = () => {
+    requestAnimationFrame(checkScroll);
+    // also schedule a small timeout in case fonts/images changed layout
+    setTimeout(checkScroll, 50);
+  };
+
+  runCheck();
+  window.addEventListener("resize", runCheck);
+
+  return () => window.removeEventListener("resize", runCheck);
+}, [editedItems]);
 
 // Check if table needs horizontal scrolling
 React.useEffect(() => {
   const checkScroll = () => {
-    const container = document.getElementById('fleet-table-container');
+    const container = document.getElementById('technical-table-container');
     if (container) {
       setNeedsScroll(container.scrollWidth > container.clientWidth);
     }
@@ -149,7 +137,7 @@ React.useEffect(() => {
 return (
   <div className="relative">
     {/* ✅ Scrollable table container */}
-    <div className="overflow-x-auto" id="fleet-table-container">
+    <div className="overflow-x-auto" id="technical-table-container">
       <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
         <thead>
           <tr className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
@@ -174,24 +162,18 @@ return (
             <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
               Quantity
             </th>
-
-               {showFeeColumns && (
-              <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
-                {feeLabel}
-              </th>
-            )}
-                        {!hidePrices && (
-<>
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               Unit Price
             </th>
+             
             <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
               Total Price
             </th>
-            </>)}
-            <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-              PRN
+              {requestType !== "pettyCash" && (
+            <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+             PRN
             </th>
+              )}
           </tr>
         </thead>
         <tbody>
@@ -226,10 +208,9 @@ return (
               </td>
 
               {/* ✅ Vendor Column */}
-              <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+               <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                       {resolveVendorName(item.vendor)}
                     </td>
-
               {/* Quantity - Editable */}
               <td className="border border-slate-200 px-4 py-3 text-center">
                 {editingIndex === index ? (
@@ -244,18 +225,7 @@ return (
                   <span className="font-semibold text-slate-900">{item.quantity}</span>
                 )}
               </td>
-               {showFeeColumns && (
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                  {item.currency || "NGN"}{" "}
-                  {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-              )}
 
-            {!hidePrices && (
-<>
               {/* Unit Price - Read Only */}
               <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                 {item.unitPrice ? (
@@ -268,8 +238,8 @@ return (
               </td>
 
               {/* Total Price - Calculated */}
-              <td className="border border-slate-200 px-4 py-3 text-right text-sm  text-slate-700">
-                 <span className="font-semibold">
+              <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
+                <span className="font-semibold">
                         {item.currency || "NGN"}{" "}
                         {Number(
                           item.totalPrice || item.total || 0
@@ -279,10 +249,11 @@ return (
                         })}
                       </span>
               </td>
-              </>)}
-              <td className="border border-slate-200 px-4 py-3 text-center text-sm  text-slate-700">
+                {requestType !== "pettyCash" && (
+              <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
                 {item.purchaseRequisitionNumber || "N/A"}
               </td>
+                )}
             </tr>
           ))}
         </tbody>
@@ -295,7 +266,7 @@ return (
         <button
           className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
           onClick={() => {
-            const container = document.getElementById('fleet-table-container');
+            const container = document.getElementById('technical-table-container');
             if (container) {
               container.scrollLeft -= 100;
             }
@@ -306,7 +277,7 @@ return (
         <button
           className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
           onClick={() => {
-            const container = document.getElementById('fleet-table-container');
+            const container = document.getElementById('technical-table-container');
             if (container) {
               container.scrollLeft += 100;
             }
@@ -320,4 +291,4 @@ return (
 );
 };
 
-export default MDTable;
+export default TechnicalManagerTable;

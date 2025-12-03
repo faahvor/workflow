@@ -4,9 +4,10 @@ import { useAuth } from "../context/AuthContext";
 import RequisitionPreview from "./RequisitionPreview";
 import RequestFormPreview from "./RequestFormPreview";
 import PurchaseOrderPreview from "./PurchaseOrderPreview";
+import EmailComposer from "../pages/EmailComposer";
 
-import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 const formatBytes = (bytes) => {
   if (!bytes) return "";
@@ -34,38 +35,13 @@ const fetchHeadSize = async (url) => {
     return null;
   }
 };
-const arrayBufferToBase64 = (buffer) => {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-};
-
-const fetchImageAsDataUrl = async (url, token) => {
-  try {
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const resp = await axios.get(url, { responseType: "arraybuffer", headers });
-    const contentType =
-      resp.headers && resp.headers["content-type"]
-        ? resp.headers["content-type"]
-        : "image/png";
-    const base64 = arrayBufferToBase64(resp.data);
-    return `data:${contentType};base64,${base64}`;
-  } catch (err) {
-    console.warn("fetchImageAsDataUrl failed:", url, err);
-    return null;
-  }
-};
 
 const AttachedDocuments = ({
   requestId,
   files = [],
-  requestData: requestDataProp = null,
   filesRefreshCounter = 0,
   onFilesChanged = () => {},
 }) => {
-  const requisitionRef = useRef(null);
   const failedHeadUrlsRef = useRef(new Set());
   const { getToken, user } = useAuth();
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
@@ -73,14 +49,265 @@ const AttachedDocuments = ({
   const [fileMeta, setFileMeta] = useState([]);
   const [active, setActive] = useState(null);
 
-  // request details for RequisitionPreview
   const [requestData, setRequestData] = useState(null);
   const [requestItems, setRequestItems] = useState([]);
   const [loadingRequest, setLoadingRequest] = useState(false);
-  const [uploadingRequisition, setUploadingRequisition] = useState(false);
-  const [requisitionUploaded, setRequisitionUploaded] = useState(false);
 
   const [deletingUrl, setDeletingUrl] = useState(null);
+  const [showPurchaseOrder, setShowPurchaseOrder] = useState(false);
+
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [emailInitialAttachments, setEmailInitialAttachments] = useState([]);
+  const [preparingEmailPdf, setPreparingEmailPdf] = useState(false);
+
+  const generatePdfFromElement = async (element, filename) => {
+    const rect = element.getBoundingClientRect();
+
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-10000px";
+    container.style.top = "0";
+    container.style.width = rect.width + "px";
+    container.style.backgroundColor = "#ffffff";
+    container.style.zIndex = "-9999";
+
+    const clone = element.cloneNode(true);
+    container.appendChild(clone);
+    document.body.appendChild(container);
+
+    const allElements = container.querySelectorAll("*");
+    allElements.forEach((el) => {
+      const computed = window.getComputedStyle(el);
+      const color = computed.color;
+      const bgColor = computed.backgroundColor;
+      const borderColor = computed.borderColor;
+
+      if (
+        color &&
+        (color.includes("oklch") ||
+          color.includes("oklab") ||
+          color.includes("color("))
+      ) {
+        el.style.color = "#000000";
+      }
+      if (
+        bgColor &&
+        (bgColor.includes("oklch") ||
+          bgColor.includes("oklab") ||
+          bgColor.includes("color("))
+      ) {
+        el.style.backgroundColor = "#ffffff";
+      }
+      if (
+        borderColor &&
+        (borderColor.includes("oklch") ||
+          borderColor.includes("oklab") ||
+          borderColor.includes("color("))
+      ) {
+        el.style.borderColor = "#cccccc";
+      }
+    });
+
+    const images = container.querySelectorAll("img");
+    images.forEach((img) => {
+      const src = img.src || "";
+      if (
+        src.includes("s3.") ||
+        src.includes("amazonaws.com") ||
+        src.includes("cloudinary") ||
+        (src.startsWith("http") && !src.startsWith(window.location.origin))
+      ) {
+        const placeholder = document.createElement("div");
+        placeholder.style.width = img.width ? img.width + "px" : "100px";
+        placeholder.style.height = img.height ? img.height + "px" : "50px";
+        placeholder.style.backgroundColor = "#f0f0f0";
+        placeholder.style.border = "1px solid #ddd";
+        placeholder.style.display = "flex";
+        placeholder.style.alignItems = "center";
+        placeholder.style.justifyContent = "center";
+        placeholder.style.fontSize = "10px";
+        placeholder.style.color = "#666";
+        placeholder.textContent = "[Signature]";
+        if (img.parentNode) {
+          img.parentNode.replaceChild(placeholder, img);
+        }
+      } else if (
+        src.startsWith("/") ||
+        src.startsWith(window.location.origin)
+      ) {
+        img.crossOrigin = "anonymous";
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+      width: rect.width,
+      windowWidth: rect.width,
+      onclone: (clonedDoc) => {
+        const styles = clonedDoc.querySelectorAll("style");
+        styles.forEach((style) => {
+          if (style.textContent) {
+            style.textContent = style.textContent
+              .replace(/oklch\([^)]*\)/gi, "#666666")
+              .replace(/oklab\([^)]*\)/gi, "#666666")
+              .replace(/color\([^)]*\)/gi, "#666666")
+              .replace(/lab\([^)]*\)/gi, "#666666")
+              .replace(/lch\([^)]*\)/gi, "#666666");
+          }
+        });
+
+        const allEls = clonedDoc.querySelectorAll("*");
+        allEls.forEach((el) => {
+          const style = el.getAttribute("style") || "";
+          if (
+            style.includes("oklch") ||
+            style.includes("oklab") ||
+            style.includes("color(") ||
+            style.includes("lab(") ||
+            style.includes("lch(")
+          ) {
+            el.setAttribute(
+              "style",
+              style
+                .replace(/oklch\([^)]*\)/gi, "#666666")
+                .replace(/oklab\([^)]*\)/gi, "#666666")
+                .replace(/color\([^)]*\)/gi, "#666666")
+                .replace(/lab\([^)]*\)/gi, "#666666")
+                .replace(/lch\([^)]*\)/gi, "#666666")
+            );
+          }
+        });
+      },
+    });
+
+    document.body.removeChild(container);
+
+    const imgData = canvas.toDataURL("image/png", 1.0);
+
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "pt",
+      format: "a4",
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+    if (imgHeight <= pageHeight) {
+      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+    } else {
+      let remainingHeight = imgHeight;
+      let currentY = 0;
+      let pageIndex = 0;
+
+      while (remainingHeight > 0) {
+        if (pageIndex > 0) {
+          pdf.addPage();
+        }
+
+        const sliceHeight = Math.min(pageHeight, remainingHeight);
+        const sourceY = (currentY / imgHeight) * canvas.height;
+        const sourceH = (sliceHeight / imgHeight) * canvas.height;
+
+        const sliceCanvas = document.createElement("canvas");
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = Math.ceil(sourceH);
+
+        const sliceCtx = sliceCanvas.getContext("2d");
+        sliceCtx.fillStyle = "#ffffff";
+        sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        sliceCtx.drawImage(
+          canvas,
+          0,
+          Math.floor(sourceY),
+          canvas.width,
+          Math.ceil(sourceH),
+          0,
+          0,
+          sliceCanvas.width,
+          sliceCanvas.height
+        );
+
+        const sliceData = sliceCanvas.toDataURL("image/png", 1.0);
+        pdf.addImage(sliceData, "PNG", 0, 0, imgWidth, sliceHeight);
+
+        remainingHeight -= sliceHeight;
+        currentY += sliceHeight;
+        pageIndex++;
+      }
+    }
+
+    const pdfBlob = pdf.output("blob");
+    return new File([pdfBlob], filename, { type: "application/pdf" });
+  };
+
+  const handleSendAsMailFromRequestForm = async () => {
+    if (!livePreviewRef.current) {
+      alert("Preview content not found");
+      return;
+    }
+
+    setPreparingEmailPdf(true);
+
+    try {
+      const reqId =
+        requestData?.requestId || requestData?.id || requestId || "REQ-XXXX";
+      const filename = `Request_Form_${reqId}.pdf`;
+
+      const pdfFile = await generatePdfFromElement(
+        livePreviewRef.current,
+        filename
+      );
+
+      setEmailInitialAttachments([pdfFile]);
+      setActive(null);
+      setTimeout(() => setShowEmailComposer(true), 120);
+    } catch (err) {
+      console.error("Failed to generate PDF for email:", err);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setPreparingEmailPdf(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!requestId) return;
+    let mounted = true;
+    const fetchFlow = async () => {
+      try {
+        const token = getToken ? getToken() : null;
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const resp = await axios.get(
+          `${API_BASE_URL}/requests/${encodeURIComponent(requestId)}/flow`,
+          { headers }
+        );
+        if (!mounted) return;
+        const data = resp.data || resp.data?.data || resp.data;
+        const path = Array.isArray(data?.path) ? data.path : [];
+        const targetState = "PENDING_PROCUREMENT_MANAGER_APPROVAL";
+        const targetIndex = path.findIndex((p) => p.state === targetState);
+        const currentIndex = path.findIndex((p) => p.status === "current");
+        const shouldShow =
+          targetIndex !== -1 &&
+          currentIndex !== -1 &&
+          currentIndex >= targetIndex;
+        setShowPurchaseOrder(Boolean(shouldShow));
+      } catch {}
+    };
+    fetchFlow();
+    return () => {
+      mounted = false;
+    };
+  }, [requestId, getToken, API_BASE_URL]);
+  // ...existing code...
 
   const deleteQuotation = async (fileUrl) => {
     if (!fileUrl || !requestId) return;
@@ -112,15 +339,11 @@ const AttachedDocuments = ({
         });
         const data = resp.data?.data ?? resp.data ?? resp.data;
         setRequestData(data);
-        // notify parent to refresh file list
         try {
           onFilesChanged();
         } catch {}
-      } catch (err) {
-        console.error("Error refreshing request after delete:", err);
-      }
+      } catch {}
     } catch (err) {
-      console.error("Failed to delete quotation:", err);
       alert(err?.response?.data?.message || "Failed to delete quotation");
     } finally {
       setDeletingUrl(null);
@@ -167,11 +390,8 @@ const AttachedDocuments = ({
         try {
           onFilesChanged();
         } catch {}
-      } catch (err) {
-        console.error("Error refreshing request after delete:", err);
-      }
+      } catch {}
     } catch (err) {
-      console.error("Failed to delete payment advice:", err);
       alert(err?.response?.data?.message || "Failed to delete payment advice");
     } finally {
       setDeletingUrl(null);
@@ -197,11 +417,7 @@ const AttachedDocuments = ({
         const data = resp.data || resp.data?.data || resp.data;
         setRequestData(data);
         setRequestItems(data?.items || []);
-      } catch (err) {
-        console.error(
-          "Error refreshing request data for AttachedDocuments:",
-          err
-        );
+      } catch {
       } finally {
         if (mounted) setLoadingRequest(false);
       }
@@ -214,7 +430,6 @@ const AttachedDocuments = ({
     };
   }, [filesRefreshCounter, requestId, getToken, API_BASE_URL]);
   useEffect(() => {
-    // when parent bumps filesRefreshCounter, re-fetch request details and update local state
     if (filesRefreshCounter === undefined || filesRefreshCounter === null)
       return;
     if (!requestId) return;
@@ -232,11 +447,7 @@ const AttachedDocuments = ({
         const data = resp.data || resp.data?.data || resp.data;
         setRequestData(data);
         setRequestItems(data?.items || []);
-      } catch (err) {
-        console.error(
-          "Error refreshing request data for AttachedDocuments:",
-          err
-        );
+      } catch {
       } finally {
         if (mounted) setLoadingRequest(false);
       }
@@ -327,18 +538,6 @@ const AttachedDocuments = ({
       const paymentAdviceFiles = Array.isArray(requestData.paymentAdviceFiles)
         ? requestData.paymentAdviceFiles
         : [];
-      console.log(
-        "AttachedDocuments: requestData keys:",
-        Object.keys(requestData || {})
-      );
-      console.log("AttachedDocuments: requestData sample (top-level):", {
-        requestFiles: reqFiles?.length,
-        requisitionFiles: requisitionFiles?.length,
-        purchaseOrderFiles: poFiles?.length,
-        quotationFiles: quotationFiles?.length,
-        paymentAdviceFiles: paymentAdviceFiles?.length,
-        invoiceFiles: invoiceFiles?.length,
-      });
 
       const buildMeta = (arr, typeKey) =>
         (arr || []).map((url) => {
@@ -384,14 +583,6 @@ const AttachedDocuments = ({
         ...rawPaymentAdvice,
         ...rawInvoices,
       ];
-
-      console.log("AttachedDocuments: poFiles:", poFiles);
-      console.log("AttachedDocuments: rawPOs:", rawPOs);
-      console.log("AttachedDocuments: poDeduped:", poDeduped);
-      console.log(
-        "AttachedDocuments: meta (summary):",
-        meta.map((m) => ({ type: m.type, vendor: m.vendor, name: m.name }))
-      );
 
       if (!mounted) return;
       setFileMeta(meta);
@@ -508,12 +699,9 @@ const AttachedDocuments = ({
         cssText += `${prop}: ${val}${priority ? " !important" : ""}; `;
       }
       targetEl.style.cssText = cssText;
-    } catch (e) {
-      // ignore failures copying styles
-    }
+    } catch {}
   };
 
-  /* helper: deep clone DOM node into a different document, inlining computed styles and handling images/canvas */
   const cloneNodeWithInlineStyles = (sourceNode, targetDoc) => {
     if (sourceNode.nodeType === Node.TEXT_NODE) {
       return targetDoc.createTextNode(sourceNode.textContent || "");
@@ -525,7 +713,6 @@ const AttachedDocuments = ({
     const tagName = sourceNode.tagName.toLowerCase();
     const cloneEl = targetDoc.createElement(tagName);
 
-    // copy attributes except style (we inline styles)
     const attrs = sourceNode.attributes || [];
     for (let i = 0; i < attrs.length; i++) {
       const a = attrs[i];
@@ -535,7 +722,6 @@ const AttachedDocuments = ({
       } catch {}
     }
 
-    // special handling: canvas -> image, img -> ensure absolute src
     if (tagName === "canvas") {
       try {
         const dataUrl = sourceNode.toDataURL("image/png");
@@ -553,10 +739,8 @@ const AttachedDocuments = ({
       } catch {}
     }
 
-    // inline computed styles
     copyComputedStyles(sourceNode, cloneEl);
 
-    // recurse children
     for (let c = 0; c < sourceNode.childNodes.length; c++) {
       const child = sourceNode.childNodes[c];
       const childClone = cloneNodeWithInlineStyles(child, targetDoc);
@@ -617,81 +801,58 @@ const AttachedDocuments = ({
       await new Promise((r) => setTimeout(r, 300));
       iframe.contentWindow.focus();
       iframe.contentWindow.print();
-    } catch (err) {
-      console.error("Print live preview failed (clone):", err);
+    } catch {
       alert("Failed to print preview. See console for details.");
     } finally {
-      // remove iframe after print dialog opens
       setTimeout(() => {
         if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
       }, 1000);
     }
   };
 
+  const getDownloadFilename = (type, vendorName) => {
+    const reqId =
+      requestData?.requestId || requestData?.id || requestId || "document";
+    const vendorPart = vendorName ? `_${vendorName.replace(/\s+/g, "_")}` : "";
+
+    switch (type) {
+      case "requestForm":
+        return `Request_Form_${reqId}${vendorPart}.pdf`;
+      case "requisition":
+        return `Requisition_${reqId}${vendorPart}.pdf`;
+      case "purchaseOrder":
+        return `Purchase_Order_${reqId}${vendorPart}.pdf`;
+      default:
+        return `${reqId}-preview.pdf`;
+    }
+  };
+
   const handleDownloadLive = async () => {
-    if (!livePreviewRef.current) return;
+    if (!livePreviewRef.current) {
+      alert("Preview content not found");
+      return;
+    }
+
     setDownloadingPreview(true);
+
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const canvas = await html2canvas(livePreviewRef.current, {
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        scale: 1,
-      });
+      const filename = getDownloadFilename(active?.type, active?.vendorName);
+      const pdfFile = await generatePdfFromElement(
+        livePreviewRef.current,
+        filename
+      );
 
-      const pdf = new jsPDF("p", "pt", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const pxPerPt = canvas.width / pageWidth;
-      const pagePixelHeight = Math.floor(pageHeight * pxPerPt);
-
-      let y = 0;
-      let first = true;
-      while (y < canvas.height) {
-        const thisPageHeight = Math.min(pagePixelHeight, canvas.height - y);
-        const pageCanvas = document.createElement("canvas");
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = thisPageHeight;
-        const pctx = pageCanvas.getContext("2d");
-        pctx.drawImage(
-          canvas,
-          0,
-          y,
-          canvas.width,
-          thisPageHeight,
-          0,
-          0,
-          canvas.width,
-          thisPageHeight
-        );
-
-        const pageImgData = pageCanvas.toDataURL("image/jpeg", 0.78);
-        const imgHeightInPts = thisPageHeight / pxPerPt;
-
-        if (first) {
-          pdf.addImage(pageImgData, "JPEG", 0, 0, pageWidth, imgHeightInPts);
-          first = false;
-        } else {
-          pdf.addPage();
-          pdf.addImage(pageImgData, "JPEG", 0, 0, pageWidth, imgHeightInPts);
-        }
-
-        y += thisPageHeight;
-      }
-
-      const blob = pdf.output("blob");
-      const filename = `${requestId || "requisition"}-preview.pdf`;
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(pdfFile);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      a.remove();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("Download live preview failed:", err);
-      alert("Failed to generate PDF. See console for details.");
+      console.error("PDF generation failed:", err);
+      alert("Failed to generate PDF. Please try the Print option instead.");
     } finally {
       setDownloadingPreview(false);
     }
@@ -700,7 +861,6 @@ const AttachedDocuments = ({
   const getVendorDisplayName = (vendorOrName) => {
     if (!vendorOrName) return "";
     if (typeof vendorOrName === "string") return vendorOrName;
-    // vendorOrName may be an object — prefer common fields
     if (typeof vendorOrName === "object") {
       return (
         vendorOrName.name ||
@@ -826,10 +986,10 @@ const AttachedDocuments = ({
                         type: "requestForm",
                         name: g.vendorName
                           ? `${g.vendorName} RequestForm`
-                          : "No vendor RequestForm",
+                          : " RequestForm",
                         displayName: g.vendorName
                           ? `${g.vendorName} RequestForm`
-                          : "No vendor RequestForm",
+                          : " RequestForm",
                         vendorId: g.vendorId,
                         vendorName: g.vendorName,
                         items: g.items,
@@ -840,7 +1000,7 @@ const AttachedDocuments = ({
                     <div className="truncate font-semibold text-slate-900">
                       {g.vendorName
                         ? `${g.vendorName} RequestForm`
-                        : "No vendor RequestForm"}
+                        : " RequestForm"}
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                       Request Form (items: {g.items.length})
@@ -875,7 +1035,8 @@ const AttachedDocuments = ({
                   </button>
                 </div>
               ))}
-            {vendorGroups &&
+            {showPurchaseOrder &&
+              vendorGroups &&
               vendorGroups.length > 0 &&
               vendorGroups.map((g) => (
                 <div key={`po-${String(g.vendorId)}`} className="relative">
@@ -963,6 +1124,20 @@ const AttachedDocuments = ({
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <div className="flex items-center gap-3">
+                  {active.vendorId === null && (
+                    <button
+                      onClick={handleSendAsMailFromRequestForm}
+                      disabled={preparingEmailPdf}
+                      className={`px-3 py-2 rounded-lg shadow-md transition text-sm flex items-center gap-2 ${
+                        preparingEmailPdf
+                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                          : "bg-emerald-500 text-white hover:bg-emerald-600"
+                      }`}
+                    >
+                      ✉️ {preparingEmailPdf ? "Preparing PDF…" : "Send as Mail"}
+                    </button>
+                  )}
+
                   <div className="text-sm font-semibold text-slate-900 truncate max-w-[360px]">
                     {active.displayName || active.name}
                   </div>
@@ -1177,7 +1352,9 @@ const AttachedDocuments = ({
 
       {active &&
         active.type &&
-        !["requisition", "requestForm"].includes(active.type) && (
+        !["requisition", "requestForm", "purchaseOrder"].includes(
+          active.type
+        ) && (
           <>
             <div
               className="fixed inset-0 bg-black/40 z-40"
@@ -1196,6 +1373,13 @@ const AttachedDocuments = ({
                   </div>
 
                   <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleDownload(active.url)}
+                      className="px-3 py-2 bg-white border rounded-md text-sm"
+                      title="Download file"
+                    >
+                      Download
+                    </button>
                     <button
                       onClick={closePreview}
                       className="px-3 py-2 bg-red-50 text-red-600 rounded-md text-sm"
@@ -1228,6 +1412,21 @@ const AttachedDocuments = ({
             </div>
           </>
         )}
+
+      {/* NEW: Email Composer modal */}
+      {showEmailComposer && (
+        <EmailComposer
+          initialAttachments={emailInitialAttachments}
+          subject={`Request Form ${
+            requestData?.requestId || requestData?.id || requestId || "REQ-XXXX"
+          }`}
+          onClose={() => setShowEmailComposer(false)}
+          onSent={() => {
+            setShowEmailComposer(false);
+            alert("Demo email sent (simulated).");
+          }}
+        />
+      )}
     </>
   );
 };

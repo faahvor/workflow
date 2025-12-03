@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { MdCheckCircle } from "react-icons/md";
+import { useAuth } from "../../context/AuthContext";
 
 const ClearingTable = ({
   items = [],
@@ -11,6 +12,8 @@ const ClearingTable = ({
   const [editedRequests, setEditedRequests] = useState([]);
   const [clearingFees, setClearingFees] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const { getToken } = useAuth(); // add this line to get auth token
+  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   useEffect(() => {
     // initialize clearingFees and editedRequests from incoming items
@@ -94,44 +97,102 @@ const ClearingTable = ({
     return Promise.all(promises);
   };
 
+ // ...existing code...
   const handleSaveAll = async () => {
     if (!window.confirm("Save clearing fee changes?")) return;
 
     const dirty = editedRequests.filter((it) => it._dirty);
-    if (!dirty.length) {
+    const hasDirtyItems = dirty.length > 0;
+
+    // Build item-level updates
+    const snapshot = editedRequests.slice();
+    const updates = snapshot
+      .filter((it) => it._dirty)
+      .map((it) => {
+        const changes = buildChangesForItem(it);
+        return {
+          itemId: it.itemId || it._id,
+          changes,
+        };
+      })
+      .filter((u) => Object.keys(u.changes).length > 0);
+
+    // Determine if request-level clearingFee needs update (compare clearingFees state vs selectedRequest.clearingFee)
+    let requestNeedsUpdate = false;
+    let requestPayload = null;
+
+    if (selectedRequest && typeof selectedRequest.requestId !== "undefined") {
+      const currentReqFee = selectedRequest.clearingFee;
+      const localFees = { ...clearingFees };
+
+      if (typeof currentReqFee === "number") {
+        const keys = Object.keys(localFees);
+        if (keys.length === 1) {
+          const onlyVal = Number(localFees[keys[0]] || 0);
+          requestNeedsUpdate = Number(currentReqFee || 0) !== onlyVal;
+          requestPayload = onlyVal;
+        } else {
+          // current is number but local is multi-vendor -> update to object
+          requestNeedsUpdate = true;
+          requestPayload = localFees;
+        }
+      } else if (currentReqFee && typeof currentReqFee === "object") {
+        // both objects: compare JSON
+        requestNeedsUpdate =
+          JSON.stringify(currentReqFee || {}) !== JSON.stringify(localFees || {});
+        requestPayload = localFees;
+      } else {
+        // no value on request yet
+        requestNeedsUpdate = Object.keys(localFees).length > 0;
+        requestPayload =
+          Object.keys(localFees).length === 1
+            ? Number(localFees[Object.keys(localFees)[0]] || 0)
+            : localFees;
+      }
+    }
+
+    if (!hasDirtyItems && !requestNeedsUpdate) {
       alert("No changes to save.");
       return;
     }
 
     setIsSaving(true);
     try {
-      const snapshot = editedRequests.slice();
-      const updates = snapshot
-        .filter((it) => it._dirty)
-        .map((it) => {
-          const changes = buildChangesForItem(it);
-          return {
-            itemId: it.itemId || it._id,
-            changes,
-          };
-        })
-        .filter((u) => Object.keys(u.changes).length > 0);
-
-      if (updates.length === 0) {
-        alert("No actual changes detected to save.");
-        setIsSaving(false);
-        return;
+      // First: apply item-level updates (if any) via existing handler
+      let itemResults = [];
+      if (updates.length > 0) {
+        itemResults = await handleUnifiedEdit(updates);
       }
 
-      const results = await handleUnifiedEdit(updates);
+      // Then: apply request-level clearingFee update if needed
+      if (requestNeedsUpdate) {
+        if (!selectedRequest || !selectedRequest.requestId) {
+          throw new Error("No selectedRequest.requestId to update request-level clearingFee");
+        }
+        const token = await getToken();
+        const url = `${API_BASE_URL}/requests/${selectedRequest.requestId}`;
+        const body = { clearingFee: requestPayload };
+        const resp = await fetch(url, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(
+            `Failed updating request clearingFee: ${resp.status} ${resp.statusText} ${text}`
+          );
+        }
+      }
 
       // Clear local dirty flags (server may not return items)
-      setEditedRequests((prev) =>
-        prev.map((it) => ({ ...it, _dirty: false }))
-      );
-
+      setEditedRequests((prev) => prev.map((it) => ({ ...it, _dirty: false })));
       alert("Saved successfully");
-      return results;
+
+      return { itemResults, requestUpdated: requestNeedsUpdate };
     } catch (err) {
       console.error("Error saving clearing edits:", err);
       alert("Error saving changes. See console.");
@@ -140,6 +201,7 @@ const ClearingTable = ({
       setIsSaving(false);
     }
   };
+// ...existing code...
 
   if (!editedRequests || editedRequests.length === 0) {
     return (
@@ -174,6 +236,7 @@ const ClearingTable = ({
                   <th className="p-3 border border-slate-200 text-left">Item Type</th>
                   <th className="p-3 border border-slate-200 text-left">Maker</th>
                   <th className="p-3 border border-slate-200 text-left">Maker's Part No</th>
+                  <th className="p-3 border border-slate-200 text-center">Vendor</th>
                   <th className="p-3 border border-slate-200 text-center">Quantity</th>
                   <th className="p-3 border border-slate-200 text-center">Clearing Fee</th>
                 </tr>
@@ -188,6 +251,7 @@ const ClearingTable = ({
                       <td className="border p-3 border-slate-200">{it.itemType || "N/A"}</td>
                       <td className="border p-3 border-slate-200">{it.maker || "N/A"}</td>
                       <td className="border p-3 border-slate-200">{it.makersPartNo || "N/A"}</td>
+                      <td className="border p-3 border-slate-200 text-center">{it.vendor || "N/A"}</td>
                       <td className="border p-3 border-slate-200 text-center">{it.quantity ?? it.qty ?? "0"}</td>
                       {idx === 0 ? (
                         <td

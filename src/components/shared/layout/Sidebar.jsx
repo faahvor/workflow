@@ -9,6 +9,9 @@ import {
   MdAdd,
   MdDescription,
   MdInventory,
+  MdHelp,
+  MdVerified,
+  MdDoneAll,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -19,13 +22,14 @@ const Sidebar = ({
   activeView,
   setActiveView,
   pendingCount = 0,
+  queriedCount = 0,
   isRequester = false,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isProcurement = String(user?.role || "") === "Procurement Manager";
-    const isAccountingLead = ["accountinglead", "accounting lead", "account lead"].includes(
+    const isAccountingLead = ["accountingofficer", "accounting officer", "account officer"].includes(
     String(user?.role || "").toLowerCase()
   );
 
@@ -153,7 +157,7 @@ const Sidebar = ({
                   : "text-gray-400 hover:text-white hover:bg-gray-800/50"
               }`}
             >
-              <MdCheckCircle className="text-xl shrink-0" />
+              <MdVerified className="text-xl shrink-0" />
               <span className="font-medium text-sm">Approved</span>
             </button>
               {isAccountingLead && (
@@ -174,6 +178,26 @@ const Sidebar = ({
                 </div>
               </button>
             )}
+                  {/* Queried Requests */}
+            <button
+              onClick={() => {
+                setActiveView("queried");
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                activeView === "queried"
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+              }`}
+            >
+              <MdHelp className="text-xl shrink-0" />
+              <span className="font-medium text-sm">Queried Requests</span>
+              {queriedCount > 0 && (
+                <span className="ml-auto bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
+                  {queriedCount}
+                </span>
+              )}
+            </button>
             {/* Completed Requests */}
             <button
               onClick={() => {
@@ -186,7 +210,7 @@ const Sidebar = ({
                   : "text-gray-400 hover:text-white hover:bg-gray-800/50"
               }`}
             >
-              <MdCheckCircle className="text-xl shrink-0" />
+              <MdDoneAll className="text-xl shrink-0" />
               <span className="font-medium text-sm">Completed</span>
             </button>
 

@@ -11,6 +11,7 @@ import {
   MdDirectionsBoat,
   MdDescription,
   MdOutlineLocalShipping,
+  MdDoneAll,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -21,8 +22,7 @@ const RequesterSidebar = ({
   setActiveView,
   pendingCount = 0,
   isRequester = true,
-    selectedRequestOrigin = null,
-
+  selectedRequestOrigin = null,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [requestsExpanded, setRequestsExpanded] = useState(false); // default collapsed
@@ -31,9 +31,9 @@ const RequesterSidebar = ({
 
   useEffect(() => {
     const requestsViews = ["createNew", "pending", "myrequests"];
-    // include merged only for users in the Operations department (case-insensitive)
+    // include merged only for users in the Freight department (case-insensitive)
     const dept = (user?.department || "").toString().toLowerCase();
-    if (dept.includes("operation")) {
+    if (dept.includes("freight")) {
       requestsViews.push("merged");
     }
 
@@ -43,6 +43,7 @@ const RequesterSidebar = ({
       setRequestsExpanded(false);
     }
   }, [activeView, user]);
+  // ...existing code...
 
   const handleLogout = () => {
     logout();
@@ -127,7 +128,9 @@ const RequesterSidebar = ({
                 <button
                   onClick={() => setActiveView("pending")}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                    activeView === "pending" || (activeView === "detail" && selectedRequestOrigin === "pending")
+                    activeView === "pending" ||
+                    (activeView === "detail" &&
+                      selectedRequestOrigin === "pending")
                       ? "bg-gray-800/80 text-white"
                       : "text-gray-300 hover:text-white hover:bg-gray-800/50"
                   }`}
@@ -145,7 +148,9 @@ const RequesterSidebar = ({
                 <button
                   onClick={() => setActiveView("myrequests")}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                    activeView === "myrequests" || (activeView === "detail" && selectedRequestOrigin === "myrequests")
+                    activeView === "myrequests" ||
+                    (activeView === "detail" &&
+                      selectedRequestOrigin === "myrequests")
                       ? "bg-gray-800/80 text-white"
                       : "text-gray-300 hover:text-white hover:bg-gray-800/50"
                   }`}
@@ -154,9 +159,11 @@ const RequesterSidebar = ({
                     <MdPendingActions className="text-lg" />
                     <span className="text-sm">My Requests</span>
                   </div>
-                 
                 </button>
-             {(user?.department || "").toString().toLowerCase().includes("operation") && (
+                {(user?.department || "")
+                  .toString()
+                  .toLowerCase()
+                  .includes("freight") && (
                   <button
                     onClick={() => setActiveView("merged")}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
@@ -172,8 +179,6 @@ const RequesterSidebar = ({
                   </button>
                 )}
 
-              
-
                 <button
                   onClick={() => setActiveView("completed")}
                   className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
@@ -182,7 +187,7 @@ const RequesterSidebar = ({
                       : "text-gray-300 hover:text-white hover:bg-gray-800/50"
                   }`}
                 >
-                  <MdHistory className="text-lg" />
+                  <MdDoneAll className="text-lg" />
                   <span className="text-sm">Completed</span>
                 </button>
               </div>

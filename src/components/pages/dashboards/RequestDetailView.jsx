@@ -37,6 +37,7 @@ import AttachItems from "./AttachItems";
 import AccountLeadTable from "../../shared/tables/AccountLeadtable";
 import CFOTable from "../../shared/tables/CFOTable";
 import ClearingTable from "../../shared/tables/ClearingTable";
+import TechnicalManagerTable from "../../shared/tables/TechnicalManagerTable";
 
 const RequestDetailView = ({
   request,
@@ -57,7 +58,8 @@ const RequestDetailView = ({
   const { getToken } = useAuth();
   const [canApproveDelivery, setCanApproveDelivery] = useState(true);
   const [filesRefreshCounter, setFilesRefreshCounter] = useState(0);
-
+  const [approveDropdownOpen, setApproveDropdownOpen] = useState(false);
+  const approveDropdownRef = useRef(null);
   // Attach-from-other-request state + helpers (shipping-only UI will use these)
   const [attachSearchTerm, setAttachSearchTerm] = useState("");
   const [attachSearching, setAttachSearching] = useState(false);
@@ -81,6 +83,7 @@ const RequestDetailView = ({
   const [accAttachSelectedItemIds, setAccAttachSelectedItemIds] = useState([]);
   const [accAttachSourceMeta, setAccAttachSourceMeta] = useState(null);
   const accAttachInputRef = useRef(null);
+  const accAttachDropdownRef = useRef(null);
 
   // --- Quotation upload state & refs (REPLACED to support multiple files)
   const fileInputRef = useRef(null);
@@ -96,6 +99,8 @@ const RequestDetailView = ({
   const [isSavingDelivery, setIsSavingDelivery] = useState(false);
   const [nextDeliveryTarget, setNextDeliveryTarget] = useState(null);
   const [isSavingNextDelivery, setIsSavingNextDelivery] = useState(false);
+  const [nextApprovalRole, setNextApprovalRole] = useState(null);
+  const [isSavingNextApproval, setIsSavingNextApproval] = useState(false);
 
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
@@ -111,6 +116,32 @@ const RequestDetailView = ({
   const [deleteTargetItem, setDeleteTargetItem] = useState(null);
   const [deleteReason, setDeleteReason] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [queryTargets, setQueryTargets] = useState([]);
+  const [queryTargetsLoading, setQueryTargetsLoading] = useState(false);
+  const [selectedQueryTarget, setSelectedQueryTarget] = useState(null);
+  const nextApprovalOptions = [
+    { value: "Fleet Manager", label: "Fleet Manager" },
+    { value: "Technical Manager", label: "Technical Manager" },
+  ];
+
+  useEffect(() => {
+    if (!approveDropdownOpen) return;
+    const onDocumentMouseDown = (e) => {
+      const dropdownEl = approveDropdownRef?.current;
+      if (dropdownEl && dropdownEl.contains(e.target)) return;
+      setApproveDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", onDocumentMouseDown);
+    return () => document.removeEventListener("mousedown", onDocumentMouseDown);
+  }, [approveDropdownOpen]);
+
+  useEffect(() => {
+    const saved =
+      (selectedRequest && selectedRequest.nextApproverAfterVesselManager2) ||
+      (request && request.nextApproverAfterVesselManager2) ||
+      null;
+    setNextApprovalRole(saved ? { value: saved, label: saved } : null);
+  }, [selectedRequest, request]);
 
   const COMMENTS_PER_PAGE = 3;
   const [commentsPage, setCommentsPage] = useState(1);
@@ -130,6 +161,20 @@ const RequestDetailView = ({
     (commentsPage - 1) * COMMENTS_PER_PAGE,
     commentsPage * COMMENTS_PER_PAGE
   );
+  useEffect(() => {
+    if (!accAttachDropdownOpen) return;
+    const onDocumentMouseDown = (e) => {
+      const inputEl = accAttachInputRef?.current;
+      const dropdownEl = accAttachDropdownRef?.current;
+      const target = e.target;
+      if (inputEl && inputEl.contains(target)) return;
+      if (dropdownEl && dropdownEl.contains(target)) return;
+      // clicked outside input + dropdown -> close accounting dropdown
+      setAccAttachDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", onDocumentMouseDown);
+    return () => document.removeEventListener("mousedown", onDocumentMouseDown);
+  }, [accAttachDropdownOpen]);
 
   // Add below fetchRequestDetails or inside same helpers section
 
@@ -303,7 +348,12 @@ const RequestDetailView = ({
     "operations manager",
     "equipment manager",
   ];
-  const allowedQueryRoles = ["vessel manager", "managing director"];
+  const allowedQueryRoles = [
+    "vessel manager",
+    "managing director",
+    "CFO",
+    "Accounting Lead",
+  ];
   const isVesselManagerBlockedForActions =
     userRole === "vessel manager" &&
     (
@@ -312,6 +362,18 @@ const RequestDetailView = ({
       request?.status ||
       ""
     ).toString() === "PENDING_VESSEL_MANAGER_APPROVAL_2";
+
+  const currentAccountState = (
+    selectedRequest?.flow?.currentState ||
+    request?.flow?.currentState ||
+    request?.status ||
+    ""
+  ).toString();
+
+  const showAccountingAttach =
+    !isReadOnly &&
+    (userRole === "accountingofficer" || userRole === "accounting officer") &&
+    currentAccountState === "PENDING_ACCOUNTING_OFFICER_APPROVAL";
 
   const openRejectModal = () => {
     setRejectComment("");
@@ -323,9 +385,29 @@ const RequestDetailView = ({
     setIsRejectModalOpen(false);
   };
 
-  const openQueryModal = () => {
+  const openQueryModal = async () => {
     setQueryComment("");
+    setSelectedQueryTarget(null);
+    setQueryTargets([]);
     setIsQueryModalOpen(true);
+    try {
+      const reqId = request?.requestId || request?.id;
+      if (!reqId) {
+        console.warn("openQueryModal: no request id available");
+        return;
+      }
+      const targets = await fetchQueryableRoles(reqId);
+      // If the backend returns no targets, close modal and inform user
+      if (!Array.isArray(targets) || targets.length === 0) {
+        setIsQueryModalOpen(false);
+        alert("No available targets to query for this request.");
+      }
+    } catch (err) {
+      console.error("Error loading query targets:", err);
+      // keep modal closed when error prevents loading targets
+      setIsQueryModalOpen(false);
+      alert("Unable to load targets to query. See console for details.");
+    }
   };
 
   const closeQueryModal = () => {
@@ -370,6 +452,72 @@ const RequestDetailView = ({
       setIsRejecting(false);
     }
   };
+  const fetchQueryableRoles = async (reqId) => {
+    setQueryTargetsLoading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        console.warn("fetchQueryableRoles: no auth token available");
+        setQueryTargets([]);
+        return [];
+      }
+
+      const resp = await axios.get(
+        `${API_BASE_URL}/requests/${encodeURIComponent(reqId)}/queryable-roles`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // Helpful debug output to inspect server shape when things are empty
+      console.debug("fetchQueryableRoles: raw response:", resp?.data);
+
+      // Support multiple possible response shapes
+      let data =
+        Array.isArray(resp.data?.data) && resp.data.data.length
+          ? resp.data.data
+          : Array.isArray(resp.data) && resp.data.length
+          ? resp.data
+          : Array.isArray(resp.data?.queryableRoles) &&
+            resp.data.queryableRoles.length
+          ? resp.data.queryableRoles
+          : Array.isArray(resp.data?.roles) && resp.data.roles.length
+          ? resp.data.roles
+          : [];
+
+      // normalize items to objects with role + displayName when possible
+      data = (data || [])
+        .map((d) => {
+          if (typeof d === "string") {
+            return { role: d, displayName: d };
+          }
+          return {
+            role: d.role || d.name || d.roleName || "",
+            displayName:
+              d.displayName ||
+              d.name ||
+              d.display_name ||
+              d.userName ||
+              d.user?.displayName ||
+              "",
+            ...d,
+          };
+        })
+        .filter((d) => d && d.role);
+
+      setQueryTargets(data);
+      return data;
+    } catch (err) {
+      console.error(
+        "Failed to fetch queryable roles:",
+        err,
+        err?.response?.data ?? err?.message
+      );
+      setQueryTargets([]);
+      return [];
+    } finally {
+      setQueryTargetsLoading(false);
+    }
+  };
+  // ...existing code...;
 
   const submitQuery = async () => {
     const trimmed = (queryComment || "").trim();
@@ -377,6 +525,11 @@ const RequestDetailView = ({
       alert(
         "Please provide a brief reason for the query (at least 3 characters)."
       );
+      return;
+    }
+
+    if (!selectedQueryTarget || !selectedQueryTarget.value) {
+      alert("Please select who to query from the dropdown below.");
       return;
     }
 
@@ -390,11 +543,16 @@ const RequestDetailView = ({
       const token = getToken();
       if (!token) throw new Error("Not authenticated");
 
+      const payload = {
+        targetRole: selectedQueryTarget.value,
+        comment: trimmed,
+      };
+
       const resp = await axios.post(
         `${API_BASE_URL}/requests/${encodeURIComponent(
           request.requestId
         )}/query`,
-        { comment: trimmed },
+        payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -406,8 +564,8 @@ const RequestDetailView = ({
         await fetchRequestDetails();
       }
 
-      // Do not call onQuery here — calling the parent handler was causing the extra confirm/alert.
       closeQueryModal();
+      alert(resp.data?.message || "Query sent successfully");
     } catch (err) {
       console.error("Query error:", err);
       alert(err?.response?.data?.message || "Failed to query request");
@@ -486,7 +644,39 @@ const RequestDetailView = ({
       setIsSavingDelivery(false);
     }
   };
+  const handleNextApprovalChange = async (option) => {
+    // option is either null or { value, label }
+    setNextApprovalRole(option);
+    // only persist when a real option is chosen (not clearing)
+    if (!option) return;
 
+    try {
+      setIsSavingNextApproval(true);
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+
+      await axios.patch(
+        `${API_BASE_URL}/requests/${encodeURIComponent(request.requestId)}`,
+        { nextApproverAfterVesselManager2: option.value },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // refresh request details so UI is in sync
+      const updated = await fetchRequestDetails();
+      setSelectedRequest(updated);
+    } catch (err) {
+      console.error("Error saving next approval role:", err);
+      alert(err?.response?.data?.message || "Failed to save next approval");
+      // revert selection from server value if available
+      const saved =
+        (selectedRequest && selectedRequest.nextApproverAfterVesselManager2) ||
+        (request && request.nextApproverAfterVesselManager2) ||
+        null;
+      setNextApprovalRole(saved ? { value: saved, label: saved } : null);
+    } finally {
+      setIsSavingNextApproval(false);
+    }
+  };
   // helper to extract next-delivery stations from various response shapes
   const extractNextStations = (r) => {
     if (!r) return [];
@@ -1082,10 +1272,10 @@ const RequestDetailView = ({
       );
       const src = resp.data?.data ?? resp.data ?? {};
       const items = Array.isArray(src.items) ? src.items : [];
+      // load items into UI
       setAccAttachSourceItems(items);
-      setAccAttachSelectedItemIds(
-        items.map((it) => it.itemId || it._id || it.id).filter(Boolean)
-      );
+      // DEFAULT: none selected initially (user must pick)
+      setAccAttachSelectedItemIds([]);
       setAccAttachSourceMeta({
         requestId: src.requestId || sourceRequestId,
         vendor: src.vendor || src.requester?.displayName || "",
@@ -1099,7 +1289,6 @@ const RequestDetailView = ({
       return null;
     }
   };
-
   const attachAccSelectedToTarget = async (
     targetRequestId,
     purpose = "",
@@ -1201,6 +1390,19 @@ const RequestDetailView = ({
   };
 
   const currentRequest = selectedRequest || request;
+  const isQueried = (selectedRequest?.isQueried ?? request?.isQueried) === true;
+
+  const reqTypeLower = (currentRequest?.requestType || "")
+    .toString()
+    .toLowerCase();
+  const allItemsPettyCash =
+    Array.isArray(currentRequest?.items) &&
+    currentRequest.items.length > 0 &&
+    currentRequest.items.every(
+      (it) => (it.itemType || "").toString().toLowerCase() === "pettycash"
+    );
+  const hideAssignForProcurement =
+    reqTypeLower === "pettycash" && allItemsPettyCash;
 
   const renderItemsTable = () => {
     const userRole = user?.role?.toLowerCase();
@@ -1245,11 +1447,18 @@ const RequestDetailView = ({
           null,
         quantity: it.quantity || it.qty || it.requestedQuantity || 0,
         unitPrice: it.unitPrice || it.unit_price || it.price || null,
+        totalPrice:
+          it.totalPrice ??
+          it.total ??
+          (it.unitPrice && (it.quantity ?? it.qty)
+            ? Number(it.unitPrice) * Number(it.quantity ?? it.qty)
+            : 0),
         total:
-          it.total ||
-          (it.unitPrice && it.quantity
-            ? Number(it.unitPrice) * Number(it.quantity)
-            : null),
+          it.totalPrice ??
+          it.total ??
+          (it.unitPrice && (it.quantity ?? it.qty)
+            ? Number(it.unitPrice) * Number(it.quantity ?? it.qty)
+            : 0),
         purchaseRequisitionNumber:
           it.purchaseRequisitionNumber ??
           it.purchaseReqNumber ??
@@ -1258,6 +1467,7 @@ const RequestDetailView = ({
           "",
         purchaseOrderNumber:
           it.purchaseOrderNumber ?? it.PON ?? it.pon ?? it.purchaseOrder ?? "",
+        discount: it.discount ?? it.discountPercent ?? "",
 
         currency: it.currency || "NGN",
         paymentStatus: it.paymentStatus || it.payment_status || "notpaid",
@@ -1284,6 +1494,8 @@ const RequestDetailView = ({
         inStock: it.inStock ?? false,
         inStockQuantity: it.inStockQuantity ?? it.storeQuantity ?? 0,
         storeLocation: it.storeLocation ?? it.inStockLocation ?? "",
+        vatAmount: it.vatAmount ?? 0,
+        vatted: it.vatted ?? false,
         __raw: it,
       };
     });
@@ -1328,6 +1540,19 @@ const RequestDetailView = ({
             }
           />
         );
+      case "technicalmanager":
+      case "technical manager":
+        return (
+          <TechnicalManagerTable
+            items={items}
+            onEditItem={handleEditItem}
+            isReadOnly={tableReadOnly}
+            vendors={vendors}
+            requestType={
+              selectedRequest?.requestType || request?.requestType || ""
+            }
+          />
+        );
 
       case "managingdirector":
       case "managing director":
@@ -1349,6 +1574,7 @@ const RequestDetailView = ({
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
             vendors={vendors}
+            tag={currentRequest?.tag}
           />
         );
       case "storebase":
@@ -1398,6 +1624,8 @@ const RequestDetailView = ({
               request?.flow?.currentState ||
               ""
             }
+            tag={currentRequest?.tag}
+            request={currentRequest}
           />
         );
       case "accountinglead":
@@ -1434,6 +1662,7 @@ const RequestDetailView = ({
             items={items}
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
+            tag={currentRequest?.tag}
           />
         );
       case "directorofoperations":
@@ -1464,7 +1693,7 @@ const RequestDetailView = ({
             onDeliveryStatusChange={handleDeliveryStatusChange}
           />
         );
-           case "requester":
+      case "requester":
       case "Requester":
         const isShippingTag = String(currentRequest?.tag || "")
           .toLowerCase()
@@ -1488,7 +1717,7 @@ const RequestDetailView = ({
           );
         }
 
-           if (isClearingTag) {
+        if (isClearingTag) {
           return (
             <ClearingTable
               items={items}
@@ -1515,6 +1744,7 @@ const RequestDetailView = ({
               request?.status ||
               ""
             }
+            isQueried={isQueried}
           />
         );
 
@@ -1608,6 +1838,27 @@ const RequestDetailView = ({
         throw new Error("Failed to update item");
       }
     } catch (error) {
+      console.error("Error editing item:", {
+        message: error?.message,
+        status: error?.response?.status,
+        responseData: error?.response?.data,
+        errorsArray: error?.response?.data?.errors,
+        payloadPreview: item,
+      });
+
+      // extra full dump to help debugging in environments where object expansion is collapsed
+      try {
+        console.error(
+          "Full server response (stringified):",
+          JSON.stringify(error?.response?.data)
+        );
+      } catch (e) {
+        console.error(
+          "Could not stringify response data:",
+          e,
+          error?.response?.data
+        );
+      }
       // better error output for debugging
       console.error("Error editing item:", {
         message: error.message,
@@ -1677,6 +1928,12 @@ const RequestDetailView = ({
     return true;
   };
   const handleApproveClick = () => {
+    if ((userRole || "").toString().toLowerCase() === "procurement officer") {
+      if (!nextApprovalRole || !nextApprovalRole.value) {
+        alert("Please select 'Next Approval' before approving this request.");
+        return;
+      }
+    }
     // currentRequest may be the fresh copy or the original prop
     const req = selectedRequest || request;
     const reqType = (req?.requestType || "").toString().toLowerCase();
@@ -2166,7 +2423,7 @@ const RequestDetailView = ({
           <div className="px-4 py-3 border-b border-r border-slate-200"></div>
           <div className="px-4 py-3 border-b border-r border-slate-200">
             <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Job Number{" "}
+              Job Number/Offshore Number
             </p>
             <p className="text-sm font-semibold">
               <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
@@ -2502,301 +2759,300 @@ const RequestDetailView = ({
         )}
 
       {/* Accounting Lead: attach-from-other-request (excludes shipping requests) */}
-      {!isReadOnly &&
-        (userRole === "accountinglead" ||
-          userRole === "accounting lead" ||
-          userRole === "account lead") && (
-          <div className="mb-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              🔗 Attach Items from Another Request (Accounting)
-            </h3>
+      {showAccountingAttach && (
+        <div className="mb-8">
+          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            🔗 Attach Items from Another Request
+          </h3>
 
-            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
-              <div className="flex gap-3 items-start relative">
-                <input
-                  ref={accAttachInputRef}
-                  value={accAttachSearchTerm}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setAccAttachSearchTerm(v);
-                    fetchAccAttachDropdownResults(v);
-                  }}
-                  onFocus={() => fetchAccAttachDropdownResults("")}
-                  onBlur={() =>
-                    setTimeout(() => setAccAttachDropdownOpen(false), 150)
+          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
+            <div className="flex gap-3 items-start relative">
+              <input
+                ref={accAttachInputRef}
+                value={accAttachSearchTerm}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setAccAttachSearchTerm(v);
+                  fetchAccAttachDropdownResults(v);
+                }}
+                onFocus={() => fetchAccAttachDropdownResults("")}
+                onBlur={() =>
+                  setTimeout(() => setAccAttachDropdownOpen(false), 150)
+                }
+                onKeyDown={(e) => {
+                  const max = (accAttachDropdownResults || []).length - 1;
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setAccAttachFocusedIndex((i) =>
+                      Math.min(max, Math.max(-1, i + 1))
+                    );
+                    return;
                   }
-                  onKeyDown={(e) => {
-                    const max = (accAttachDropdownResults || []).length - 1;
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      setAccAttachFocusedIndex((i) =>
-                        Math.min(max, Math.max(-1, i + 1))
-                      );
-                      return;
-                    }
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      setAccAttachFocusedIndex((i) =>
-                        Math.max(-1, Math.min(max, i - 1))
-                      );
-                      return;
-                    }
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      const idx = accAttachFocusedIndex;
-                      if (idx >= 0 && accAttachDropdownResults[idx]) {
-                        const selected = accAttachDropdownResults[idx];
-                        // load then auto-attach
-                        (async () => {
-                          const loaded = await loadAccSourceRequestItems(
-                            selected.requestId || selected.id
-                          );
-                          if (!loaded) return;
-                          await attachAccSelectedToTarget(
-                            currentRequest.requestId,
-                            "",
-                            loaded.src?.requestId ||
-                              selected.requestId ||
-                              selected.id,
-                            true
-                          );
-                        })();
-                        setAccAttachDropdownOpen(false);
-                        setAccAttachSearchTerm("");
-                      } else {
-                        fetchAccAttachDropdownResults(accAttachSearchTerm);
-                      }
-                    }
-                  }}
-                  placeholder="Search vendor or PON (excludes shipping requests)"
-                  className="flex-1 px-4 py-3 border rounded-xl"
-                />
-              </div>
-
-              {/* Dropdown results portal */}
-              {accAttachDropdownOpen &&
-                (() => {
-                  const portalTarget =
-                    typeof document !== "undefined" && document.body
-                      ? document.body
-                      : null;
-                  let dropdownStyle = {
-                    position: "fixed",
-                    top: "0px",
-                    left: "0px",
-                    width: "300px",
-                    zIndex: 2147483647,
-                    maxHeight: "60vh",
-                    overflow: "auto",
-                  };
-                  try {
-                    const el = accAttachInputRef && accAttachInputRef.current;
-                    if (el && typeof el.getBoundingClientRect === "function") {
-                      const rect = el.getBoundingClientRect();
-                      dropdownStyle = {
-                        ...dropdownStyle,
-                        top: `${rect.bottom}px`,
-                        left: `${rect.left}px`,
-                        width: `${rect.width}px`,
-                      };
-                    }
-                  } catch (e) {
-                    // ignore
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setAccAttachFocusedIndex((i) =>
+                      Math.max(-1, Math.min(max, i - 1))
+                    );
+                    return;
                   }
+                  // NOTE: Enter handling removed to avoid accidental auto-attach.
+                }}
+                placeholder="Search vendor or PON (excludes shipping requests)"
+                className="flex-1 px-4 py-3 border rounded-xl"
+              />
+            </div>
 
-                  const dropdown = (
-                    <div
-                      style={dropdownStyle}
-                      className="bg-white border rounded-lg shadow-lg"
-                    >
-                      {accAttachDropdownLoading ? (
-                        <div className="p-3 text-sm text-slate-500">
-                          Loading...
-                        </div>
-                      ) : accAttachDropdownResults.length === 0 ? (
-                        <div className="p-3 text-sm text-slate-500">
-                          No pending requests found
-                        </div>
-                      ) : (
-                        accAttachDropdownResults.map((r, idx) => {
-                          const vendor =
-                            r.vendor ||
-                            r.requester?.displayName ||
-                            "Unknown vendor";
-                          const po =
-                            r.purchaseOrderNumber ||
-                            r.reference ||
-                            r.requestId ||
-                            r.summary ||
-                            r.requestId;
-                          const itemCount = Array.isArray(r.items)
-                            ? r.items.length
-                            : r.itemCount || 0;
-                          // compute total safely (server may not include totals)
-                          const total = (
-                            Array.isArray(r.items) ? r.items : []
-                          ).reduce((s, it) => {
-                            const qty = Number(it.quantity || it.qty || 0);
-                            const line =
-                              it.total != null
-                                ? Number(it.total)
-                                : Number(it.unitPrice || it.price || 0) * qty;
-                            return s + (isNaN(line) ? 0 : line);
-                          }, 0);
-                          const focused = idx === accAttachFocusedIndex;
-                          return (
-                            <div
-                              key={r.requestId || r.id || idx}
-                              onMouseDown={async (ev) => {
-                                ev.preventDefault();
-                                const loaded = await loadAccSourceRequestItems(
-                                  r.requestId || r.id
-                                );
-                                if (!loaded) return;
-                                await attachAccSelectedToTarget(
-                                  currentRequest.requestId,
-                                  "",
-                                  loaded.src?.requestId || r.requestId || r.id,
-                                  true
-                                );
-                                setAccAttachDropdownOpen(false);
-                                setAccAttachSearchTerm("");
-                              }}
-                              onMouseEnter={() => setAccAttachFocusedIndex(idx)}
-                              className={`p-3 cursor-pointer flex items-center justify-between ${
-                                focused ? "bg-slate-100" : "hover:bg-slate-50"
-                              }`}
-                            >
+            {/* Dropdown results portal */}
+            {accAttachDropdownOpen &&
+              (() => {
+                const portalTarget =
+                  typeof document !== "undefined" && document.body
+                    ? document.body
+                    : null;
+                let dropdownStyle = {
+                  position: "fixed",
+                  top: "0px",
+                  left: "0px",
+                  width: "300px",
+                  zIndex: 2147483647,
+                  maxHeight: "60vh",
+                  overflow: "auto",
+                };
+                try {
+                  const el = accAttachInputRef && accAttachInputRef.current;
+                  if (el && typeof el.getBoundingClientRect === "function") {
+                    const rect = el.getBoundingClientRect();
+                    dropdownStyle = {
+                      ...dropdownStyle,
+                      top: `${rect.bottom}px`,
+                      left: `${rect.left}px`,
+                      width: `${rect.width}px`,
+                    };
+                  }
+                } catch (e) {
+                  // ignore
+                }
+
+                const dropdown = (
+                  <div
+                    ref={accAttachDropdownRef}
+                    style={dropdownStyle}
+                    className="bg-white border rounded-lg shadow-lg"
+                  >
+                    {accAttachDropdownLoading ? (
+                      <div className="p-3 text-sm text-slate-500">
+                        Loading...
+                      </div>
+                    ) : accAttachDropdownResults.length === 0 ? (
+                      <div className="p-3 text-sm text-slate-500">
+                        No pending requests found
+                      </div>
+                    ) : (
+                      accAttachDropdownResults.map((r, idx) => {
+                        const firstItem =
+                          Array.isArray(r.items) && r.items.length
+                            ? r.items[0]
+                            : null;
+                        const vendorName =
+                          (r.vendor &&
+                            (typeof r.vendor === "string"
+                              ? r.vendor
+                              : r.vendor.name)) ||
+                          r.requester?.displayName ||
+                          (firstItem &&
+                            (firstItem.vendor?.name ||
+                              firstItem.vendor ||
+                              firstItem.supplier)) ||
+                          "Unknown vendor";
+                        const poNumber =
+                          r.purchaseOrderNumber ||
+                          r.PON ||
+                          r.reference ||
+                          (firstItem &&
+                            (firstItem.purchaseOrderNumber ||
+                              firstItem.PON ||
+                              firstItem.pon)) ||
+                          null;
+                        const requestIdLabel =
+                          r.requestId || r.id || "Unknown ID";
+                        const itemCount = Array.isArray(r.items)
+                          ? r.items.length
+                          : r.itemCount || 0;
+                        const total = (
+                          Array.isArray(r.items) ? r.items : []
+                        ).reduce((s, it) => {
+                          const qty = Number(it.quantity || it.qty || 0);
+                          const line =
+                            it.total != null
+                              ? Number(it.total)
+                              : Number(it.unitPrice || it.price || 0) * qty;
+                          return s + (isNaN(line) ? 0 : line);
+                        }, 0);
+                        const focused = idx === accAttachFocusedIndex;
+                        return (
+                          <div
+                            key={r.requestId || r.id || idx}
+                            onMouseDown={async (ev) => {
+                              ev.preventDefault();
+                              const loaded = await loadAccSourceRequestItems(
+                                r.requestId || r.id
+                              );
+                              if (!loaded) return;
+                              setAccAttachDropdownOpen(false);
+                              setAccAttachSearchTerm("");
+                            }}
+                            onMouseEnter={() => setAccAttachFocusedIndex(idx)}
+                            className={`p-3 cursor-pointer flex items-center justify-between ${
+                              focused ? "bg-slate-100" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <div>
+                              <div className="text-sm font-semibold">
+                                {requestIdLabel}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {vendorName}
+                              </div>
+                              {poNumber && (
+                                <div className="text-xs text-slate-400 mt-1">
+                                  PON: {poNumber}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-500 text-right">
                               <div>
-                                <div className="text-sm font-semibold">
-                                  {po}
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                  {vendor}
-                                </div>
+                                {itemCount} item{itemCount === 1 ? "" : "s"}
                               </div>
-                              <div className="text-xs text-slate-500 text-right">
-                                <div>
-                                  {itemCount} item{itemCount === 1 ? "" : "s"}
-                                </div>
-                                <div className="mt-1">
-                                  {formatAmount(total, r.currency || "NGN")}
-                                </div>
+                              <div className="mt-1">
+                                {formatAmount(total, r.currency || "NGN")}
                               </div>
                             </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  );
-                  return portalTarget
-                    ? createPortal(dropdown, portalTarget)
-                    : dropdown;
-                })()}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+                return portalTarget
+                  ? createPortal(dropdown, portalTarget)
+                  : dropdown;
+              })()}
 
-              {/* Loaded source items (after selection) */}
-              {accAttachSourceItems.length > 0 && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-sm font-semibold">
-                        Source: {accAttachSourceMeta?.requestId}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {accAttachSourceMeta?.vendor}
-                      </div>
+            {/* Loaded source items (after selection) */}
+            {accAttachSourceItems.length > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-sm font-semibold">
+                      Source: {accAttachSourceMeta?.requestId}
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() =>
-                          setAccAttachSelectedItemIds(
-                            accAttachSourceItems
-                              .map((it) => it.itemId || it._id || it.id)
-                              .filter(Boolean)
-                          )
-                        }
-                        className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-md"
-                      >
-                        Select All
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAccAttachSourceItems([]);
-                          setAccAttachSelectedItemIds([]);
-                          setAccAttachSourceMeta(null);
-                        }}
-                        className="px-3 py-1 bg-red-50 text-red-600 rounded-md"
-                      >
-                        Clear
-                      </button>
+                    <div className="text-xs text-slate-500">
+                      {accAttachSourceMeta?.vendor}
                     </div>
                   </div>
 
-                  <div className="grid gap-2">
-                    {accAttachSourceItems.map((it) => {
-                      const iid = it.itemId || it._id || it.id;
-                      return (
-                        <label
-                          key={iid}
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
-                        >
-                          <div>
-                            <div className="text-sm font-semibold">
-                              {it.name || it.description || iid}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Qty: {it.quantity || it.qty || "N/A"}
-                            </div>
-                          </div>
-                          <div>
-                            <input
-                              type="checkbox"
-                              checked={accAttachSelectedItemIds.includes(iid)}
-                              onChange={() =>
-                                setAccAttachSelectedItemIds((prev) =>
-                                  prev.includes(iid)
-                                    ? prev.filter((x) => x !== iid)
-                                    : [...prev, iid]
-                                )
-                              }
-                            />
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-4 flex items-center gap-2">
-                    <input
-                      placeholder="Purpose (optional)"
-                      id="attach-purpose-accounting"
-                      className="flex-1 px-3 py-2 border rounded-lg"
-                    />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() =>
+                        setAccAttachSelectedItemIds(
+                          accAttachSourceItems
+                            .map((it) => it.itemId || it._id || it.id)
+                            .filter(Boolean)
+                        )
+                      }
+                      className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-md"
+                    >
+                      Select All
+                    </button>
                     <button
                       onClick={() => {
-                        const el = document.getElementById(
-                          "attach-purpose-accounting"
-                        );
-                        const purpose = el ? el.value.trim() : "";
-                        attachAccSelectedToTarget(
-                          currentRequest.requestId,
-                          purpose,
-                          accAttachSourceMeta?.requestId || null,
-                          true
-                        );
+                        setAccAttachSourceItems([]);
+                        setAccAttachSelectedItemIds([]);
+                        setAccAttachSourceMeta(null);
+                        // close dropdown and clear search input per requested behavior
+                        setAccAttachDropdownOpen(false);
+                        setAccAttachSearchTerm("");
                       }}
-                      disabled={accAttachSelectedItemIds.length === 0}
-                      className="px-4 py-2 bg-[#036173] text-white rounded-lg"
+                      className="px-3 py-1 bg-red-50 text-red-600 rounded-md"
                     >
-                      Attach Selected
+                      Clear
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
+
+                <div className="grid gap-2">
+                  {accAttachSourceItems.map((it) => {
+                    const iid = it.itemId || it._id || it.id;
+                    return (
+                      <label
+                        key={iid}
+                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                      >
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {it.name || it.description || iid}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            Qty: {it.quantity || it.qty || "N/A"}
+                          </div>
+                        </div>
+                        <div>
+                          <input
+                            type="checkbox"
+                            checked={accAttachSelectedItemIds.includes(iid)}
+                            onChange={() =>
+                              setAccAttachSelectedItemIds((prev) =>
+                                prev.includes(iid)
+                                  ? prev.filter((x) => x !== iid)
+                                  : [...prev, iid]
+                              )
+                            }
+                          />
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 flex items-center gap-2">
+                  <input
+                    placeholder="Purpose (optional)"
+                    id="attach-purpose-accounting"
+                    className="flex-1 px-3 py-2 border rounded-lg"
+                  />
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById(
+                        "attach-purpose-accounting"
+                      );
+                      const purpose = el ? el.value.trim() : "";
+                      const count = (accAttachSelectedItemIds || []).length;
+                      if (count === 0) return;
+                      const msg =
+                        count === 1
+                          ? "Attach this item to this request?"
+                          : `Attach these ${count} items to this request?`;
+                      const confirmed = window.confirm(msg);
+                      if (!confirmed) return;
+                      // we already confirmed, pass skipConfirm=true so helper won't prompt again
+                      attachAccSelectedToTarget(
+                        currentRequest.requestId,
+                        purpose,
+                        accAttachSourceMeta?.requestId || null,
+                        true
+                      );
+                    }}
+                    disabled={accAttachSelectedItemIds.length === 0}
+                    className="px-4 py-2 bg-[#036173] text-white rounded-lg"
+                  >
+                    Attach Selected
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+      )}
 
       {/* Quotation Upload - inserted ABOVE Requested Items (UPDATED for multiple files) */}
       {(canUploadQuotation ||
@@ -3168,46 +3424,90 @@ const RequestDetailView = ({
         </div>
       </div>
 
-      {user?.role?.toLowerCase() === "procurement officer" && !isReadOnly && (
-        <div className="mb-8">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <MdDirectionsBoat className="text-xl" />
-            Assign Delivery
-          </h3>
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-            <div className="max-w-md">
-              <Select
-                options={deliveryOptions}
-                value={deliveryTarget}
-                onChange={handleDeliveryChange}
-                isClearable
-                placeholder="Select delivery target..."
-                styles={{
-                  control: (provided) => ({
-                    ...provided,
-                    minHeight: "48px",
-                    borderRadius: 12,
-                    boxShadow: "none",
-                  }),
-                  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                }}
-                menuPortalTarget={document.body}
-              />
-              {deliveryTarget && (
-                <p className="mt-3 text-sm text-slate-600">
-                  Selected:{" "}
-                  <span className="font-semibold">{deliveryTarget.label}</span>
-                  {isSavingDelivery && (
-                    <span className="ml-3 text-xs text-slate-500">
-                      Saving...
-                    </span>
+      {user?.role?.toLowerCase() === "procurement officer" &&
+        !isReadOnly &&
+        !hideAssignForProcurement && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdDirectionsBoat className="text-xl" />
+              Assign Delivery & Next Approval
+            </h3>
+
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="flex-1 max-w-md">
+                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                    Delivery Target
+                  </label>
+                  <Select
+                    options={deliveryOptions}
+                    value={deliveryTarget}
+                    onChange={handleDeliveryChange}
+                    isClearable
+                    placeholder="Select delivery target..."
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: "48px",
+                        borderRadius: 12,
+                        boxShadow: "none",
+                      }),
+                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    }}
+                    menuPortalTarget={document.body}
+                  />
+                  {deliveryTarget && (
+                    <p className="mt-3 text-sm text-slate-600">
+                      Selected:{" "}
+                      <span className="font-semibold">
+                        {deliveryTarget.label}
+                      </span>
+                      {isSavingDelivery && (
+                        <span className="ml-3 text-xs text-slate-500">
+                          Saving...
+                        </span>
+                      )}
+                    </p>
                   )}
-                </p>
-              )}
+                </div>
+
+                <div className="flex-1 max-w-md">
+                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                    Next Approval
+                  </label>
+                  <Select
+                    options={nextApprovalOptions}
+                    value={nextApprovalRole}
+                    onChange={handleNextApprovalChange}
+                    isClearable={false}
+                    placeholder="Select"
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: "48px",
+                        borderRadius: 12,
+                        boxShadow: "none",
+                      }),
+                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    }}
+                    menuPortalTarget={document.body}
+                  />
+                  <div className="mt-2 text-sm text-slate-500 flex items-center justify-between">
+                    <div>
+                      {isSavingNextApproval ? (
+                        <span className="text-xs text-slate-500">
+                          Saving...
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-500"></span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       {["delivery base", "delivery jetty", "delivery vessel"].includes(
         userRole
       ) && (
@@ -3380,6 +3680,45 @@ const RequestDetailView = ({
                   className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
                 />
 
+                <div className="mt-4">
+                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                    Select who to query
+                  </label>
+                  {queryTargetsLoading ? (
+                    <div className="p-3 text-sm text-slate-500">
+                      Loading targets...
+                    </div>
+                  ) : queryTargets.length === 0 ? (
+                    <div className="p-3 text-sm text-red-600">
+                      No available targets to query. Query is not allowed.
+                    </div>
+                  ) : (
+                    <Select
+                      options={queryTargets.map((t) => ({
+                        value: t.role,
+                        label: t.displayName,
+                      }))}
+                      value={selectedQueryTarget}
+                      onChange={(opt) => setSelectedQueryTarget(opt)}
+                      placeholder="Select who to query..."
+                      isClearable={false}
+                      styles={{
+                        control: (provided) => ({
+                          ...provided,
+                          minHeight: "48px",
+                          borderRadius: 12,
+                          boxShadow: "none",
+                        }),
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                      }}
+                      menuPortalTarget={document.body}
+                    />
+                  )}
+                  <div className="text-xs text-slate-500 mt-2">
+                    Both the reason and the selection are required.
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between mt-3">
                   <div className="text-xs text-slate-500">
                     <span>{(queryComment || "").length}</span>/1000
@@ -3396,7 +3735,10 @@ const RequestDetailView = ({
                     <button
                       onClick={submitQuery}
                       disabled={
-                        isQuerying || (queryComment || "").trim().length < 3
+                        isQuerying ||
+                        (queryComment || "").trim().length < 3 ||
+                        !selectedQueryTarget ||
+                        queryTargets.length === 0
                       }
                       className={`px-4 py-2 rounded-md text-sm font-semibold ${
                         isQuerying
@@ -3493,7 +3835,8 @@ const RequestDetailView = ({
             </p>
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
               {allowedRejectRoles.includes(userRole) &&
-                !isVesselManagerBlockedForActions && (
+                !isVesselManagerBlockedForActions &&
+                !isQueried && (
                   <button
                     onClick={openRejectModal}
                     disabled={actionLoading}
@@ -3504,7 +3847,8 @@ const RequestDetailView = ({
                   </button>
                 )}
               {allowedQueryRoles.includes(userRole) &&
-                !isVesselManagerBlockedForActions && (
+                !isVesselManagerBlockedForActions &&
+                !isQueried && (
                   <button
                     onClick={openQueryModal}
                     disabled={actionLoading}
@@ -3514,23 +3858,109 @@ const RequestDetailView = ({
                     Query
                   </button>
                 )}
-              <button
-                onClick={handleApproveClick}
-                disabled={
-                  actionLoading ||
-                  !computeCanApproveNow ||
-                  (isDeliveryUserRole && !canApproveDelivery)
-                }
-                className={`w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
-                  !computeCanApproveNow ||
-                  (isDeliveryUserRole && !canApproveDelivery)
-                    ? "bg-gray-400 cursor-not-allowed opacity-50"
-                    : "bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
-                } disabled:opacity-50`}
-              >
-                <MdCheckCircle className="text-lg" />
-                {actionLoading ? "Processing..." : "Approve Request"}
-              </button>
+
+              {userRole === "procurementmanager" ||
+              userRole === "procurement manager" ? (
+                <div className="relative" ref={approveDropdownRef}>
+                  <div className="flex">
+                    <button
+                      onClick={handleApproveClick}
+                      disabled={
+                        actionLoading ||
+                        !computeCanApproveNow ||
+                        (isDeliveryUserRole && !canApproveDelivery)
+                      }
+                      className={`w-full sm:w-auto px-6 h-12 rounded-l-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+                        !computeCanApproveNow ||
+                        (isDeliveryUserRole && !canApproveDelivery)
+                          ? "bg-gray-400 cursor-not-allowed opacity-50"
+                          : "bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
+                      } disabled:opacity-50`}
+                    >
+                      <MdCheckCircle className="text-lg" />
+                      {actionLoading ? "Processing..." : "Approve Request"}
+                    </button>
+                    <button
+                      onClick={() => setApproveDropdownOpen((prev) => !prev)}
+                      disabled={
+                        actionLoading ||
+                        !computeCanApproveNow ||
+                        (isDeliveryUserRole && !canApproveDelivery)
+                      }
+                      className={`h-12 px-3 rounded-r-xl font-semibold transition-all duration-200 flex items-center justify-center border-l border-white/30 ${
+                        !computeCanApproveNow ||
+                        (isDeliveryUserRole && !canApproveDelivery)
+                          ? "bg-gray-400 cursor-not-allowed opacity-50"
+                          : "bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
+                      } disabled:opacity-50`}
+                      aria-label="Approval options"
+                    >
+                      <svg
+                        className={`w-4 h-4 transition-transform ${
+                          approveDropdownOpen ? "rotate-180" : ""
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  {approveDropdownOpen && (
+                    <div
+                      className="absolute bottom-full mb-2 right-0 w-64 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden"
+                      style={{ zIndex: 9999 }}
+                    >
+                      <button
+                        onClick={() => {
+                          setApproveDropdownOpen(false);
+                          handleApproveClick();
+                        }}
+                        disabled={actionLoading}
+                        className="w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors"
+                      >
+                        <MdCheckCircle className="text-lg text-emerald-600" />
+                        Approve Request
+                      </button>
+                      <button
+                        onClick={() => {
+                          setApproveDropdownOpen(false);
+                          handleApproveClick();
+                        }}
+                        disabled={actionLoading}
+                        className="w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100 transition-colors"
+                      >
+                        <MdCheckCircle className="text-lg text-emerald-600" />
+                        Approve and Send Via Email
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={handleApproveClick}
+                  disabled={
+                    actionLoading ||
+                    !computeCanApproveNow ||
+                    (isDeliveryUserRole && !canApproveDelivery)
+                  }
+                  className={`w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+                    !computeCanApproveNow ||
+                    (isDeliveryUserRole && !canApproveDelivery)
+                      ? "bg-gray-400 cursor-not-allowed opacity-50"
+                      : "bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
+                  } disabled:opacity-50`}
+                >
+                  <MdCheckCircle className="text-lg" />
+                  {actionLoading ? "Processing..." : "Approve Request"}
+                </button>
+              )}
             </div>
           </div>
         </div>

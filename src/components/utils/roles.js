@@ -5,6 +5,7 @@ export const ROLES = {
   // Managers
   VMANAGER: "Vessel Manager",
   FMANAGER: "Fleet Manager",
+  TMANAGER: "Technical Manager",
   ITMANAGER: "IT Manager",
   ACCOUNT_MANAGER: "Account Manager",
   OPERATIONS_MANAGER: "Operations Manager",

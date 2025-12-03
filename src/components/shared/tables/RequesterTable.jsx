@@ -1,6 +1,8 @@
 // src/components/tables/RequesterTable.jsx
 
 import React, { useEffect, useState } from "react";
+import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { MdDelete } from "react-icons/md";
 
 const RequesterTable = ({
   items = [],
@@ -10,15 +12,19 @@ const RequesterTable = ({
   requestType = "purchaseOrder",
   onEditItem = null,
   requestStatus = "",
+  isQueried = false,
 }) => {
   const [editedItems, setEditedItems] = useState(
     Array.isArray(items) ? items : []
   );
   const [needsScroll, setNeedsScroll] = useState(false);
+    const [editingIndex, setEditingIndex] = useState(null);
+
   const isReadOnlyForPetty =
     (requestType || "").toString().toLowerCase() === "pettycash" &&
     (requestStatus || "") === "PENDING_REQUESTER_DELIVERY_CONFIRMATION";
   const hasInStock = (items || []).some((it) => it.inStock === true);
+  
 
   // Show delivery columns when inStock OR when viewing pettyCash in the special requester-delivery-confirmation state
   const rt = (requestType || "").toString().toLowerCase();
@@ -52,6 +58,67 @@ const RequesterTable = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
+
+  // Handlers for inline actions (quantity-only edit)
+  const handleEditClick = (index) => {
+    setEditingIndex(index);
+  };
+
+  const handleCancelEdit = () => {
+    setEditedItems(Array.isArray(items) ? items : []);
+    setEditingIndex(null);
+  };
+
+  const handleQuantityChange = (index, value) => {
+    const newItems = [...editedItems];
+    newItems[index] = {
+      ...newItems[index],
+      quantity: Number(value) || 0,
+    };
+    setEditedItems(newItems);
+  };
+
+  const handleSaveClick = async (index) => {
+    const item = editedItems[index];
+    if (!item) return;
+    const quantity = Number(item.quantity) || 0;
+    if (quantity < 1) {
+      alert("Quantity must be at least 1");
+      return;
+    }
+
+    if (typeof onEditItem !== "function") {
+      console.error("onEditItem not provided to RequesterTable");
+      return;
+    }
+
+    const payload = {
+      itemId: item.itemId || item._id || item.id,
+      quantity,
+      requestId,
+    };
+
+    try {
+      await onEditItem(payload);
+      // update local copy and exit edit mode
+      setEditedItems((prev) =>
+        prev.map((it, i) => (i === index ? { ...it, quantity } : it))
+      );
+      setEditingIndex(null);
+      alert("Item updated successfully");
+    } catch (err) {
+      console.error("Error saving item from RequesterTable:", err);
+      alert(err?.response?.data?.message || "Failed to save item");
+    }
+  };
+
+  const handleDeleteClick = (item) => {
+    if (typeof onDeleteItem === "function") {
+      onDeleteItem(item);
+      return;
+    }
+    console.warn("onDeleteItem not provided to RequesterTable");
+  };
 
   const handleSaveAll = async () => {
     if (!window.confirm("Save all changes to the items?")) return;
@@ -125,8 +192,6 @@ const RequesterTable = ({
   }
   const currencies = ["NGN", "USD", "GBP", "EUR", "JPY", "CNY", "CAD", "AUD"];
 
-  
-
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -182,15 +247,20 @@ const RequesterTable = ({
                 </>
               )}
 
-              {requestType !== "pettyCash" && (
+              {requestType !== "pettyCash" && !isQueried && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                   PRN
                 </th>
               )}
 
-              {requestType !== "pettyCash" && (
+              {requestType !== "pettyCash" && !isQueried && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                   PON
+                </th>
+              )}
+               {isQueried && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Actions
                 </th>
               )}
             </tr>
@@ -227,10 +297,20 @@ const RequesterTable = ({
                   </td>
                 )}
 
-                <td className="border border-slate-200 px-4 py-3 text-center">
-                  <span className="font-semibold text-slate-900">
-                    {item.quantity}
-                  </span>
+                        <td className="border border-slate-200 px-4 py-3 text-center">
+                  {editingIndex === index && isQueried ? (
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity || ""}
+                      onChange={(e) => handleQuantityChange(index, e.target.value)}
+                      className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+                  ) : (
+                    <span className="font-semibold text-slate-900">
+                      {item.quantity}
+                    </span>
+                  )}
                 </td>
 
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
@@ -392,7 +472,10 @@ const RequesterTable = ({
                             Math.max(0, qty - newDelivered)
                           );
                         } catch (err) {
-                          console.error("onDeliveryQuantityChange failed:", err);
+                          console.error(
+                            "onDeliveryQuantityChange failed:",
+                            err
+                          );
                         }
                       };
 
@@ -456,7 +539,10 @@ const RequesterTable = ({
                                 onBlur={(e) => {
                                   const raw = e.target.value;
                                   const parsed = Number(raw) || 0;
-                                  const finalVal = Math.max(0, Math.min(qty, parsed));
+                                  const finalVal = Math.max(
+                                    0,
+                                    Math.min(qty, parsed)
+                                  );
                                   setEditedItems((prev) =>
                                     prev.map((it, i) =>
                                       i === index
@@ -474,7 +560,9 @@ const RequesterTable = ({
                                 className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
                               />
                             ) : (
-                              <span className="font-semibold text-slate-900">-</span>
+                              <span className="font-semibold text-slate-900">
+                                -
+                              </span>
                             )}
                           </td>
 
@@ -484,21 +572,35 @@ const RequesterTable = ({
 
                           <td className="border border-slate-200 px-4 py-3 text-center">
                             {(() => {
-                              const isPartial = delivered > 0 && delivered < qty;
-                              const partialVal = Math.max(1, Math.floor(qty / 2));
+                              const isPartial =
+                                delivered > 0 && delivered < qty;
+                              const partialVal = Math.max(
+                                1,
+                                Math.floor(qty / 2)
+                              );
                               return isPartial ? (
                                 <div
                                   className="w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center mx-auto cursor-pointer"
                                   title="Set partial delivery"
-                                  onClick={() => eligibleForRow && setDelivered(partialVal)}
+                                  onClick={() =>
+                                    eligibleForRow && setDelivered(partialVal)
+                                  }
                                 >
-                                  <span className="text-white text-xs font-bold">P</span>
+                                  <span className="text-white text-xs font-bold">
+                                    P
+                                  </span>
                                 </div>
                               ) : (
                                 <div
                                   className="w-6 h-6 bg-gray-200 rounded-full mx-auto cursor-pointer"
-                                  title={eligibleForRow ? "Mark partial delivery" : ""}
-                                  onClick={() => eligibleForRow && setDelivered(partialVal)}
+                                  title={
+                                    eligibleForRow
+                                      ? "Mark partial delivery"
+                                      : ""
+                                  }
+                                  onClick={() =>
+                                    eligibleForRow && setDelivered(partialVal)
+                                  }
                                 />
                               );
                             })()}
@@ -511,15 +613,23 @@ const RequesterTable = ({
                                 <div
                                   className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mx-auto cursor-pointer"
                                   title="Mark as fully delivered"
-                                  onClick={() => eligibleForRow && setDelivered(qty)}
+                                  onClick={() =>
+                                    eligibleForRow && setDelivered(qty)
+                                  }
                                 >
-                                  <span className="text-white text-xs font-bold">✓</span>
+                                  <span className="text-white text-xs font-bold">
+                                    ✓
+                                  </span>
                                 </div>
                               ) : (
                                 <div
                                   className="w-6 h-6 bg-gray-200 rounded-full mx-auto cursor-pointer"
-                                  title={eligibleForRow ? "Mark full delivery" : ""}
-                                  onClick={() => eligibleForRow && setDelivered(qty)}
+                                  title={
+                                    eligibleForRow ? "Mark full delivery" : ""
+                                  }
+                                  onClick={() =>
+                                    eligibleForRow && setDelivered(qty)
+                                  }
                                 />
                               );
                             })()}
@@ -530,17 +640,58 @@ const RequesterTable = ({
                   </>
                 )}
 
-                {requestType !== "pettyCash" && (
+                {requestType !== "pettyCash" && !isQueried && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.purchaseRequisitionNumber || "N/A"}
                   </td>
                 )}
 
-                {requestType !== "pettyCash" && (
+                {requestType !== "pettyCash" && !isQueried && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.purchaseOrderNumber || "N/A"}
                   </td>
                 )}
+                {isQueried && (
+                <td className="border border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-center gap-2">
+                    {editingIndex === index ? (
+                      <>
+                        <button
+                          onClick={() => handleSaveClick(index)}
+                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-150"
+                          title="Save"
+                        >
+                          <FaSave className="text-lg" />
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors duration-150"
+                          title="Cancel"
+                        >
+                          <FaTimes className="text-lg" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleEditClick(index)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
+                          title="Edit quantity"
+                        >
+                          <FaEdit className="text-lg" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(item)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150"
+                          title="Delete"
+                        >
+                          <MdDelete className="text-lg" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </td>
+              )}
               </tr>
             ))}
           </tbody>

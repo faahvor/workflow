@@ -60,19 +60,16 @@ const RequestFormPreview = forwardRef(
       return btoa(binary);
     };
 
-    const fetchImageAsDataUrl = async (url) => {
+ const fetchImageAsDataUrl = async (url) => {
+      if (!url) return null;
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const resp = await axios.get(url, { responseType: "arraybuffer", headers });
-        const contentType =
-          resp.headers && resp.headers["content-type"]
-            ? resp.headers["content-type"]
-            : "image/png";
+        const contentType = resp.headers && resp.headers["content-type"] ? resp.headers["content-type"] : "image/png";
         const base64 = arrayBufferToBase64(resp.data);
         return `data:${contentType};base64,${base64}`;
       } catch (err) {
-        console.warn("RequestFormPreview: failed to fetch signature image", url, err);
-        return null;
+        return url;
       }
     };
 
@@ -107,7 +104,6 @@ const RequestFormPreview = forwardRef(
                 if (!mounted) return;
                 setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
               } catch (verr) {
-                console.warn("RequestFormPreview: vendor fetch failed", verr);
                 setVendorInfo(null);
               }
             }
@@ -118,7 +114,6 @@ const RequestFormPreview = forwardRef(
               if (!mounted) return;
               setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
             } catch (verr) {
-              console.warn("RequestFormPreview: vendor fetch failed", verr);
               setVendorInfo(null);
             }
           } else {
@@ -149,7 +144,6 @@ const RequestFormPreview = forwardRef(
           if (!mounted) return;
           setSignaturesPrepared(prepared);
         } catch (err) {
-          console.error("RequestFormPreview: failed to load request or signatures", err);
         } finally {
           if (mounted) setLoading(false);
         }
@@ -188,36 +182,21 @@ const RequestFormPreview = forwardRef(
         : null;
 
     return (
-      <div ref={ref} className="bg-white p-6 print:p-8 text-slate-900">
-        <div className="text-center mb-8">
-          <div className="mx-auto w-28 h-28 flex items-center justify-center rounded-lg overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600">
-            {req.company?.logoUrl ? (
-              <img
-                src={req.company.logoUrl}
-                alt={req.company?.name || "Company Logo"}
-                className="w-full h-full object-contain"
-              />
-            ) : (
-              <div className="text-white text-3xl font-bold">G</div>
-            )}
+      <div ref={ref} className="bg-white px-6 print:p-8 text-slate-900">
+        <div className="text-center mb-2">
+           <div className="mx-auto w-42 h-42 flex items-center justify-center rounded-lg overflow-hidden ">
+            <img
+              src={req.company?.logoUrl || "/logo.png"}
+              alt={req.company?.name || "Company Logo"}
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = "/logo.png";
+              }}
+            />
           </div>
 
-          <div className="mt-3">
-            <div className="text-lg font-bold text-slate-900">
-              {req.company?.name || "HWFP Marine Services"}
-            </div>
-            <div className="text-sm text-slate-500 mt-1">
-              {req.company?.address
-                ? [
-                    req.company.address.street || "",
-                    req.company.address.city || "",
-                    req.company.address.state || "",
-                  ]
-                    .filter(Boolean)
-                    .join(", ")
-                : "17, Wharf Road, Apapa, Lagos, Nigeria"}
-            </div>
-          </div>
+          
         </div>
 
         <div className="bg-white/90 border-2 border-slate-200 rounded-2xl overflow-hidden mb-6">

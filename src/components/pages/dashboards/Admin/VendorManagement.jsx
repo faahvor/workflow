@@ -18,24 +18,11 @@ import {
   MdVisibility,
 } from "react-icons/md";
 import axios from "axios";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../../context/AuthContext";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-const prototypeSundry = [
-  {
-    id: "s-001",
-    name: "Sundry Co. Lagos",
-    phone: "0801-555-0303",
-    address: "Market Road, Lagos",
-  },
-  {
-    id: "s-002",
-    name: "QuickFix Supplies",
-    phone: "0801-555-0404",
-    address: "Industrial Estate, Apapa",
-  },
-];
+
 
 const VendorManagement = () => {
   const { getToken, user } = useAuth();
@@ -636,6 +623,24 @@ const VendorManagement = () => {
 
   return (
     <div className="w-full">
+
+       <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse pointer-events-none" />
+      <div
+        className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse pointer-events-none"
+        style={{ animationDelay: "1s" }}
+      />
+      <div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse pointer-events-none"
+        style={{ animationDelay: "0.5s" }}
+      />
+
+      <div
+        className="absolute inset-0 opacity-[0.015] pointer-events-none"
+        style={{
+          backgroundImage: `linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)`,
+          backgroundSize: "50px 50px",
+        }}
+      />
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-extrabold text-slate-900">Vendors</h2>

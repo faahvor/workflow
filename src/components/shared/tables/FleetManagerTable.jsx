@@ -239,13 +239,15 @@ return (
 
               {/* Total Price - Calculated */}
               <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                {item.total || item.unitPrice ? (
-                  <>
-                    {item.currency || "NGN"} {calculateTotal(item)}
-                  </>
-                ) : (
-                  "N/A"
-                )}
+                 <span className="font-semibold">
+                        {item.currency || "NGN"}{" "}
+                        {Number(
+                          item.totalPrice || item.total || 0
+                        ).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
               </td>
                 {requestType !== "pettyCash" && (
               <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">

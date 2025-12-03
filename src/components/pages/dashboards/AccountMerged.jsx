@@ -9,30 +9,37 @@ import {
   MdDirectionsBoat,
   MdDescription,
 } from "react-icons/md";
-import MergeTable from "../../shared/tables/MergeTable"; // add this import
-const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
+import MergeTable from "../../shared/tables/MergeTable";
+
+const AccountMerged = ({ searchQuery = "", filterType = "all" }) => {
   const { getToken, user } = useAuth();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedMergedRequest, setSelectedMergedRequest] = useState(null); // NEW: open details
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const [selectedMergedRequest, setSelectedMergedRequest] = useState(null);
+ const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-  console.log("RequesterMerged mounted - user role:", user?.role);
-  const handleCardClick = (req) => {
-    // open merged-request details panel (read-only)
-    setSelectedMergedRequest(req || null);
-  };
-  // pagination
+  // debug: show current user and token when component mounts
+  console.log("AccountMerged:init user:", user);
+  try {
+    const _token = getToken ? getToken() : null;
+    console.log("AccountMerged:init token present:", Boolean(_token));
+  } catch (err) {
+    console.warn("AccountMerged:init getToken threw:", err);
+  }
+  // pagination and local filters
   const [page, setPage] = useState(1);
   const pageSize = 10;
-
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [localFilter, setLocalFilter] = useState(filterType);
 
   useEffect(() => setLocalSearch(searchQuery), [searchQuery]);
   useEffect(() => setLocalFilter(filterType), [filterType]);
 
+  const handleCardClick = (req) => {
+    setSelectedMergedRequest(req || null);
+  };
+  // ...existing code...
   const fetchMerged = async () => {
     try {
       setLoading(true);
@@ -41,61 +48,25 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
       const resp = await axios.get(`${API_BASE_URL}/requests/merged`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      console.log("fetchMerged response:", resp?.status, resp?.data);
-      let items = resp.data.data || [];
+      const items = resp.data?.data || [];
 
-      // determine role
-      const role = (user?.role || "").toString().toLowerCase();
-      const isAccountingLead = [
-        "accountinglead",
-        "accounting lead",
-        "account lead",
-      ].includes(role);
-      console.log(
-        "RequesterMerged: API returned merged count =",
-        (items || []).length,
-        { role, isAccountingLead }
-      );
+      const roleRaw = user?.role || "";
+      const isAccountingOfficer =
+        roleRaw === "accounting officer" || roleRaw === "Accounting Officer";
 
-      console.log(
-        "RequesterMerged: after role filter, merged count =",
-        (items || []).length
-      );
-      setRequests(items);
-      if (isAccountingLead) {
-        // for Accounting Lead: exclude any request with tag === "shipping"
-        items = items.filter((r) => {
-          if (!r) return false;
-          if (Array.isArray(r.tags) && r.tags.length) {
-            return !r.tags
-              .map((t) => String(t).toLowerCase())
-              .includes("shipping");
-          }
-          const tag = (r.tag || "").toString().toLowerCase();
-          return !tag.includes("shipping");
-        });
+      // Only show merged requests to Accounting Officer; otherwise show empty list
+      if (!isAccountingOfficer) {
+        setRequests([]);
       } else {
-        // for other users (operations/requester): include only shipping-tagged merged requests
-        items = items.filter((r) => {
-          if (!r) return false;
-          if (Array.isArray(r.tags) && r.tags.length) {
-            return r.tags
-              .map((t) => String(t).toLowerCase())
-              .includes("shipping");
-          }
-          const tag = (r.tag || "").toString().toLowerCase();
-          return tag.includes("shipping");
-        });
+        setRequests(items);
       }
 
-      setRequests(items);
       setError(null);
       setPage(1);
     } catch (err) {
-      console.error("Error fetching merged requests:", err);
-      setError(
-        err.response?.data?.message || "Failed to fetch merged requests"
-      );
+      console.error("Error fetching merged requests for accounting:", err);
+      setError(err.response?.data?.message || "Failed to fetch merged requests");
+      setRequests([]);
     } finally {
       setLoading(false);
     }
@@ -103,9 +74,11 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
 
   useEffect(() => {
     fetchMerged();
+    // re-run when user role or token provider changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.role]);
 
+  // ...existing code...
   const filtered = (requests || []).filter((req) => {
     const q = (localSearch || "").toLowerCase().trim();
     const matchesSearch =
@@ -125,9 +98,11 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
 
   return (
     <div>
-                <h2 className="text-3xl font-extrabold mb-[2rem] text-slate-900">Merged Request</h2>
+      <h2 className="text-3xl font-extrabold mb-[2rem] text-slate-900">
+        Merged Request (Accounting)
+      </h2>
 
-     {!selectedMergedRequest && (
+      {!selectedMergedRequest && (
         <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
@@ -163,11 +138,10 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
               Request Details
             </h3>
           </div>
+
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Request ID
-              </p>
+              <p className="text-xs text-slate-500 font-medium mb-0.5">Request ID</p>
               <p className="text-sm text-slate-900 font-semibold font-mono">
                 {selectedMergedRequest.requestId}
               </p>
@@ -181,119 +155,44 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
             </div>
 
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Requester
-              </p>
+              <p className="text-xs text-slate-500 font-medium mb-0.5">Requester</p>
               <p className="text-sm text-slate-900 font-semibold">
                 {selectedMergedRequest.requester?.displayName || "N/A"}
               </p>
             </div>
+
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Department
-              </p>
+              <p className="text-xs text-slate-500 font-medium mb-0.5">Department</p>
               <p className="text-sm text-slate-900 font-semibold">
                 {selectedMergedRequest.department || "N/A"}
               </p>
             </div>
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Destination
-              </p>
-              <p className="text-sm text-slate-900 font-semibold">
-                {selectedMergedRequest.destination || "N/A"}
-              </p>
-            </div>
 
-            {selectedMergedRequest.vesselId && (
-              <div className="px-4 py-3 border-b border-r border-slate-200">
-                <p className="text-xs text-slate-500 font-medium mb-0.5">
-                  Vessel
-                </p>
-                <p className="text-sm text-slate-900 font-semibold">
-                  {selectedMergedRequest.vesselId}
-                </p>
+            {selectedMergedRequest.purpose && (
+              <div className="mb-8 mt-[4rem] col-span-full">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <MdDescription className="text-xl" />
+                  Purpose
+                </h3>
+                <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                  <p className="text-slate-700 leading-relaxed">{selectedMergedRequest.purpose}</p>
+                </div>
               </div>
             )}
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Submitted Date
-              </p>
-              <p className="text-sm text-slate-900 font-semibold">
-                {selectedMergedRequest.createdAt
-                  ? new Date(selectedMergedRequest.createdAt).toLocaleDateString()
-                  : ""}
-              </p>
-            </div>
 
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Request Type
-              </p>
-              <p className="text-sm font-semibold">
-                <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                  {selectedMergedRequest.requestType === "purchaseOrder"
-                    ? "Purchase Order"
-                    : "Petty Cash"}
-                </span>
-              </p>
-            </div>
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Asset ID
-              </p>
-              <p className="text-sm text-slate-900 font-semibold">
-                {selectedMergedRequest.assetId || "N/A"}
-              </p>
-            </div>
-
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Logistics Type
-              </p>
-              <p className="text-sm text-slate-900 font-semibold capitalize">
-                {selectedMergedRequest.logisticsType || "N/A"}
-              </p>
-            </div>
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Job Number
-              </p>
-              <p className="text-sm font-semibold">
-                <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                  {selectedMergedRequest.jobNumber || "N/A"}
-                </span>
-              </p>
-            </div>
           </div>
 
-               {selectedMergedRequest.purpose && (
-                  <div className="mb-8 mt-[4rem]">
-                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                      <MdDescription className="text-xl pl-[2rem]" />
-                      Purpose
-                    </h3>
-                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-                      <p className="text-slate-700 leading-relaxed">{selectedMergedRequest.purpose}</p>
-                    </div>
-                  </div>
-                )}
-           <div className="mt-6">
-            <h4 className="text-md font-semibold mb-3 pl-[2rem]">Moved Items</h4>
+          <div className="mt-6">
+            <h4 className="text-md font-semibold mb-3">Moved Items</h4>
             <div className="bg-white/90 border rounded-lg p-4">
               <MergeTable
-                movedItems={
-                  Array.isArray(selectedMergedRequest.movedItems)
-                    ? selectedMergedRequest.movedItems
-                    : []
-                }
+                movedItems={Array.isArray(selectedMergedRequest.movedItems) ? selectedMergedRequest.movedItems : []}
                 isReadOnly={true}
                 tag={selectedMergedRequest.tag || ""}
               />
             </div>
           </div>
         </div>
-        
       ) : (
         <>
           <div className="space-y-4">
@@ -317,9 +216,7 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
 
                       <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-100 text-emerald-700">
                         <span>
-                          {request.requestType === "purchaseOrder"
-                            ? "Purchase Order"
-                            : "Petty Cash"}
+                          {request.requestType === "purchaseOrder" ? "Purchase Order" : "Petty Cash"}
                         </span>
                       </span>
                     </div>
@@ -353,9 +250,7 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
 
                       <div className="flex items-center gap-1.5 text-slate-600">
                         <span className="text-xs md:text-sm font-medium">
-                          {request.createdAt
-                            ? new Date(request.createdAt).toLocaleDateString()
-                            : ""}
+                          {request.createdAt ? new Date(request.createdAt).toLocaleDateString() : ""}
                         </span>
                       </div>
                     </div>
@@ -367,8 +262,7 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
 
           <div className="flex items-center justify-between mt-6">
             <div className="text-sm text-slate-600">
-              Showing {(page - 1) * pageSize + 1} to{" "}
-              {Math.min(page * pageSize, total)} of {total}
+              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -396,4 +290,4 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
   );
 };
 
-export default RequesterMerged;
+export default AccountMerged;

@@ -1,191 +1,258 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { IoMdMenu, IoMdClose, IoMdAdd } from "react-icons/io";
 import {
   MdDashboard,
-  MdPendingActions,
-  MdCheckCircle,
+  MdPeople,
+  MdOutlineInventory,
+  MdStorefront,
+  MdAssessment,
+  MdSettings,
   MdHistory,
-  MdExpandMore,
-  MdExpandLess,
-  MdAttachFile,
+  MdLock,
+  MdPersonAdd,
+  MdEdit,
+  MdOutlineMonetizationOn,
   MdDirectionsBoat,
 } from "react-icons/md";
+import RequestManagement from "./RequestManagement";
+import AdminLogs from "./AdminLogs";
+import User from "./User";
+import Vessel from "./Vessel"; // new vessel page
+import SettingsPanel from "./SettingsPanel";
 
-const NewDashboard = () => {
+/*
+  AdminDashboard - public prototype replacement for NewDashboard.jsx
+  - Left sidebar navigation with many admin sections
+  - User Management (Admins + Users) with status filters (Active / Suspended / Locked)
+  - Create / Edit user modal (local mock)
+  - Settings -> VAT management prototype
+  - Other sidebar items show simple prototype panels on the right
+  - Visual language based on NewDashboard styling
+*/
+
+const generateMockUsers = () =>
+  [
+    {
+      id: 1,
+      name: "John Doe",
+      email: "john.doe@gemz.com",
+      role: "Admin",
+      status: "Active",
+      department: "Procurement",
+    },
+    {
+      id: 2,
+      name: "Sarah Johnson",
+      email: "sarah.j@gemz.com",
+      role: "User",
+      status: "Active",
+      department: "Marine",
+    },
+    {
+      id: 3,
+      name: "Michael Brown",
+      email: "m.brown@gemz.com",
+      role: "User",
+      status: "Suspended",
+      department: "Operations",
+    },
+    {
+      id: 4,
+      name: "Emma Davis",
+      email: "emma.d@gemz.com",
+      role: "Admin",
+      status: "Locked",
+      department: "Accounts",
+    },
+    {
+      id: 5,
+      name: "David Wilson",
+      email: "d.wilson@gemz.com",
+      role: "User",
+      status: "Active",
+      department: "IT",
+    },
+  ].map((u, i) => ({ ...u, id: u.id || i + 1 }));
+
+const StatusPill = ({ status }) => {
+  const map = {
+    Active: "bg-emerald-100 text-emerald-700",
+    Suspended: "bg-amber-100 text-amber-700",
+    Locked: "bg-red-100 text-red-700",
+  };
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
+        map[status] || "bg-slate-100 text-slate-700"
+      }`}
+    >
+      {status}
+    </span>
+  );
+};
+
+const IconButton = ({ children, className = "", ...rest }) => (
+  <button
+    {...rest}
+    className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg font-semibold ${className}`}
+  >
+    {children}
+  </button>
+);
+
+const AdminDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [requestsExpanded, setRequestsExpanded] = useState(false); // start COLLAPSED with UP arrow
-  const [activeView, setActiveView] = useState("overview");
+  const [activeSection, setActiveSection] = useState("overview");
+  const [users, setUsers] = useState(generateMockUsers());
+  const [userFilterRole, setUserFilterRole] = useState("All"); // All / Admin / User
+  const [userStatusTab, setUserStatusTab] = useState("Active"); // Active / Suspended / Locked
+  const [query, setQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [openUserModalFor, setOpenUserModalFor] = useState(null); // triggers UserManagement modal
+  const [vatRate, setVatRate] = useState(7.5); // example VAT
 
-  // ===== New state for overview search + filter
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState("all");
-  const [formData, setFormData] = useState({
-    company: "",
-    vessel: "",
+  // Create / Edit form state
+  const blankForm = {
+    name: "",
+    email: "",
+    role: "User",
+    status: "Active",
     department: "",
-    destination: "",
-    description: "",
-  });
-  const [items, setItems] = useState([]);
-  const [showItemModal, setShowItemModal] = useState(false);
-  const [currentItem, setCurrentItem] = useState({
-    itemName: "",
-    quantity: "",
-    unit: "",
-  });
+  };
+  const [form, setForm] = useState(blankForm);
 
-  // Dummy inventory items
-  const inventoryItems = [
-    "Engine Oil - Castrol 20W-50",
-    "Hydraulic Fluid - Shell Tellus",
-    "Air Filter - Mann C30810",
-    "Fuel Filter - Parker Racor",
-    "Oil Filter - Fleetguard LF3000",
-    "Spark Plugs - NGK",
-    "V-Belt - Gates",
-    "Bearing - SKF 6205",
-    "Gasket Set - Victor Reinz",
-    "Coolant - Prestone",
-    "Grease - Mobil XHP 222",
-    "Safety Gloves",
-    "Safety Goggles",
-    "Life Jacket",
-    "Fire Extinguisher",
-  ];
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (userFilterRole !== "All" && u.role !== userFilterRole) return false;
+      if (userStatusTab && u.status !== userStatusTab) return false;
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return (u.name + " " + u.email + " " + u.department)
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [users, userFilterRole, userStatusTab, query]);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  // --- Prototype metrics & small UI helpers for Overview ---
+  const vendorCount = 24;
+  const inventoryCount = 1240;
+  const reportsCount = 18;
+  const logsCount = 432;
+  const adminsCount = users.filter((u) => u.role === "Admin").length;
+  const totalUsers = users.length;
+
+  const Sparkline = ({ data = [2, 6, 4, 8, 6, 10], color = "#10b981" }) => (
+    <svg viewBox="0 0 100 24" className="w-full h-6">
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        points={data
+          .map(
+            (v, i) =>
+              `${(i / (data.length - 1)) * 100},${
+                24 - (v / Math.max(...data)) * 20
+              }`
+          )
+          .join(" ")}
+      />
+    </svg>
+  );
+
+  const MiniStatCard = ({
+    title,
+    subtitle,
+    value,
+    icon,
+    gradient = "from-[#036173] to-emerald-600",
+    onClick,
+  }) => (
+    <button onClick={onClick} className="w-full text-left group">
+      <div
+        className={`bg-gradient-to-r ${gradient} text-white rounded-2xl p-5 shadow-xl transform hover:-translate-y-1 transition-all duration-200`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase opacity-90">
+              {title}
+            </div>
+            <div className="mt-2 text-2xl font-extrabold">{value}</div>
+            {subtitle && (
+              <div className="mt-1 text-sm opacity-90">{subtitle}</div>
+            )}
+          </div>
+          <div className="text-3xl opacity-90">{icon}</div>
+        </div>
+        <div className="mt-3 opacity-80">
+          <Sparkline />
+        </div>
+      </div>
+    </button>
+  );
+
+  const openCreate = (role = "User") => {
+    setForm({ ...blankForm, role });
+    setEditingUser(null);
+    setShowCreateModal(true);
   };
 
-  const handleItemChange = (e) => {
-    const { name, value } = e.target;
-    setCurrentItem((prev) => ({ ...prev, [name]: value }));
+  const openEdit = (u) => {
+    setForm({
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      status: u.status,
+      department: u.department,
+    });
+    setEditingUser(u);
+    setShowCreateModal(true);
   };
 
-  const addItem = () => {
-    if (currentItem.itemName && currentItem.quantity && currentItem.unit) {
-      setItems([...items, { ...currentItem, id: Date.now() }]);
-      setCurrentItem({ itemName: "", quantity: "", unit: "" });
-      setShowItemModal(false);
+  const saveUser = () => {
+    if (!form.name || !form.email) {
+      alert("Please provide name and email");
+      return;
     }
+    if (editingUser) {
+      setUsers((prev) =>
+        prev.map((p) => (p.id === editingUser.id ? { ...p, ...form } : p))
+      );
+    } else {
+      const id = Math.max(0, ...users.map((u) => u.id)) + 1;
+      setUsers((prev) => [{ id, ...form }, ...prev]);
+    }
+    setShowCreateModal(false);
+    setEditingUser(null);
+    setForm(blankForm);
   };
 
-  const removeItem = (id) => {
-    setItems(items.filter((item) => item.id !== id));
+  const changeUserStatus = (id, status) => {
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, status } : u)));
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const submissionData = {
-      ...formData,
-      items: items,
-    };
-    alert("Request submitted successfully! (This is a prototype)");
-    console.log("Submission Data:", submissionData);
+  const removeUser = (id) => {
+    if (!window.confirm("Remove user from system?")) return;
+    setUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
-  // Dummy data
-  const pendingRequests = [
-    {
-      id: "REQ-001",
-      title: "Engine Spare Parts",
-      vessel: "MV Ocean Star",
-      date: "Nov 12, 2025",
-      status: "Pending",
-    },
-    {
-      id: "REQ-002",
-      title: "Navigation Equipment",
-      vessel: "MV Sea Breeze",
-      date: "Nov 10, 2025",
-      status: "Pending",
-    },
-    {
-      id: "REQ-003",
-      title: "Safety Equipment",
-      vessel: "MV Wave Rider",
-      date: "Nov 08, 2025",
-      status: "Pending",
-    },
-  ];
-
-  const approvedRequests = [
-    {
-      id: "REQ-004",
-      title: "Fuel Supply",
-      vessel: "MV Ocean Star",
-      date: "Nov 05, 2025",
-      status: "Approved",
-      approver: "John Smith",
-    },
-    {
-      id: "REQ-005",
-      title: "Deck Equipment",
-      vessel: "MV Sea Breeze",
-      date: "Nov 03, 2025",
-      status: "Approved",
-      approver: "Sarah Johnson",
-    },
-  ];
-
-  const completedRequests = [
-    {
-      id: "REQ-006",
-      title: "Communication System",
-      vessel: "MV Wave Rider",
-      date: "Oct 28, 2025",
-      status: "Completed",
-      completedDate: "Nov 01, 2025",
-    },
-    {
-      id: "REQ-007",
-      title: "Medical Supplies",
-      vessel: "MV Ocean Star",
-      date: "Oct 25, 2025",
-      status: "Completed",
-      completedDate: "Oct 30, 2025",
-    },
+  // Sidebar items
+  const navItems = [
+    { id: "overview", label: "Overview", icon: <MdDashboard /> },
+    { id: "users", label: "User Management", icon: <MdPeople /> },
+    { id: "vessels", label: "Vessel Management", icon: <MdDirectionsBoat /> },
+    { id: "vendors", label: "Vendors", icon: <MdStorefront /> },
+    { id: "inventory", label: "Inventory", icon: <MdOutlineInventory /> },
+    { id: "requests", label: "Request Management", icon: <MdAssessment /> },
+    { id: "settings", label: "Settings", icon: <MdSettings /> },
+    { id: "logs", label: "Logs", icon: <MdHistory /> },
   ];
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
-      {/* Animated gradient orbs */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div
-          className="absolute -top-40 -left-40 w-80 h-80 bg-emerald-500/20 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: "4s" }}
-        />
-        <div
-          className="absolute top-1/3 -right-40 w-96 h-96 bg-purple-500/15 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: "6s", animationDelay: "1s" }}
-        />
-        <div
-          className="absolute -bottom-40 left-1/4 w-72 h-72 bg-indigo-500/20 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: "5s", animationDelay: "2s" }}
-        />
-      </div>
-
-      {/* Grid pattern background */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: `
-            linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px)
-          `,
-          backgroundSize: "80px 80px",
-        }}
-      />
-
-      {/* Radial gradient fade */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(circle at center, transparent 0%, rgba(255, 255, 255, 0.7) 60%, rgba(255, 255, 255, 0.95) 100%)",
-        }}
-      />
+      {/* decorative orbs */}
+      <div className="absolute top-12 left-12 w-72 h-72 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
+      <div className="absolute bottom-12 right-12 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse" />
 
       <div className="relative z-10 flex h-full">
         {/* Sidebar */}
@@ -193,11 +260,7 @@ const NewDashboard = () => {
           className={`${
             sidebarOpen ? "w-72" : "w-20"
           } bg-[#1a1a1a] border-r border-gray-800/50 transition-all duration-300 flex flex-col`}
-          style={{
-            boxShadow: "0 0 50px rgba(0, 0, 0, 0.2)",
-          }}
         >
-          {/* Sidebar Header */}
           <div className="p-6 border-b border-gray-800/50 flex items-center justify-between">
             {sidebarOpen && (
               <div className="flex items-center space-x-3">
@@ -206,15 +269,15 @@ const NewDashboard = () => {
                 </div>
                 <div>
                   <h1 className="text-white font-semibold text-lg">
-                    Gemz Software
+                    Gemz Admin
                   </h1>
-                  <p className="text-gray-400 text-xs">Procurement Software</p>
+                  <p className="text-gray-400 text-xs">Admin Console</p>
                 </div>
               </div>
             )}
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800/50"
+              onClick={() => setSidebarOpen((s) => !s)}
+              className="text-gray-400 p-2 rounded-lg hover:bg-gray-800/50"
             >
               {sidebarOpen ? (
                 <IoMdClose className="text-xl" />
@@ -224,409 +287,212 @@ const NewDashboard = () => {
             </button>
           </div>
 
-          {/* Navigation */}
           <nav className="flex-1 p-4 overflow-y-auto">
             <div className="space-y-2">
-              {/* Overview */}
-              <button
-                onClick={() => setActiveView("overview")}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                  activeView === "overview"
-                    ? "bg-gray-800/80 text-white"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                }`}
-              >
-                <MdDashboard className="text-xl flex-shrink-0" />
-                {sidebarOpen && <span className="font-medium">Overview</span>}
-              </button>
-
-              {/* Requests (now a top-level item directly under Overview) */}
-              {sidebarOpen && (
-                <>
-                  <button
-                    onClick={() => setRequestsExpanded((s) => !s)}
-                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                      requestsExpanded
-                        ? "bg-gray-800/80 text-white"
-                        : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                    }`}
-                    aria-expanded={requestsExpanded}
-                  >
-                    <MdPendingActions className="text-xl flex-shrink-0" />
-                    <span className="font-medium  tracking-wider">
-                      Requests
-                    </span>
-
-                    {/* right-side arrow */}
-                    <span className="ml-auto">
-                      {requestsExpanded ? (
-                        <MdExpandMore className="text-gray-400" />
-                      ) : (
-                        <MdExpandLess className="text-gray-400" />
-                      )}
-                    </span>
-                  </button>
-
-                  {/* Sub-list (indented under Requests header) */}
-                  {requestsExpanded && (
-                    <div className="mt-2 pl-4 space-y-1">
-                      <button
-                        onClick={() => setActiveView("pending")}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                          activeView === "pending"
-                            ? "bg-gray-800/80 text-white"
-                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                        }`}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <MdPendingActions className="text-lg flex-shrink-0" />
-                          <span className="text-sm font-normal">Pending</span>
-                        </div>
-
-                        {/* badge aligned to the right with comfortable gap */}
-                        <span className="bg-orange-500/20 text-orange-400 text-xs px-2 py-0.5 rounded-lg font-semibold">
-                          {pendingRequests.length}
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => setActiveView("myrequests")}
-                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                          activeView === "myrequests"
-                            ? "bg-gray-800/80 text-white"
-                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                        }`}
-                      >
-                        <MdDirectionsBoat className="text-lg flex-shrink-0" />
-                        <span className="text-sm font-normal">My Requests</span>
-                      </button>
-
-                      <button
-                        onClick={() => setActiveView("completed")}
-                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                          activeView === "completed"
-                            ? "bg-gray-800/80 text-white"
-                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                        }`}
-                      >
-                        <MdHistory className="text-lg flex-shrink-0" />
-                        <span className="text-sm font-normal">Completed</span>
-                      </button>
-                    </div>
+              {navItems.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => setActiveSection(it.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                    activeSection === it.id
+                      ? "bg-gray-800/80 text-white"
+                      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                  }`}
+                >
+                  <div className="text-lg">{it.icon}</div>
+                  {sidebarOpen && (
+                    <span className="font-medium">{it.label}</span>
                   )}
-                </>
-              )}
+                </button>
+              ))}
             </div>
           </nav>
 
-          {/* User Profile */}
-          {sidebarOpen && (
-            <div className="p-4 border-t border-gray-800/50">
-              <div className="flex items-center space-x-3 p-3 rounded-xl bg-gray-800/50">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold">
-                  JD
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium truncate">
-                    John Doe
-                  </p>
-                  <p className="text-gray-400 text-xs truncate">
-                    Marine Requester
-                  </p>
-                </div>
+          <div className="p-4 border-t border-gray-800/50">
+            <div className="flex items-center space-x-3 p-3 rounded-xl bg-gray-800/50 mb-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold">
+                AD
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-medium truncate">
+                  Admin User
+                </p>
+                <p className="text-gray-400 text-xs truncate">gemz@company</p>
               </div>
             </div>
-          )}
+            <button className="w-full px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl font-medium text-sm transition-all duration-200 border border-red-500/20">
+              Logout
+            </button>
+          </div>
         </div>
 
-        {/* Main Content */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Main content */}
+        <div className="flex-1 overflow-auto">
           <div className="p-8 max-w-7xl mx-auto">
-            {/* Overview - Create Request Form */}
-            {activeView === "overview" && (
-              <div>
-                {/* Header */}
-                <div className="mb-6">
-                  <h1 className="text-4xl font-bold text-gray-900 mb-2">
-                    Overview
-                  </h1>
-                  <p className="text-gray-600">Requester dashboard</p>
-                </div>
+            {/* Sections */}
+            
 
-                {/* Stats cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-                        <MdPendingActions className="text-2xl text-white" />
-                      </div>
-                    </div>
-                    <p className="text-slate-500 text-sm mb-1 font-semibold">
-                      Pending Requests
-                    </p>
-                    <p className="text-slate-900 text-3xl font-bold">
-                      {pendingRequests.length}
-                    </p>
-                  </div>
+            {activeSection === "users" && (
+              <User
+                users={users}
+                setUsers={setUsers}
+                openUserModalFor={openUserModalFor}
+                setOpenUserModalFor={setOpenUserModalFor}
+              />
+            )}
 
-                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                        <MdDirectionsBoat className="text-2xl text-white" />
-                      </div>
-                    </div>
-                    <p className="text-slate-500 text-sm mb-1 font-semibold">
-                      My Requests
-                    </p>
-                    <p className="text-slate-900 text-3xl font-bold">
-                      {pendingRequests.length + approvedRequests.length}
-                    </p>
-                  </div>
+            {activeSection === "vessels" && <Vessel users={users} />}
 
-                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
-                        <MdCheckCircle className="text-2xl text-white" />
-                      </div>
-                    </div>
-                    <p className="text-slate-500 text-sm mb-1 font-semibold">
-                      Approved Today
-                    </p>
-                    <p className="text-slate-900 text-3xl font-bold">
-                      {approvedRequests.length}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Search & Filter */}
-                <div className="bg-white/90 p-4 rounded-2xl border-2 border-slate-200 mb-6">
-                  <div className="flex gap-4 flex-col md:flex-row">
-                    <div className="flex-1 relative">
-                      <input
-                        type="text"
-                        placeholder="Search by request ID, title, or requester..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full h-12 pl-4 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <select
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value)}
-                        className="h-12 pl-3 pr-8 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl"
-                      >
-                        <option value="all">All</option>
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="completed">Completed</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Requests list (uses pendingRequests as requested) */}
-                <div className="space-y-4 mb-6">
-                  {pendingRequests
-                    .filter((r) => {
-                      const q = searchQuery.trim().toLowerCase();
-                      if (q) {
-                        return (
-                          r.id.toLowerCase().includes(q) ||
-                          r.title.toLowerCase().includes(q) ||
-                          r.vessel.toLowerCase().includes(q)
-                        );
-                      }
-                      if (filterType === "all") return true;
-                      if (filterType === "pending")
-                        return r.status === "Pending";
-                      if (filterType === "approved")
-                        return approvedRequests.some((a) => a.id === r.id);
-                      if (filterType === "completed")
-                        return completedRequests.some((c) => c.id === r.id);
-                      return true;
-                    })
-                    .map((req) => (
-                      <div
-                        key={req.id}
-                        className="bg-white/90 p-4 rounded-2xl border-2 border-slate-200 shadow-sm flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="text-xs text-slate-500 font-mono">
-                            {req.id}
-                          </div>
-                          <div className="text-sm font-semibold text-slate-900">
-                            {req.title}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            Vessel: {req.vessel} • {req.date}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => setActiveView("pending")}
-                            className="px-4 py-2 bg-emerald-500 text-white rounded-lg"
-                          >
-                            Review
-                          </button>
-                          <span className="text-xs text-orange-500 font-semibold">
-                            {req.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
+            {activeSection === "vendors" && (
+              <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <h3 className="text-lg font-semibold mb-3">
+                  Vendors (Prototype)
+                </h3>
+                <p className="text-slate-600">
+                  Vendor management prototype content goes here — searchable
+                  vendor list, onboarding flows, rating, etc.
+                </p>
               </div>
             )}
 
-            {/* Pending Requests */}
-            {activeView === "pending" && (
-              <div>
-                <div className="mb-8">
-                  <h1 className="text-4xl font-bold text-gray-900 mb-2">
-                    Pending Requests
-                  </h1>
-                  <p className="text-gray-600">Requests awaiting approval</p>
-                </div>
-
-                <div className="space-y-4">
-                  {pendingRequests.map((request) => (
-                    <div
-                      key={request.id}
-                      className="bg-white/90 backdrop-blur-xl p-6 rounded-2xl border-2 border-slate-200 hover:border-slate-300 transition-all duration-200 shadow-lg hover:shadow-xl"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <span className="text-xs font-bold text-orange-600 bg-orange-100 border border-orange-200 px-3 py-1 rounded-lg">
-                              {request.status}
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono">
-                              {request.id}
-                            </span>
-                          </div>
-                          <h3 className="text-xl font-semibold text-slate-900 mb-1">
-                            {request.title}
-                          </h3>
-                          <p className="text-sm text-slate-600">
-                            Vessel: {request.vessel}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-2">
-                            Submitted on {request.date}
-                          </p>
-                        </div>
-                        <button className="px-4 py-2 text-sm text-slate-700 font-semibold hover:text-slate-900 border-2 border-slate-200 rounded-lg hover:border-slate-300 hover:bg-slate-50 transition-all duration-200">
-                          View Details
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            {activeSection === "inventory" && (
+              <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <h3 className="text-lg font-semibold mb-3">
+                  Inventory (Prototype)
+                </h3>
+                <p className="text-slate-600">
+                  Inventory management preview — stock levels, stores, and
+                  replenishment settings.
+                </p>
               </div>
             )}
 
-            {/* Approved Requests */}
-            {activeView === "approved" && (
-              <div>
-                <div className="mb-8">
-                  <h1 className="text-4xl font-bold text-gray-900 mb-2">
-                    Approved Requests
-                  </h1>
-                  <p className="text-gray-600">
-                    Requests that have been approved
-                  </p>
-                </div>
+            {activeSection === "requests" && <RequestManagement />}
 
-                <div className="space-y-4">
-                  {approvedRequests.map((request) => (
-                    <div
-                      key={request.id}
-                      className="bg-white/90 backdrop-blur-xl p-6 rounded-2xl border-2 border-slate-200 hover:border-slate-300 transition-all duration-200 shadow-lg hover:shadow-xl"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <span className="text-xs font-bold text-emerald-600 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-lg">
-                              {request.status}
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono">
-                              {request.id}
-                            </span>
-                          </div>
-                          <h3 className="text-xl font-semibold text-slate-900 mb-1">
-                            {request.title}
-                          </h3>
-                          <p className="text-sm text-slate-600">
-                            Vessel: {request.vessel}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-2">
-                            Submitted on {request.date} • Approved by{" "}
-                            {request.approver}
-                          </p>
-                        </div>
-                        <button className="px-4 py-2 text-sm text-slate-700 font-semibold hover:text-slate-900 border-2 border-slate-200 rounded-lg hover:border-slate-300 hover:bg-slate-50 transition-all duration-200">
-                          View Details
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {activeSection === "settings" && (
+              <SettingsPanel vatRate={vatRate} setVatRate={setVatRate} />
             )}
 
-            {/* Completed Requests */}
-            {activeView === "completed" && (
-              <div>
-                <div className="mb-8">
-                  <h1 className="text-4xl font-bold text-gray-900 mb-2">
-                    Completed Requests
-                  </h1>
-                  <p className="text-gray-600">
-                    Successfully fulfilled requests
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  {completedRequests.map((request) => (
-                    <div
-                      key={request.id}
-                      className="bg-white/90 backdrop-blur-xl p-6 rounded-2xl border-2 border-slate-200 hover:border-slate-300 transition-all duration-200 shadow-lg hover:shadow-xl"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <span className="text-xs font-bold text-emerald-600 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-lg">
-                              {request.status}
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono">
-                              {request.id}
-                            </span>
-                          </div>
-                          <h3 className="text-xl font-semibold text-slate-900 mb-1">
-                            {request.title}
-                          </h3>
-                          <p className="text-sm text-slate-600">
-                            Vessel: {request.vessel}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-2">
-                            Submitted on {request.date} • Completed on{" "}
-                            {request.completedDate}
-                          </p>
-                        </div>
-                        <button className="px-4 py-2 text-sm text-slate-700 font-semibold hover:text-slate-900 border-2 border-slate-200 rounded-lg hover:border-slate-300 hover:bg-slate-50 transition-all duration-200">
-                          View Details
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {activeSection === "logs" && <AdminLogs />}
           </div>
         </div>
       </div>
+
+      {/* Create / Edit User Modal */}
+      {showCreateModal && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={() => {
+              setShowCreateModal(false);
+              setEditingUser(null);
+            }}
+          />
+          <div className="fixed left-1/2 -translate-x-1/2 top-24 z-50 w-[95%] max-w-2xl">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="px-6 py-4 border-b flex items-center justify-between">
+                <div className="text-sm font-semibold">
+                  {editingUser ? "Edit User" : "Create User / Admin"}
+                </div>
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setEditingUser(null);
+                  }}
+                  className="text-slate-500 hover:text-slate-700"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-500">Full name</label>
+                    <input
+                      value={form.name}
+                      onChange={(e) =>
+                        setForm({ ...form, name: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500">Email</label>
+                    <input
+                      value={form.email}
+                      onChange={(e) =>
+                        setForm({ ...form, email: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-500">Role</label>
+                    <select
+                      value={form.role}
+                      onChange={(e) =>
+                        setForm({ ...form, role: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option>User</option>
+                      <option>Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500">Status</label>
+                    <select
+                      value={form.status}
+                      onChange={(e) =>
+                        setForm({ ...form, status: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option>Active</option>
+                      <option>Suspended</option>
+                      <option>Locked</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500">Department</label>
+                    <input
+                      value={form.department}
+                      onChange={(e) =>
+                        setForm({ ...form, department: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setShowCreateModal(false);
+                      setEditingUser(null);
+                    }}
+                    className="px-4 py-2 bg-white border rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveUser}
+                    className="px-4 py-2 bg-[#036173] text-white rounded-lg"
+                  >
+                    {editingUser ? "Save Changes" : "Create User"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
 
-export default NewDashboard;
+export default AdminDashboard;

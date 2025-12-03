@@ -52,7 +52,8 @@ const RequesterDashboard = () => {
     priority: "normal",
     reference: "",
     purpose: "",
-    jobNo: "",
+    jobNumber: "",
+    additionalInformation: "",
   });
 
   const [selectedItems, setSelectedItems] = useState([]);
@@ -70,7 +71,16 @@ const RequesterDashboard = () => {
   const [invoiceFiles, setInvoiceFiles] = useState([]); // items: { id, file, previewUrl }
   const fileInputRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
-
+  const [requestImages, setRequestImages] = useState([]); // items: { id, file, previewUrl }
+  const imageInputRef = useRef(null);
+  const [imageDragActive, setImageDragActive] = useState(false);
+  const [nextApproverAfterVesselManager, setNextApproverAfterVesselManager] =
+    useState("");
+  const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
+  const [invName, setInvName] = useState("");
+  const [invMaker, setInvMaker] = useState("");
+  const [invMakerPartNo, setInvMakerPartNo] = useState("");
+  const [creatingInventory, setCreatingInventory] = useState(false);
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   // Destinations list
@@ -122,6 +132,16 @@ const RequesterDashboard = () => {
     setCurrencies(validCurrencies.map((c) => ({ value: c, label: c })));
     setLoadingCurrencies(false);
   }, []);
+
+  const isPettyCashForIT =
+    formData.requestType === "pettyCash" && formData.destination === "IT";
+
+  // Use this to control how the items table is displayed:
+  // when pettyCash but destination !== IT, show it like purchaseOrder
+  const displayRequestType =
+    formData.requestType === "pettyCash" && formData.destination !== "IT"
+      ? "purchaseOrder"
+      : formData.requestType;
   // Priority options
   const priorities = [
     { value: "normal", label: "Normal" },
@@ -281,18 +301,112 @@ const RequesterDashboard = () => {
   // Handle form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
 
-    // Reset vessel and project manager when destination changes
-    if (name === "destination") {
-      setFormData((prev) => ({
+    // compute new form state in one place
+    setFormData((prev) => {
+      const next = {
         ...prev,
-        vesselId: "",
-        projectManager: "",
-      }));
+        [name]: value,
+      };
+
+      if (name === "destination") {
+        // reset vessel and project manager when destination changes
+        next.vesselId = "";
+        next.projectManager = "";
+      }
+
+      return next;
+    });
+
+    // If user changed destination away from IT and there are invoice files, clear them
+    if (name === "destination" && value !== "IT" && invoiceFiles.length > 0) {
+      setInvoiceFiles([]);
+    }
+
+    // If destination or requestType changed such that Approval Pick should hide, clear it
+    const newDestination =
+      name === "destination" ? value : formData.destination || "";
+    const newRequestType =
+      name === "requestType" ? value : formData.requestType || "";
+
+    const shouldShowApprovalPick =
+      newDestination === "Marine" && newRequestType === "pettyCash";
+
+    if (!shouldShowApprovalPick && nextApproverAfterVesselManager) {
+      setNextApproverAfterVesselManager("");
+    }
+  };
+  const openAddInventoryModal = () => {
+    // prefill department from current form/user department and clear fields
+    setInvName("");
+    setInvMaker("");
+    setInvMakerPartNo("");
+    setShowAddInventoryModal(true);
+  };
+
+  const closeAddInventoryModal = () => {
+    setShowAddInventoryModal(false);
+    setInvName("");
+    setInvMaker("");
+    setInvMakerPartNo("");
+  };
+
+  const submitAddInventory = async () => {
+    if (!invName || invName.trim() === "") {
+      alert("Name is required to add an inventory item.");
+      return;
+    }
+
+    try {
+      setCreatingInventory(true);
+      const token = getToken();
+      if (!token) {
+        alert("Authentication required.");
+        return;
+      }
+
+      const headers = { Authorization: `Bearer ${token}` };
+
+      // Minimal payload: department (from formData or user), name, maker, makerPartNumber, quantity default 0
+      const payload = {
+        department: formData.department || user?.department || "",
+        name: invName.trim(),
+        quantity: 0,
+      };
+      if (invMaker && invMaker.trim() !== "") payload.maker = invMaker.trim();
+      if (invMakerPartNo && invMakerPartNo.trim() !== "")
+        payload.makerPartNumber = invMakerPartNo.trim();
+
+      const resp = await axios.post(`${API_BASE_URL}/inventory`, payload, {
+        headers,
+      });
+
+      const created = resp.data?.data || resp.data;
+      if (created) {
+        // Add to local inventory list so dropdown shows it immediately
+        setInventoryItems((prev) => [created, ...(prev || [])]);
+
+        // Select the newly created item into the request (assume created contains id/name)
+        try {
+          handleAddInventoryItem(created);
+        } catch (err) {
+          // fallback: just close modal and refresh inventory
+        }
+
+        // Refresh server inventory to keep consistent
+        fetchInventory();
+
+        alert("Inventory added.");
+        closeAddInventoryModal();
+        return;
+      }
+
+      throw new Error("Unexpected create response");
+    } catch (err) {
+      console.error("Error creating inventory item:", err);
+      alert(err?.response?.data?.message || "Failed to add inventory item");
+    } finally {
+      setCreatingInventory(false);
     }
   };
 
@@ -352,193 +466,217 @@ const RequesterDashboard = () => {
   );
 
   // Submit new request
-// ...existing code...
-const handleSubmitRequest = async (e) => {
-  e.preventDefault();
+  const handleSubmitRequest = async (e) => {
+    e.preventDefault();
 
-  // Validation
-  if (!formData.destination) {
-    alert("Please select a destination");
-    return;
-  }
+    // Validation
+    if (!formData.destination) {
+      alert("Please select a destination");
+      return;
+    }
 
-  if (!formData.company) {
-    alert("Please select a company");
-    return;
-  }
+    if (!formData.company) {
+      alert("Please select a company");
+      return;
+    }
 
-  if (
-    (formData.destination === "Marine" ||
-      formData.destination === "Project") &&
-    !formData.vesselId
-  ) {
-    alert("Please select a vessel");
-    return;
-  }
+    if (
+      (formData.destination === "Marine" ||
+        formData.destination === "Project") &&
+      !formData.vesselId
+    ) {
+      alert("Please select a vessel");
+      return;
+    }
 
-  if (formData.destination === "Project" && !formData.projectManager) {
-    alert("Please select a project manager");
-    return;
-  }
-
-  if (selectedItems.length === 0) {
-    alert("Please add at least one item from inventory");
-    return;
-  }
-
-  const invalidItems = selectedItems.filter(
-    (item) => !item.quantity || item.quantity < 1
-  );
-  if (invalidItems.length > 0) {
-    alert("All items must have a quantity of at least 1");
-    return;
-  }
-
-  if (formData.requestType === "pettyCash") {
-    const badPrice = selectedItems.find(
-      (it) => !it.unitPrice || Number(it.unitPrice) <= 0
-    );
-    if (badPrice) {
+    if (formData.destination === "Project" && !formData.projectManager) {
+      alert("Please select a project manager");
+      return;
+    }
+    if (
+      formData.destination === "Marine" &&
+      formData.requestType === "pettyCash" &&
+      !nextApproverAfterVesselManager
+    ) {
       alert(
-        "For petty cash requests each item must have a unit price greater than 0."
+        "Please select Approval Pick (Technical Manager or Fleet Manager)."
       );
       return;
     }
-  } else {
-    // If this is not pettyCash ensure each item has a positive unit price only when required
-    if (formData.requestType === "pettyCash") {
+
+    if (selectedItems.length === 0) {
+      alert("Please add at least one item from inventory");
+      return;
+    }
+
+    const invalidItems = selectedItems.filter(
+      (item) => !item.quantity || item.quantity < 1
+    );
+    if (invalidItems.length > 0) {
+      alert("All items must have a quantity of at least 1");
+      return;
+    }
+
+    // Only enforce unitPrice > 0 when pettyCash AND destination === IT
+    if (isPettyCashForIT) {
       const badPrice = selectedItems.find(
         (it) => !it.unitPrice || Number(it.unitPrice) <= 0
       );
       if (badPrice) {
         alert(
-          "For petty cash requests each item must have a unit price greater than 0."
+          "For petty cash requests to IT each item must have a unit price greater than 0."
         );
         return;
       }
     }
-  }
 
-  try {
-    setSubmitting(true);
-    const token = getToken();
+    try {
+      setSubmitting(true);
+      const token = getToken();
 
-    // Prepare items for API
-    const items = selectedItems.map((item) => {
-      const qty = Number(item.quantity || 0);
-      const unit = Number(item.unitPrice || 0);
-      const total = Math.round(unit * qty);
+      // Prepare items for API
+      const items = selectedItems.map((item) => {
+        const qty = Number(item.quantity || 0);
+        const unit = Number(item.unitPrice || 0);
+        const total = Math.round(unit * qty);
 
-      return {
-        name: item.name,
-        quantity: qty,
-        unitPrice: unit,
-        totalPrice: total,
-        inventoryId: item._id || item.itemId || null,
-      };
-    });
+        return {
+          name: item.name,
+          quantity: qty,
+          unitPrice: unit,
+          totalPrice: total,
+          inventoryId: item._id || item.itemId || null,
+        };
+      });
 
-    // If pettyCash and invoice files exist, send multipart/form-data
-    if (formData.requestType === "pettyCash" && invoiceFiles.length > 0) {
-      if (invoiceFiles.length > 5) {
-        alert("You can upload up to 5 invoice files when creating a request.");
-        setSubmitting(false);
-        return;
-      }
+      const hasFiles = invoiceFiles.length > 0 || requestImages.length > 0;
 
-      const fd = new FormData();
-      fd.append("department", formData.department);
-      fd.append("destination", formData.destination);
-      fd.append("requestType", formData.requestType);
-      fd.append("purpose", formData.purpose || "");
-      if (formData.vesselId) fd.append("vesselId", formData.vesselId);
-      if (formData.priority) fd.append("priority", formData.priority);
-      if (formData.reference) fd.append("reference", formData.reference);
-      if (formData.company) fd.append("companyId", formData.company);
-      if (formData.projectManager) fd.append("projectManager", formData.projectManager);
-
-      // items must be a JSON string when using multipart
-      fd.append("items", JSON.stringify(items));
-
-      // attach files under invoiceFiles key
-      invoiceFiles.forEach((f) => {
-        if (f && f.file) {
-          fd.append("invoiceFiles", f.file);
+      if (hasFiles) {
+        const fd = new FormData();
+        fd.append("department", formData.department);
+        fd.append("destination", formData.destination);
+        fd.append("requestType", formData.requestType);
+        fd.append("purpose", formData.purpose || "");
+        if (formData.vesselId) fd.append("vesselId", formData.vesselId);
+        if (formData.priority) fd.append("priority", formData.priority);
+        if (formData.reference) fd.append("reference", formData.reference);
+        if (formData.company) fd.append("companyId", formData.company);
+        if (formData.projectManager)
+          fd.append("projectManager", formData.projectManager);
+        if (nextApproverAfterVesselManager) {
+          fd.append(
+            "nextApproverAfterVesselManager",
+            nextApproverAfterVesselManager
+          );
         }
+         if (formData.jobNumber) {
+          fd.append("jobNumber", formData.jobNumber);
+        }
+        
+        if (formData.additionalInformation) {
+          fd.append("additionalInformation", formData.additionalInformation);
+        }
+
+        // items must be a JSON string when using multipart
+        fd.append("items", JSON.stringify(items));
+
+        // attach invoice files (non-image documents)
+        invoiceFiles.forEach((f) => {
+          if (f && f.file) {
+            fd.append("invoiceFiles", f.file);
+          }
+        });
+
+        // attach request images
+        requestImages.forEach((f) => {
+          if (f && f.file) {
+            fd.append("requestImages", f.file);
+          }
+        });
+
+        const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        console.log("✅ Request Created (with files):", response.data);
+        alert("Request created successfully!");
+      } else {
+        // JSON path (no files)
+        const payload = {
+          department: formData.department,
+          destination: formData.destination,
+          requestType: formData.requestType, // still send actual requestType (pettyCash when selected)
+          purpose: formData.purpose,
+          items: items,
+        };
+
+        if (formData.vesselId) {
+          payload.vesselId = formData.vesselId;
+        }
+
+        if (formData.reference) {
+          payload.reference = formData.reference;
+        }
+
+        if (formData.priority) {
+          payload.priority = formData.priority;
+        }
+
+        if (formData.company) {
+          payload.companyId = formData.company;
+        }
+
+        if (formData.projectManager) {
+          payload.projectManager = formData.projectManager;
+        }
+        if (nextApproverAfterVesselManager) {
+          payload.nextApproverAfterVesselManager =
+            nextApproverAfterVesselManager;
+        }
+        if (formData.additionalInformation) {
+          payload.additionalInformation = formData.additionalInformation;
+        }
+         if (formData.jobNumber) {
+          payload.jobNumber = formData.jobNumber;
+        }
+
+        const response = await axios.post(`${API_BASE_URL}/requests`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        console.log("✅ Request Created:", response.data);
+        alert("Request created successfully!");
+      }
+
+      // Reset form
+      setFormData({
+        department: user?.department || "",
+        destination: "",
+        company: "",
+        vesselId: "",
+        projectManager: "",
+        requestType: "purchaseOrder",
+        priority: "normal",
+        reference: "",
+        purpose: "",
+        additionalInformation: "",
+         jobNumber: "",
       });
-
-      const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      console.log("✅ Request Created (with files):", response.data);
-      alert("Request created successfully!");
-
-    } else {
-      // JSON path (no files)
-      const payload = {
-        department: formData.department,
-        destination: formData.destination,
-        requestType: formData.requestType,
-        purpose: formData.purpose,
-        items: items,
-      };
-
-      if (formData.vesselId) {
-        payload.vesselId = formData.vesselId;
-      }
-
-      if (formData.reference) {
-        payload.reference = formData.reference;
-      }
-
-      if (formData.priority) {
-        payload.priority = formData.priority;
-      }
-
-      if (formData.company) {
-        payload.companyId = formData.company;
-      }
-
-      if (formData.projectManager) {
-        payload.projectManager = formData.projectManager;
-      }
-
-      const response = await axios.post(`${API_BASE_URL}/requests`, payload, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      console.log("✅ Request Created:", response.data);
-      alert("Request created successfully!");
+      setSelectedItems([]);
+      setInvoiceFiles([]);
+      setRequestImages([]);
+      setNextApproverAfterVesselManager("");
+      // Switch to My Requests view
+      setActiveView("pending");
+    } catch (err) {
+      console.error("❌ Error creating request:", err);
+      alert(err.response?.data?.message || "Failed to create request");
+    } finally {
+      setSubmitting(false);
     }
-
-    // Reset form
-    setFormData({
-      department: user?.department || "",
-      destination: "",
-      company: "",
-      vesselId: "",
-      projectManager: "",
-      requestType: "purchaseOrder",
-      priority: "normal",
-      reference: "",
-      purpose: "",
-    });
-    setSelectedItems([]);
-    setInvoiceFiles([]);
-
-    // Switch to My Requests view
-    setActiveView("pending");
-  } catch (err) {
-    console.error("❌ Error creating request:", err);
-    alert(err.response?.data?.message || "Failed to create request");
-  } finally {
-    setSubmitting(false);
-  }
-};
-// ...existing code...
+  };
 
   // Fetch my requests
   const fetchMyRequests = async () => {
@@ -574,47 +712,58 @@ const handleSubmitRequest = async (e) => {
     }
   }, [user, activeView]);
 
-const handleApprove = async (requestId) => {
-  const ok = window.confirm("Are you sure you want to approve this request?");
-  if (!ok) return;
+  const handleApprove = async (requestId) => {
+    const ok = window.confirm("Are you sure you want to approve this request?");
+    if (!ok) return;
 
-  try {
-    setLoading(true);
-    const token = getToken();
-    console.debug("handleApprove: token present?", !!token, "requestId:", requestId);
-    if (!token) {
-      navigate("/login");
-      return;
+    try {
+      setLoading(true);
+      const token = getToken();
+      console.debug(
+        "handleApprove: token present?",
+        !!token,
+        "requestId:",
+        requestId
+      );
+      if (!token) {
+        navigate("/login");
+        return;
+      }
+
+      const url = `${API_BASE_URL}/requests/${encodeURIComponent(
+        requestId
+      )}/approve`;
+      console.debug("handleApprove: POST ->", url);
+
+      const resp = await axios.post(
+        url,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      console.debug("handleApprove: response:", resp?.status, resp?.data);
+      if (resp?.status === 200 || resp?.status === 201) {
+        // success: refresh lists and navigate back
+        await fetchMyRequests();
+        alert(resp.data?.message || "Request approved successfully");
+        setActiveView("pending");
+        return;
+      }
+
+      // non-2xx status
+      console.warn("handleApprove: unexpected response", resp);
+      alert(resp.data?.message || "Unexpected response from server");
+    } catch (err) {
+      console.error("Error approving request:", {
+        message: err.message,
+        status: err.response?.status,
+        responseData: err.response?.data,
+      });
+      alert(err?.response?.data?.message || "Failed to approve request");
+    } finally {
+      setLoading(false);
     }
-
-    const url = `${API_BASE_URL}/requests/${encodeURIComponent(requestId)}/approve`;
-    console.debug("handleApprove: POST ->", url);
-
-    const resp = await axios.post(url, {}, { headers: { Authorization: `Bearer ${token}` } });
-
-    console.debug("handleApprove: response:", resp?.status, resp?.data);
-    if (resp?.status === 200 || resp?.status === 201) {
-      // success: refresh lists and navigate back
-      await fetchMyRequests();
-      alert(resp.data?.message || "Request approved successfully");
-      setActiveView("pending");
-      return;
-    }
-
-    // non-2xx status
-    console.warn("handleApprove: unexpected response", resp);
-    alert(resp.data?.message || "Unexpected response from server");
-  } catch (err) {
-    console.error("Error approving request:", {
-      message: err.message,
-      status: err.response?.status,
-      responseData: err.response?.data,
-    });
-    alert(err?.response?.data?.message || "Failed to approve request");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleReject = async (requestId) => {
     try {
@@ -677,6 +826,81 @@ const handleApprove = async (requestId) => {
   const handleInvoiceInputChange = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+
+    const invoiceEntries = [];
+    const imageEntries = [];
+
+    files.forEach((file) => {
+      const entry = {
+        id: `${file.name}-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`,
+        file,
+        previewUrl: file.type.startsWith("image/")
+          ? URL.createObjectURL(file)
+          : null,
+      };
+
+      if (file.type.startsWith("image/")) {
+        imageEntries.push(entry);
+      } else {
+        invoiceEntries.push(entry);
+      }
+    });
+
+    if (invoiceEntries.length > 0) {
+      setInvoiceFiles((prev) => [...prev, ...invoiceEntries]);
+    }
+    if (imageEntries.length > 0) {
+      setRequestImages((prev) => [...prev, ...imageEntries]);
+    }
+
+    // reset input so same file can be selected again if needed
+    e.target.value = null;
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length === 0) return;
+
+    const invoiceEntries = [];
+    const imageEntries = [];
+
+    files.forEach((file) => {
+      const entry = {
+        id: `${file.name}-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`,
+        file,
+        previewUrl: file.type.startsWith("image/")
+          ? URL.createObjectURL(file)
+          : null,
+      };
+
+      if (file.type.startsWith("image/")) {
+        imageEntries.push(entry);
+      } else {
+        invoiceEntries.push(entry);
+      }
+    });
+
+    if (invoiceEntries.length > 0) {
+      setInvoiceFiles((prev) => [...prev, ...invoiceEntries]);
+    }
+    if (imageEntries.length > 0) {
+      setRequestImages((prev) => [...prev, ...imageEntries]);
+    }
+  };
+
+  const handleImageBrowseClick = () => {
+    imageInputRef.current?.click();
+  };
+
+  const handleImageInputChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     const entries = files.map((file) => ({
       id: `${file.name}-${Date.now()}-${Math.random()
         .toString(36)
@@ -686,14 +910,13 @@ const handleApprove = async (requestId) => {
         ? URL.createObjectURL(file)
         : null,
     }));
-    setInvoiceFiles((prev) => [...prev, ...entries]);
-    // reset input so same file can be selected again if needed
+    setRequestImages((prev) => [...prev, ...entries]);
     e.target.value = null;
   };
 
-  const handleDrop = (e) => {
+  const handleImageDrop = (e) => {
     e.preventDefault();
-    setDragActive(false);
+    setImageDragActive(false);
     const files = Array.from(e.dataTransfer?.files || []);
     if (files.length === 0) return;
     const entries = files.map((file) => ({
@@ -705,7 +928,30 @@ const handleApprove = async (requestId) => {
         ? URL.createObjectURL(file)
         : null,
     }));
-    setInvoiceFiles((prev) => [...prev, ...entries]);
+    setRequestImages((prev) => [...prev, ...entries]);
+  };
+
+  const handleImageDragOver = (e) => {
+    e.preventDefault();
+    setImageDragActive(true);
+  };
+
+  const handleImageDragLeave = () => {
+    setImageDragActive(false);
+  };
+
+  const removeRequestImage = (id) => {
+    setRequestImages((prev) => {
+      const found = prev.find((p) => p.id === id);
+      if (found?.previewUrl) {
+        try {
+          URL.revokeObjectURL(found.previewUrl);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+      return prev.filter((p) => p.id !== id);
+    });
   };
 
   const handleDragOver = (e) => {
@@ -862,14 +1108,14 @@ const handleApprove = async (requestId) => {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                        Job Number
+                        Job Number/Offshore Number
                       </label>
                       <input
                         type="text"
-                        name="jobNo"
-                        value={formData.jobNo}
+                        name="jobNumber"
+                        value={formData.jobNumber}
                         onChange={handleInputChange}
-                        placeholder="Enter job number "
+                        placeholder="Enter job number/offshore number "
                         className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
                       />
                     </div>
@@ -904,6 +1150,30 @@ const handleApprove = async (requestId) => {
                         ))}
                       </select>
                     </div>
+
+                    {formData.destination === "Marine" &&
+                      formData.requestType === "pettyCash" && (
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                            Approval Pick *
+                          </label>
+                          <select
+                            name="nextApproverAfterVesselManager"
+                            value={nextApproverAfterVesselManager}
+                            onChange={(e) =>
+                              setNextApproverAfterVesselManager(e.target.value)
+                            }
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
+                            required
+                          >
+                            <option value="">Select Approver</option>
+                            <option value="Technical Manager">
+                              Technical Manager
+                            </option>
+                            <option value="Fleet Manager">Fleet Manager</option>
+                          </select>
+                        </div>
+                      )}
 
                     {/* Vessel Dropdown (show only for Marine or Project) */}
                     {(formData.destination === "Marine" ||
@@ -1031,6 +1301,7 @@ const handleApprove = async (requestId) => {
                       </button>
 
                       {/* Dropdown */}
+                      {/* Dropdown */}
                       {showInventoryDropdown && (
                         <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col">
                           {/* Search */}
@@ -1044,7 +1315,7 @@ const handleApprove = async (requestId) => {
                             />
                           </div>
 
-                          {/* Items List */}
+                          {/* Items List (scrollable) */}
                           <div className="overflow-y-auto flex-1">
                             {loadingInventory ? (
                               <div className="p-4 text-center text-slate-500">
@@ -1057,7 +1328,9 @@ const handleApprove = async (requestId) => {
                             ) : (
                               filteredInventory.map((item, index) => (
                                 <button
-                                  key={`${item._id}-${index}`}
+                                  key={`${
+                                    item._id || item.inventoryId || index
+                                  }`}
                                   type="button"
                                   onClick={() => handleAddInventoryItem(item)}
                                   className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0"
@@ -1073,6 +1346,20 @@ const handleApprove = async (requestId) => {
                               ))
                             )}
                           </div>
+
+                          {/* Sticky footer: Add to inventory */}
+                          <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openAddInventoryModal();
+                              }}
+                              className="w-full max-w-md px-4 py-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-emerald-600 font-semibold hover:bg-emerald-100 transition-all duration-200 flex items-center justify-center gap-2"
+                            >
+                              <MdAdd className="text-xl" />
+                              Add Item
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1086,7 +1373,7 @@ const handleApprove = async (requestId) => {
                         onUnitPriceChange={handleUnitPriceChange}
                         onCurrencyChange={handleCurrencyChange}
                         currencies={currencies}
-                        requestType={formData.requestType} // <-- add this prop
+                        requestType={displayRequestType}
                       />
                     )}
                   </div>
@@ -1104,11 +1391,24 @@ const handleApprove = async (requestId) => {
                       className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm resize-none"
                     />
                   </div>
+                      <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                      Additional Information
+                    </label>
+                    <input
+                      type="text"
+                      name="additionalInformation"
+                      value={formData.additionalInformation}
+                      onChange={handleInputChange}
+                      placeholder="Optional additional information"
+                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
+                    />
+                  </div>
 
-                  {formData.requestType === "pettyCash" && (
+                  {isPettyCashForIT && (
                     <div className="mb-4">
                       <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                        Upload Invoice(s) (optional)
+                        Upload Invoices
                       </label>
 
                       <div
@@ -1205,6 +1505,117 @@ const handleApprove = async (requestId) => {
                                 <button
                                   type="button"
                                   onClick={() => removeInvoiceFile(f.id)}
+                                  className="px-3 py-1 bg-red-50 text-red-600 rounded-md text-sm"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* Request Images Upload (for purchaseOrder & pettyCash) */}
+                  {(formData.requestType === "purchaseOrder" ||
+                    formData.requestType === "pettyCash") && (
+                    <div className="mb-4">
+                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                        Upload Image
+                      </label>
+
+                      <div
+                        onDrop={handleImageDrop}
+                        onDragOver={handleImageDragOver}
+                        onDragLeave={handleImageDragLeave}
+                        onClick={handleImageBrowseClick}
+                        role="button"
+                        tabIndex={0}
+                        className={`w-full cursor-pointer rounded-2xl p-4 flex items-center justify-between gap-4 transition-all duration-200 ${
+                          imageDragActive
+                            ? "border-2 border-emerald-400 bg-emerald-50"
+                            : "border-2 border-dashed border-slate-200 bg-white/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                            📷
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {requestImages.length > 0
+                                ? `${requestImages.length} image(s) selected`
+                                : "Drag & drop request image(s) here, or click to browse"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleImageBrowseClick}
+                            className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
+                          >
+                            Add Images
+                          </button>
+
+                          {requestImages.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setRequestImages([])}
+                              className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 text-sm"
+                            >
+                              Clear All
+                            </button>
+                          )}
+                        </div>
+
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleImageInputChange}
+                          className="hidden"
+                        />
+                      </div>
+
+                      {requestImages.length > 0 && (
+                        <div className="mt-3 grid gap-2">
+                          {requestImages.map((f) => (
+                            <div
+                              key={f.id}
+                              className="flex items-center justify-between bg-white border border-slate-100 rounded-lg p-3"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden">
+                                  {f.previewUrl ? (
+                                    <img
+                                      src={f.previewUrl}
+                                      alt={f.file.name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="text-slate-600 text-sm px-2 text-center">
+                                      IMG
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900 truncate w-56">
+                                    {f.file.name}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {Math.round(f.file.size / 1024)} KB
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => removeRequestImage(f.id)}
                                   className="px-3 py-1 bg-red-50 text-red-600 rounded-md text-sm"
                                 >
                                   Remove
@@ -1316,7 +1727,7 @@ const handleApprove = async (requestId) => {
                 onOpenDetail={handleOpenDetail}
               />
             )}
-            
+
             {activeView === "merged" && (
               <RequesterMerged
                 searchQuery={searchQuery}
@@ -1461,7 +1872,89 @@ const handleApprove = async (requestId) => {
           </div>
         </div>
       </div>
+
+            {/* Add Inventory Modal (Requester Dashboard) */}
+      {showAddInventoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={closeAddInventoryModal}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-[95%] md:w-[520px] p-6 z-10">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                Add Inventory
+              </h3>
+              <button
+                onClick={closeAddInventoryModal}
+                className="px-3 py-1 text-slate-600"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="text-xs text-slate-500">Department</label>
+                <input
+                  value={formData.department || user?.department || ""}
+                  readOnly
+                  className="w-full px-3 py-2 border rounded-lg bg-slate-50 text-slate-600 cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-500">Name *</label>
+                <input
+                  value={invName}
+                  onChange={(e) => setInvName(e.target.value)}
+                  placeholder="Item name"
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-500">Maker (optional)</label>
+                <input
+                  value={invMaker}
+                  onChange={(e) => setInvMaker(e.target.value)}
+                  placeholder="Maker"
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-500">Maker Part No (optional)</label>
+                <input
+                  value={invMakerPartNo}
+                  onChange={(e) => setInvMakerPartNo(e.target.value)}
+                  placeholder="Maker part number"
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={closeAddInventoryModal}
+                className="px-4 py-2 rounded-lg border"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitAddInventory}
+                disabled={creatingInventory}
+                className="px-4 py-2 rounded-lg bg-[#036173] text-white"
+              >
+                {creatingInventory ? "Adding..." : "Add Item"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+    
   );
 };
 

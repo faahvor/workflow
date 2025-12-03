@@ -42,7 +42,8 @@ const RequisitionPreview = forwardRef(
       return btoa(binary);
     };
 
-    const fetchImageAsDataUrl = async (url) => {
+   const fetchImageAsDataUrl = async (url) => {
+      if (!url) return null;
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const resp = await axios.get(url, { responseType: "arraybuffer", headers });
@@ -50,9 +51,8 @@ const RequisitionPreview = forwardRef(
         const base64 = arrayBufferToBase64(resp.data);
         return `data:${contentType};base64,${base64}`;
       } catch (err) {
-        // silently fail and return null so we fallback to name rendering
-        console.warn("RequisitionPreview: failed to fetch signature image", url, err);
-        return null;
+        // fallback: return the original URL so the <img> tag can load it directly (avoids XHR CORS issues)
+        return url;
       }
     };
 
@@ -90,7 +90,6 @@ const RequisitionPreview = forwardRef(
                 if (!mounted) return;
                 setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
               } catch (verr) {
-                console.warn("RequisitionPreview: vendor fetch failed", verr);
                 setVendorInfo(null);
               }
             }
@@ -101,7 +100,6 @@ const RequisitionPreview = forwardRef(
               if (!mounted) return;
               setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
             } catch (verr) {
-              console.warn("RequisitionPreview: vendor fetch failed", verr);
               setVendorInfo(null);
             }
           } else {
@@ -116,7 +114,7 @@ const RequisitionPreview = forwardRef(
             return new Date(ta).getTime() - new Date(tb).getTime();
           });
 
-          const prepared = await Promise.all(
+           const prepared = await Promise.all(
             rawSignatures.map(async (s) => {
               const img = s.signatureUrl ? await fetchImageAsDataUrl(s.signatureUrl) : null;
               return {
@@ -130,9 +128,13 @@ const RequisitionPreview = forwardRef(
             })
           );
           if (!mounted) return;
-          setSignaturesPrepared(prepared);
+          // keep only procurement officer signatures (case-insensitive, also allow 'procurement' substring)
+          const procurementOnly = prepared.filter((p) => {
+            const r = (p.role || "").toString().toLowerCase();
+            return r === "procurement officer" || r.includes("procurement");
+          });
+          setSignaturesPrepared(procurementOnly);
         } catch (err) {
-          console.error("RequisitionPreview: failed to load request or signatures", err);
         } finally {
           if (mounted) setLoading(false);
         }
@@ -220,8 +222,8 @@ const RequisitionPreview = forwardRef(
         <div className="px-6 py-5 border-b">
           <div className="grid gap-2 md:grid-cols-[1fr_250px] grid-cols-1 md:gap-4">
             <div className="flex flex-col items-start gap-4 min-w-0">
-              <div className="w-16 h-16 flex-shrink-0 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                G
+               <div className="w-32 h-16 flex-shrink-0 rounded-md overflow-hidden  flex items-center justify-center">
+                <img src="/logo.png" alt="Hydrodive Nigeria Ltd logo" className="w-full h-full object-contain" />
               </div>
               <div className="min-w-0">
                 <div className="text-lg font-bold leading-tight">Hydrodive Nigeria Ltd</div>
@@ -338,16 +340,14 @@ const RequisitionPreview = forwardRef(
 
           <div className="pt-4 border-t"></div>
 
-          <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
+          <div className="flex flex-col md:flex-row items-center md:items-center justify-between gap-6">
             <div className="flex-1">
               <p className="text-xs text-slate-500 mb-2">Approved by</p>
 
               {/* signatures grid (live) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {loading ? (
                   <div className="text-sm text-slate-500">Loading signatures…</div>
-                ) : signaturesPrepared.length === 0 ? (
-                  <div className="text-sm text-slate-500">No signatures yet</div>
                 ) : (
                   signaturesPrepared.map((s, idx) => {
                     const ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : "";

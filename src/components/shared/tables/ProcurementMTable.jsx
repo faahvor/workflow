@@ -9,10 +9,21 @@ const ProcurementMTable = ({
   isReadOnly = false,
   vendors = [],
   requestType = "",
+  tag = "",
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
+  const tagLower = String(tag || "").toLowerCase();
+  const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
+  const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
+  const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
+
+  const getFeeValue = (item) => {
+    if (!item) return 0;
+    const v = item[feeFieldName];
+    return typeof v === "number" ? v : Number(v || 0);
+  };
 
   React.useEffect(() => {
     const checkScroll = () => {
@@ -165,6 +176,12 @@ const ProcurementMTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
+
+                 {showFeeColumns && (
+              <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
+                {feeLabel}
+              </th>
+            )}
               {!isAnyItemInStock && (
                 <>
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
@@ -175,7 +192,7 @@ const ProcurementMTable = ({
                   </th>
                 </>
               )}
-              {requestType !== "pettyCash" || !isAnyItemInStock && (
+              {(requestType !== "pettyCash" || !isAnyItemInStock) && (
                 <>
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                     PRN
@@ -243,6 +260,15 @@ const ProcurementMTable = ({
                     </span>
                   )}
                 </td>
+                 {showFeeColumns && (
+                <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                  {item.currency || "NGN"}{" "}
+                  {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </td>
+              )}
 
                 {/* Unit Price - Read Only */}
                 {!isAnyItemInStock && (
@@ -260,17 +286,19 @@ const ProcurementMTable = ({
 
                     {/* Total Price - Calculated */}
                     <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                      {item.total || item.unitPrice ? (
-                        <>
-                          {item.currency || "NGN"} {calculateTotal(item)}
-                        </>
-                      ) : (
-                        "N/A"
-                      )}
+                      <span className="font-semibold">
+                        {item.currency || "NGN"}{" "}
+                        {Number(
+                          item.totalPrice || item.total || 0
+                        ).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                     </td>
                   </>
                 )}
-                {requestType !== "pettyCash" || !isAnyItemInStock && (
+              {(requestType !== "pettyCash" || !isAnyItemInStock) && (
                   <>
                     <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
                       {item.purchaseRequisitionNumber || "N/A"}

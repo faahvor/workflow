@@ -6,11 +6,23 @@ import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 const OperationsManagerTable = ({ 
   items = [], 
   onEditItem,
-  isReadOnly = false 
+  isReadOnly = false ,
+    tag = "",
+
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
+  const tagLower = String(tag || "").toLowerCase();
+  const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
+  const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
+  const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
+
+  const getFeeValue = (item) => {
+    if (!item) return 0;
+    const v = item[feeFieldName];
+    return typeof v === "number" ? v : Number(v || 0);
+  };
 
 // Check if table needs horizontal scrolling
 React.useEffect(() => {
@@ -112,6 +124,11 @@ return (
             <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
               Quantity
             </th>
+               {showFeeColumns && (
+              <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
+                {feeLabel}
+              </th>
+            )}
            
           </tr>
         </thead>
@@ -165,6 +182,15 @@ return (
                   <span className="font-semibold text-slate-900">{item.quantity}</span>
                 )}
               </td>
+               {showFeeColumns && (
+                <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                  {item.currency || "NGN"}{" "}
+                  {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </td>
+              )}
 
           
             </tr>

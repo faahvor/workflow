@@ -24,7 +24,8 @@ import Approved from "./Approved";
 import UsersSignature from "./UsersSignature";
 import VendorManagement from "./VendorManagement";
 import InventoryManagement from "./InventoryManagement";
-import RequesterMerged from "./RequesterMerged";
+import AccountMerged from "./AccountMerged";
+import QueriedRequest from "./QueriedRequest";
 
 // ManagerDashboard component
 const ManagerDashboard = () => {
@@ -43,6 +44,8 @@ const ManagerDashboard = () => {
   const [vessels, setVessels] = useState([]);
   const [detailReadOnly, setDetailReadOnly] = useState(false);
   const [completedRequests, setCompletedRequests] = useState([]);
+  const [queriedCount, setQueriedCount] = useState(0);
+  const [approvedTodayCount, setApprovedTodayCount] = useState(0);
 
   // Replace request helper
   const replaceRequestIn = (setter) => (updatedReq) =>
@@ -114,6 +117,50 @@ const ManagerDashboard = () => {
       setLoading(false);
     }
   };
+
+  const fetchQueriedCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      // request a single item page to get total count
+      const resp = await axios.get(`${API_BASE_URL}/requests/queried?limit=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const total =
+        resp.data?.total ??
+        (Array.isArray(resp.data?.data) ? resp.data.data.length : 0);
+      setQueriedCount(Number(total) || 0);
+    } catch (err) {
+      console.warn("Failed to fetch queried count:", err);
+      setQueriedCount(0);
+    }
+  };
+  const fetchApprovedTodayCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      // request a single item page to get total count if the API exposes `total`
+      const resp = await axios.get(`${API_BASE_URL}/requests/approved?limit=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const total =
+        resp.data?.total ??
+        (Array.isArray(resp.data?.data) ? resp.data.data.length : 0);
+      setApprovedTodayCount(Number(total) || 0);
+    } catch (err) {
+      console.warn("Failed to fetch approved count:", err);
+      setApprovedTodayCount(0);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchPendingRequests();
+      fetchVessels();
+      fetchQueriedCount();
+      fetchApprovedTodayCount();
+    }
+  }, [user]);
 
   // Fetch request flow/details by ID
   const fetchRequestFlow = async (requestId) => {
@@ -188,6 +235,7 @@ const ManagerDashboard = () => {
       setView("list");
       setSelectedRequest(null);
       fetchPendingRequests();
+      fetchApprovedTodayCount();
     } catch (err) {
       console.error("❌ Error approving request:", err);
       alert(err.response?.data?.message || "Failed to approve request");
@@ -397,6 +445,7 @@ const ManagerDashboard = () => {
             activeView={activeView}
             setActiveView={setActiveView}
             pendingCount={pendingRequests.length}
+            queriedCount={queriedCount}
             isRequester={false}
           />
 
@@ -456,6 +505,8 @@ const ManagerDashboard = () => {
                   ? "Approved Requests"
                   : activeView === "completed"
                   ? "Completed Requests"
+                  : activeView === "queried"
+                  ? "Queried Requests"
                   : ""}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
@@ -467,6 +518,8 @@ const ManagerDashboard = () => {
                   ? "View all approved requests"
                   : activeView === "completed"
                   ? "View all completed requests"
+                  : activeView === "queried"
+                  ? "Review queried requests"
                   : ""}
               </p>
             </div>
@@ -547,7 +600,9 @@ const ManagerDashboard = () => {
                       <p className="text-slate-500 text-sm mb-1 font-semibold">
                         Approved Today
                       </p>
-                      <p className="text-slate-900 text-3xl font-bold">0</p>
+                      <p className="text-slate-900 text-3xl font-bold">
+                         {approvedTodayCount}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -604,8 +659,14 @@ const ManagerDashboard = () => {
                     filterType={filterType}
                     onOpenDetail={handleOpenDetail}
                   />
+                ) : activeView === "queried" ? (
+                  <QueriedRequest
+                    searchQuery={searchQuery}
+                    filterType={filterType}
+                    onOpenDetail={handleOpenDetail}
+                  />
                 ) : activeView === "merged" ? (
-                  <RequesterMerged
+                  <AccountMerged
                     user={user}
                     getToken={getToken}
                     API_BASE_URL={API_BASE_URL}
