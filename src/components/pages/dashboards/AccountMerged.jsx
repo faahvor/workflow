@@ -17,7 +17,7 @@ const AccountMerged = ({ searchQuery = "", filterType = "all" }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedMergedRequest, setSelectedMergedRequest] = useState(null);
- const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   // debug: show current user and token when component mounts
   console.log("AccountMerged:init user:", user);
@@ -65,7 +65,9 @@ const AccountMerged = ({ searchQuery = "", filterType = "all" }) => {
       setPage(1);
     } catch (err) {
       console.error("Error fetching merged requests for accounting:", err);
-      setError(err.response?.data?.message || "Failed to fetch merged requests");
+      setError(
+        err.response?.data?.message || "Failed to fetch merged requests"
+      );
       setRequests([]);
     } finally {
       setLoading(false);
@@ -132,67 +134,149 @@ const AccountMerged = ({ searchQuery = "", filterType = "all" }) => {
       )}
 
       {selectedMergedRequest ? (
-        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg mb-8">
-          <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-3 border-b border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-              Request Details
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">Request ID</p>
-              <p className="text-sm text-slate-900 font-semibold font-mono">
-                {selectedMergedRequest.requestId}
-              </p>
+        <>
+          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg mb-8">
+            <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-3 border-b border-slate-200">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Request Details
+              </h3>
             </div>
-
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">Company</p>
-              <p className="text-sm text-slate-900 font-semibold font-mono">
-                {selectedMergedRequest.company?.name || "N/A"}
-              </p>
-            </div>
-
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">Requester</p>
-              <p className="text-sm text-slate-900 font-semibold">
-                {selectedMergedRequest.requester?.displayName || "N/A"}
-              </p>
-            </div>
-
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">Department</p>
-              <p className="text-sm text-slate-900 font-semibold">
-                {selectedMergedRequest.department || "N/A"}
-              </p>
-            </div>
-
-            {selectedMergedRequest.purpose && (
-              <div className="mb-8 mt-[4rem] col-span-full">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <MdDescription className="text-xl" />
-                  Purpose
-                </h3>
-                <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-                  <p className="text-slate-700 leading-relaxed">{selectedMergedRequest.purpose}</p>
-                </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Request ID
+                </p>
+                <p className="text-sm text-slate-900 font-semibold font-mono">
+                  {selectedMergedRequest.requestId}
+                </p>
               </div>
-            )}
 
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Company
+                </p>
+                <p className="text-sm text-slate-900 font-semibold font-mono">
+                  {selectedMergedRequest.company?.name || "N/A"}
+                </p>
+              </div>
+
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Requester
+                </p>
+                <p className="text-sm text-slate-900 font-semibold">
+                  {selectedMergedRequest.requester?.displayName || "N/A"}
+                </p>
+              </div>
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Department
+                </p>
+                <p className="text-sm text-slate-900 font-semibold">
+                  {selectedMergedRequest.department || "N/A"}
+                </p>
+              </div>
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Destination
+                </p>
+                <p className="text-sm text-slate-900 font-semibold">
+                  {selectedMergedRequest.destination || "N/A"}
+                </p>
+              </div>
+
+              {selectedMergedRequest.vesselId && (
+                <div className="px-4 py-3 border-b border-r border-slate-200">
+                  <p className="text-xs text-slate-500 font-medium mb-0.5">
+                    Vessel
+                  </p>
+                  <p className="text-sm text-slate-900 font-semibold">
+                    {selectedMergedRequest.vesselId}
+                  </p>
+                </div>
+              )}
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Submitted Date
+                </p>
+                <p className="text-sm text-slate-900 font-semibold">
+                  {selectedMergedRequest.createdAt
+                    ? new Date(
+                        selectedMergedRequest.createdAt
+                      ).toLocaleDateString()
+                    : ""}
+                </p>
+              </div>
+
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Request Type
+                </p>
+                <p className="text-sm font-semibold">
+                  <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+                    {selectedMergedRequest.requestType === "purchaseOrder"
+                      ? "Purchase Order"
+                      : "Petty Cash"}
+                  </span>
+                </p>
+              </div>
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Asset ID
+                </p>
+                <p className="text-sm text-slate-900 font-semibold">
+                  {selectedMergedRequest.assetId || "N/A"}
+                </p>
+              </div>
+
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Logistics Type
+                </p>
+                <p className="text-sm text-slate-900 font-semibold capitalize">
+                  {selectedMergedRequest.logisticsType || "N/A"}
+                </p>
+              </div>
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Job Number
+                </p>
+                <p className="text-sm font-semibold">
+                  <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+                    {selectedMergedRequest.jobNumber || "N/A"}
+                  </span>
+                </p>
+              </div>
+            </div>
           </div>
-
+          <div className="mb-8 mt-8 px-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdDescription className="text-xl" />
+              Purpose
+            </h3>
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+              <p className="text-slate-700 leading-relaxed">
+                {selectedMergedRequest.purpose || "N/A"}
+              </p>
+            </div>
+          </div>
           <div className="mt-6">
-            <h4 className="text-md font-semibold mb-3">Moved Items</h4>
+            <h4 className="text-md font-semibold mb-3 pl-[2rem]">
+              Moved Items
+            </h4>
             <div className="bg-white/90 border rounded-lg p-4">
               <MergeTable
-                movedItems={Array.isArray(selectedMergedRequest.movedItems) ? selectedMergedRequest.movedItems : []}
+                movedItems={
+                  Array.isArray(selectedMergedRequest.movedItems)
+                    ? selectedMergedRequest.movedItems
+                    : []
+                }
                 isReadOnly={true}
                 tag={selectedMergedRequest.tag || ""}
               />
             </div>
           </div>
-        </div>
+        </>
       ) : (
         <>
           <div className="space-y-4">
@@ -216,7 +300,9 @@ const AccountMerged = ({ searchQuery = "", filterType = "all" }) => {
 
                       <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-100 text-emerald-700">
                         <span>
-                          {request.requestType === "purchaseOrder" ? "Purchase Order" : "Petty Cash"}
+                          {request.requestType === "purchaseOrder"
+                            ? "Purchase Order"
+                            : "Petty Cash"}
                         </span>
                       </span>
                     </div>
@@ -250,7 +336,9 @@ const AccountMerged = ({ searchQuery = "", filterType = "all" }) => {
 
                       <div className="flex items-center gap-1.5 text-slate-600">
                         <span className="text-xs md:text-sm font-medium">
-                          {request.createdAt ? new Date(request.createdAt).toLocaleDateString() : ""}
+                          {request.createdAt
+                            ? new Date(request.createdAt).toLocaleDateString()
+                            : ""}
                         </span>
                       </div>
                     </div>
@@ -262,7 +350,8 @@ const AccountMerged = ({ searchQuery = "", filterType = "all" }) => {
 
           <div className="flex items-center justify-between mt-6">
             <div className="text-sm text-slate-600">
-              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}
+              Showing {(page - 1) * pageSize + 1} to{" "}
+              {Math.min(page * pageSize, total)} of {total}
             </div>
             <div className="flex items-center gap-2">
               <button

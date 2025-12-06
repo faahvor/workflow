@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { IoMdSearch } from "react-icons/io";
 import {
   MdAssessment,
@@ -10,98 +10,225 @@ import {
   MdCheckCircle,
   MdHistory,
 } from "react-icons/md";
-
-/*
-  RequestManagement - new prototype page
-  - Stats cards (no "Approved Today")
-  - Tabs to switch lists: Pending / Purchase Orders / Petty Cash
-  - Stuck >24h detection with Override button (mock)
-  - Clicking a request opens RequestDetailDemo as a modal (prototype)
-*/
-
-const initialRequests = [
-  {
-    id: "REQ-2024-001",
-    type: "purchase-order",
-    title: "Marine Engine Parts",
-    requester: "John Smith",
-    department: "Marine",
-    destination: "IT",
-    vessel: "MV Ocean Star",
-    amount: 15450,
-    amountFormatted: "$15,450",
-    priority: "urgent",
-    createdAt: Date.now() - 1000 * 60 * 60 * 26, // 26 hours ago (stuck)
-    managerAssignedAt: Date.now() - 1000 * 60 * 60 * 25, // 25 hours ago (stuck)
-    status: "pending_manager",
-    items: 12,
-  },
-  {
-    id: "REQ-2024-002",
-    type: "petty-cash",
-    title: "Office Supplies",
-    requester: "Sarah Johnson",
-    department: "Operations",
-    destination: "Project",
-    vessel: "N/A",
-    amount: 450,
-    amountFormatted: "$450",
-    priority: "normal",
-    createdAt: Date.now() - 1000 * 60 * 60 * 5, // 5 hours ago
-    managerAssignedAt: Date.now() - 1000 * 60 * 60 * 4,
-    status: "pending_manager",
-    items: 5,
-  },
-  {
-    id: "REQ-2024-003",
-    type: "purchase-order",
-    title: "Safety Equipment & Gear",
-    requester: "Michael Brown",
-    department: "IT",
-    destination: "Marine",
-    vessel: "MV Sea Breeze",
-    amount: 8920,
-    amountFormatted: "$8,920",
-    priority: "urgent",
-    createdAt: Date.now() - 1000 * 60 * 60 * 50, // older
-    managerAssignedAt: Date.now() - 1000 * 60 * 60 * 49,
-    status: "pending_manager",
-    items: 8,
-  },
-  {
-    id: "REQ-2024-004",
-    type: "purchase-order",
-    title: "Hydraulic Fluid & Filters",
-    requester: "David Wilson",
-    department: "Marine",
-    destination: "Operations",
-    vessel: "MV Wave Rider",
-    amount: 3200,
-    amountFormatted: "$3,200",
-    priority: "normal",
-    createdAt: Date.now() - 1000 * 60 * 60 * 2,
-    managerAssignedAt: Date.now() - 1000 * 60 * 60 * 2,
-    status: "pending_procurement",
-    items: 6,
-  },
-];
+import { useAuth } from "../../../context/AuthContext";
+import axios from "axios";
+import RequestWorkflow from "../../../shared/RequestWorkflow";
 
 const formatAmount = (n) =>
   typeof n === "number" ? `$${n.toLocaleString()}` : n || "N/A";
 
-const ageHours = (ts) => Math.max(0, (Date.now() - ts) / (1000 * 60 * 60));
+const ageMinutes = (ts) =>
+  Math.max(0, (Date.now() - new Date(ts).getTime()) / (1000 * 60));
+const isCompletedRequest = (r) => {
+  const status = (r.status || "").toUpperCase();
+  return status === "COMPLETED";
+};
 
 const RequestManagement = () => {
-  const [requests, setRequests] = useState(initialRequests);
   const [filter, setFilter] = useState("all"); // all | pending | purchase-order | petty-cash
   const [search, setSearch] = useState("");
   const [openRequest, setOpenRequest] = useState(null);
-
+  const [loadingDetail, setLoadingDetail] = useState(false);
   // --- Comments for inline request detail modal (prototype) ---
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [postingComment, setPostingComment] = useState(false);
+  const { getToken } = useAuth();
+  const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+
+  // server-backed list state / pagination
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [limit] = useState(20); // fixed as requested
+  const [total, setTotal] = useState(0);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [workflowPath, setWorkflowPath] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [overrideModalOpen, setOverrideModalOpen] = useState(false);
+  const [overrideRequestId, setOverrideRequestId] = useState(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideLoading, setOverrideLoading] = useState(false);
+  const [overrideSuccess, setOverrideSuccess] = useState(false);
+
+  const fetchWorkflow = async (requestId) => {
+    if (!requestId) return;
+
+    const token =
+      (typeof getToken === "function" && (await getToken())) ||
+      localStorage.getItem("token") ||
+      null;
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    try {
+      console.debug("[RequestManagement] fetching workflow for:", requestId);
+
+      const resp = await axios.get(`${API_BASE}/requests/${requestId}/flow`, {
+        headers,
+      });
+
+      console.debug(
+        "[RequestManagement] fetchWorkflow resp status:",
+        resp.status
+      );
+      console.debug("[RequestManagement] fetchWorkflow body:", resp.data);
+
+      const flowData = resp.data?.data || resp.data?.flow || resp.data || [];
+
+      if (Array.isArray(flowData)) {
+        setWorkflowPath(flowData);
+      } else if (flowData && typeof flowData === "object") {
+        // If it's an object with a path/stages array inside
+        const stages =
+          flowData.path || flowData.stages || flowData.workflow || [];
+        setWorkflowPath(Array.isArray(stages) ? stages : []);
+      } else {
+        setWorkflowPath([]);
+      }
+    } catch (err) {
+      console.error("[RequestManagement] fetchWorkflow error:", err);
+      if (err?.response?.data) {
+        console.error(
+          "[RequestManagement] fetchWorkflow response.data:",
+          err.response.data
+        );
+      }
+      // Don't alert for workflow errors, just log - request can still be viewed
+      setWorkflowPath([]);
+    }
+  };
+
+  const fetchRequests = async (opts = {}) => {
+    const p = opts.page ?? page;
+    const q = opts.search ?? search;
+    const f = opts.filter ?? filter;
+
+    const params = {
+      page: p,
+      limit,
+    };
+
+    // map UI filter to server params
+    if (q && q.toString().trim()) params.search = q.toString().trim();
+    if (f === "purchase-order") params.type = "purchaseOrder";
+    if (f === "petty-cash") params.type = "pettyCash";
+    // note: 'pending' filter should return all pending statuses client-side; we request server without status filter so it returns everything (server supports status if you want more exact filtering)
+
+    const token =
+      (typeof getToken === "function" && (await getToken())) ||
+      localStorage.getItem("token") ||
+      null;
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    try {
+      setLoadingRequests(true);
+      console.debug("[RequestManagement] fetching requests", {
+        params,
+        headers,
+      });
+      const resp = await axios.get(`${API_BASE}/admin/requests`, {
+        params,
+        headers,
+      });
+      console.debug(
+        "[RequestManagement] fetchRequests axios resp status:",
+        resp.status
+      );
+      console.debug("[RequestManagement] fetchRequests body:", resp.data);
+      const body = resp.data || {};
+      const data = Array.isArray(body.data) ? body.data : [];
+      setRequests(data);
+      setPage(body.page ?? p);
+      setPages(body.pages ?? 1);
+      setTotal(body.total ?? data.length);
+    } catch (err) {
+      console.error("[RequestManagement] fetchRequests error:", err);
+      // surface possible server message
+      if (err?.response?.data) {
+        console.error(
+          "[RequestManagement] fetchRequests response.data:",
+          err.response.data
+        );
+      }
+      alert("Failed to fetch requests. Check console for details.");
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+  const fetchRequestDetail = async (requestId) => {
+    if (!requestId) return;
+
+    // Find the request from the list and open modal immediately
+    const listRequest = requests.find(
+      (r) => (r.requestId || r.id) === requestId
+    );
+    if (listRequest) {
+      setOpenRequest(listRequest);
+      // Set comments from list data if available
+      if (Array.isArray(listRequest.comments)) {
+        setComments(listRequest.comments);
+      } else {
+        setComments([]);
+      }
+    }
+
+    const token =
+      (typeof getToken === "function" && (await getToken())) ||
+      localStorage.getItem("token") ||
+      null;
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    try {
+      console.debug(
+        "[RequestManagement] fetching request detail for:",
+        requestId
+      );
+
+      const resp = await axios.get(`${API_BASE}/requests/${requestId}`, {
+        headers,
+      });
+
+      console.debug(
+        "[RequestManagement] fetchRequestDetail resp status:",
+        resp.status
+      );
+      console.debug("[RequestManagement] fetchRequestDetail body:", resp.data);
+
+      const requestData = resp.data?.data || resp.data || null;
+
+      if (requestData) {
+        // Update with full data
+        setOpenRequest(requestData);
+
+        // Fetch workflow data for this request
+        fetchWorkflow(requestId);
+
+        // If the response includes comments, set them
+        if (Array.isArray(requestData.comments)) {
+          setComments(requestData.comments);
+        }
+      } else {
+        console.error("[RequestManagement] No request data in response");
+      }
+    } catch (err) {
+      console.error("[RequestManagement] fetchRequestDetail error:", err);
+      if (err?.response?.data) {
+        console.error(
+          "[RequestManagement] fetchRequestDetail response.data:",
+          err.response.data
+        );
+      }
+    }
+  };
+
+  useEffect(() => {
+    // initial fetch and whenever filter/search/page changes
+    fetchRequests({ page, search, filter });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, filter, search]);
 
   const mockComments = [
     {
@@ -147,143 +274,186 @@ const RequestManagement = () => {
     }, 700);
   };
 
-  // --- Workflow stages (copied from RequestDetailDemo for consistent UI) ---
-  const workflowStages = [
-    { id: 1, name: "Submitted", status: "completed" },
-    { id: 2, name: "Procurement Review", status: "current" },
-    { id: 3, name: "Manager Approval", status: "pending" },
-    { id: 4, name: "Finance Approval", status: "pending" },
-    { id: 5, name: "Processing", status: "pending" },
-    { id: 6, name: "Completed", status: "pending" },
-  ];
-
-  const getStageColor = (status) => {
-    switch (status) {
-      case "completed":
-        return "text-emerald-500 bg-emerald-500/10 border-emerald-500/30";
-      case "current":
-        return "text-teal-500 bg-teal-500/10 border-teal-500/30";
-      case "pending":
-        return "text-gray-400 bg-gray-500/10 border-gray-500/20";
-      default:
-        return "text-gray-400 bg-gray-500/10 border-gray-500/20";
-    }
-  };
-
-  const getStageIcon = (status) => {
-    switch (status) {
-      case "completed":
-        return "✓";
-      case "current":
-        return "⏱";
-      case "pending":
-        return "⏳";
-      default:
-        return "⏳";
-    }
-  };
-
   // Stats
   const stats = useMemo(() => {
-    const total = requests.length;
+    const totalCount = requests.length;
     const purchaseOrders = requests.filter(
-      (r) => r.type === "purchase-order"
+      (r) => r.requestType === "purchaseOrder"
     ).length;
-    const petty = requests.filter((r) => r.type === "petty-cash").length;
-    const pending = requests.filter((r) => r.status.includes("pending")).length;
-    return { total, purchaseOrders, petty, pending };
+    const petty = requests.filter((r) => r.requestType === "pettyCash").length;
+    // Pending count: exclude completed and rejected
+    const pending = requests.filter(
+      (r) => !isCompletedRequest(r) && r.isRejected !== true
+    ).length;
+    return { total: totalCount, purchaseOrders, petty, pending };
   }, [requests]);
 
   const filteredList = useMemo(() => {
     return requests.filter((r) => {
-      if (filter === "pending" && !r.status.includes("pending")) return false;
-      if (filter === "purchase-order" && r.type !== "purchase-order")
+      // 'pending' filter: exclude completed and rejected requests
+      if (filter === "pending") {
+        if (isCompletedRequest(r)) return false;
+        if (r.isRejected === true) return false;
+      }
+
+      // 'purchaseOrder' filter: only purchaseOrder type
+      if (filter === "purchaseOrder" && r.requestType !== "purchaseOrder")
         return false;
-      if (filter === "petty-cash" && r.type !== "petty-cash") return false;
+
+      // 'pettyCash' filter: only pettyCash type
+      if (filter === "pettyCash" && r.requestType !== "pettyCash") return false;
+
+      // 'all' filter: show everything (no additional filtering)
+
       const q = search.trim().toLowerCase();
       if (!q) return true;
+
+      const requesterStr =
+        typeof r.requester === "object"
+          ? (
+              r.requester.displayName ||
+              r.requester.username ||
+              r.requester.userId ||
+              ""
+            )
+              .toString()
+              .toLowerCase()
+          : (r.requester || "").toString().toLowerCase();
+
       return (
-        (r.title || "").toLowerCase().includes(q) ||
-        (r.requester || "").toLowerCase().includes(q) ||
-        (r.id || "").toLowerCase().includes(q)
+        (r.requestId || "").toLowerCase().includes(q) ||
+        (r.purpose || "").toLowerCase().includes(q) ||
+        requesterStr.includes(q)
       );
     });
   }, [requests, filter, search]);
 
   const handleOverride = (reqId) => {
-    // Mock override: mark as escalated and update timestamps
-    setRequests((prev) =>
-      prev.map((r) =>
-        r.id === reqId
-          ? {
-              ...r,
-              overridden: true,
-              status: "escalated",
-              managerAssignedAt: Date.now(),
-            }
-          : r
-      )
-    );
-    alert(`Request ${reqId} overridden and escalated (prototype).`);
+    setOverrideRequestId(reqId);
+    setOverrideReason("");
+    setOverrideModalOpen(true);
+  };
+
+  const submitOverride = async () => {
+    const reason = (overrideReason || "").trim();
+    if (!reason) {
+      alert("Please provide a reason for overriding this request.");
+      return;
+    }
+
+    const token =
+      (typeof getToken === "function" && (await getToken())) ||
+      localStorage.getItem("token") ||
+      null;
+
+    const headers = {
+      Authorization: token ? `Bearer ${token}` : "",
+      "Content-Type": "application/json",
+    };
+
+    try {
+      setOverrideLoading(true);
+      console.debug(
+        "[RequestManagement] submitting override for:",
+        overrideRequestId
+      );
+      console.debug("[RequestManagement] override reason:", reason);
+
+      const resp = await axios.post(
+        `${API_BASE}/admin/requests/${overrideRequestId}/override`,
+        { reason },
+        { headers }
+      );
+
+      console.debug("[RequestManagement] override resp status:", resp.status);
+      console.debug("[RequestManagement] override resp data:", resp.data);
+
+      // Show success message
+      setOverrideSuccess(true);
+
+      // Re-fetch requests to get updated data
+      fetchRequests({ page, search, filter });
+
+      // Close modal after 2 seconds
+      setTimeout(() => {
+        setOverrideModalOpen(false);
+        setOverrideRequestId(null);
+        setOverrideReason("");
+        setOverrideSuccess(false);
+      }, 2000);
+    } catch (err) {
+      console.error("[RequestManagement] override error:", err);
+      if (err?.response?.data) {
+        console.error(
+          "[RequestManagement] override response.data:",
+          err.response.data
+        );
+      }
+    } finally {
+      setOverrideLoading(false);
+    }
+  };
+
+  const closeOverrideModal = () => {
+    setOverrideModalOpen(false);
+    setOverrideRequestId(null);
+    setOverrideReason("");
+    setOverrideSuccess(false);
   };
 
   return (
     <div className="space-y-6">
       {/* Stats row (no Approved Today) */}
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">
-            Request Management
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Manage and track purchase orders and petty cash requests.
+      <div>
+        <h2 className="text-2xl font-bold text-slate-900">
+          Request Management
+        </h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Manage and track purchase orders and petty cash requests.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <MdAssessment className="text-2xl text-white" />
+            </div>
+          </div>
+          <p className="text-slate-500 text-sm mb-1 font-semibold">
+            Total Requests
+          </p>
+          <p className="text-slate-900 text-3xl font-bold">{stats.total}</p>
+          <p className="text-slate-500 text-sm mt-1">
+            Pending: {stats.pending}
           </p>
         </div>
-      <div className="grid grid-cols-1 md:grid-cols-3  gap-6">
-        <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-slate-500">Total Requests</div>
-              <div className="text-2xl font-bold text-slate-900">
-                {stats.total}
-              </div>
-              <div className="text-sm text-slate-500 mt-1">
-                Pending: {stats.pending}
-              </div>
-            </div>
-            <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-2xl text-emerald-600">
-              <MdAssessment />
+
+        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-12 h-12 bg-teal-500 rounded-xl flex items-center justify-center shadow-lg shadow-teal-500/20">
+              <MdShoppingCart className="text-2xl text-white" />
             </div>
           </div>
+          <p className="text-slate-500 text-sm mb-1 font-semibold">
+            Purchase Orders
+          </p>
+          <p className="text-slate-900 text-3xl font-bold">
+            {stats.purchaseOrders}
+          </p>
+          <p className="text-slate-500 text-sm mt-1">Active POs</p>
         </div>
 
-        <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-slate-500">Purchase Orders</div>
-              <div className="text-2xl font-bold text-slate-900">
-                {stats.purchaseOrders}
-              </div>
-              <div className="text-sm text-slate-500 mt-1">Active POs</div>
-            </div>
-            <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-2xl text-emerald-600">
-              <MdShoppingCart />
+        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <MdAttachMoney className="text-2xl text-white" />
             </div>
           </div>
-        </div>
-
-        <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-slate-500">Petty Cash</div>
-              <div className="text-2xl font-bold text-slate-900">
-                {stats.petty}
-              </div>
-              <div className="text-sm text-slate-500 mt-1">Requests</div>
-            </div>
-            <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-2xl text-emerald-600">
-              <MdAttachMoney />
-            </div>
-          </div>
+          <p className="text-slate-500 text-sm mb-1 font-semibold">
+            Petty Cash
+          </p>
+          <p className="text-slate-900 text-3xl font-bold">{stats.petty}</p>
+          <p className="text-slate-500 text-sm mt-1">Requests</p>
         </div>
       </div>
 
@@ -301,9 +471,9 @@ const RequestManagement = () => {
             Pending Requests
           </button>
           <button
-            onClick={() => setFilter("purchase-order")}
+            onClick={() => setFilter("purchaseOrder")}
             className={`px-3 py-2 rounded-lg font-semibold ${
-              filter === "purchase-order"
+              filter === "purchaseOrder"
                 ? "bg-[#036173] text-white"
                 : "bg-slate-100 text-slate-700"
             }`}
@@ -311,9 +481,9 @@ const RequestManagement = () => {
             Purchase Orders
           </button>
           <button
-            onClick={() => setFilter("petty-cash")}
+            onClick={() => setFilter("pettyCash")}
             className={`px-3 py-2 rounded-lg font-semibold ${
-              filter === "petty-cash"
+              filter === "pettyCash"
                 ? "bg-[#036173] text-white"
                 : "bg-slate-100 text-slate-700"
             }`}
@@ -348,35 +518,55 @@ const RequestManagement = () => {
       {/* List */}
       <div className="space-y-4">
         {filteredList.map((r) => {
+          const stuckTimestamp = r.managerAssignedAt || r.createdAt;
           const stuck =
-            r.managerAssignedAt && ageHours(r.managerAssignedAt) > 24;
+            !isCompletedRequest(r) &&
+            stuckTimestamp &&
+            ageMinutes(stuckTimestamp) > 30;
+
+          // DEBUG: log the request object to see what fields are available
+          console.log("[RequestManagement] request item:", r);
+
           return (
             <div
-              key={r.id}
+              key={r.requestId || r.id}
               className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200"
             >
               <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-2 flex-wrap">
                     <span className="text-slate-500 text-xs font-mono">
-                      {r.id}
+                      {r.requestId || r.id}
                     </span>
                     <span
                       className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold border ${
-                        r.type === "purchase-order"
+                        r.requestType === "purchaseOrder"
                           ? "bg-emerald-100 text-emerald-700 border-emerald-200"
                           : "bg-teal-100 text-teal-700 border-teal-200"
                       }`}
                     >
-                      {r.type === "purchase-order" ? (
-                        <MdShoppingCart className="text-sm mr-1" />
-                      ) : (
-                        <MdAttachMoney className="text-sm mr-1" />
-                      )}
-                      {r.type === "purchase-order"
+                      {r.requestType === "purchaseOrder"
                         ? "Purchase Order"
                         : "Petty Cash"}
                     </span>
+
+                    {/* Status Badge */}
+                    {r.status && (
+                      <span
+                        className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold border ${
+                          r.status.toLowerCase().includes("approved")
+                            ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                            : r.status.toLowerCase().includes("pending")
+                            ? "bg-amber-100 text-amber-700 border-amber-200"
+                            : r.status.toLowerCase().includes("rejected")
+                            ? "bg-red-100 text-red-700 border-red-200"
+                            : "bg-slate-100 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        {r.status.replace(/_/g, " ")}
+                      </span>
+                    )}
+
                     {r.priority === "urgent" && (
                       <span className="inline-flex items-center px-2 py-1 rounded text-xs font-bold bg-red-100 text-red-600 border border-red-200">
                         <MdPriorityHigh className="text-sm mr-1" /> URGENT
@@ -384,7 +574,7 @@ const RequestManagement = () => {
                     )}
                     {stuck && (
                       <span className="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-amber-700 border border-amber-200">
-                        Stuck &gt;24h
+                        Delayed
                       </span>
                     )}
                     {r.overridden && (
@@ -394,13 +584,15 @@ const RequestManagement = () => {
                     )}
                   </div>
 
-                  <h3 className="text-slate-900 text-lg font-bold mb-1">
-                    {r.title}
-                  </h3>
                   <p className="text-slate-600 text-sm">
                     Requested by{" "}
                     <span className="text-slate-900 font-semibold">
-                      {r.requester}
+                      {typeof r.requester === "object"
+                        ? r.requester.displayName ||
+                          r.requester.username ||
+                          r.requester.userId ||
+                          "—"
+                        : r.requester || "—"}
                     </span>
                   </p>
 
@@ -414,12 +606,22 @@ const RequestManagement = () => {
                         {r.destination}
                       </span>
                     </div>
-                    {r.vessel && r.vessel !== "N/A" && (
-                      <div className="flex items-center gap-1.5 text-slate-600">
-                        <MdDirectionsBoat />{" "}
-                        <span className="text-sm font-medium">{r.vessel}</span>
-                      </div>
-                    )}
+                    {((typeof r.vessel === "object"
+                      ? r.vessel?.name
+                      : r.vessel) ||
+                      r.vesselName) &&
+                      ((typeof r.vessel === "object"
+                        ? r.vessel?.name
+                        : r.vessel) || r.vesselName) !== "N/A" && (
+                        <div className="flex items-center gap-1.5 text-slate-600">
+                          <MdDirectionsBoat />{" "}
+                          <span className="text-sm font-medium">
+                            {typeof r.vessel === "object"
+                              ? r.vessel?.name || r.vessel?.vesselName || "—"
+                              : r.vessel || r.vesselName || "—"}
+                          </span>
+                        </div>
+                      )}
                     <div className="flex items-center gap-1.5 text-slate-600">
                       <MdHistory />{" "}
                       <span className="text-sm font-medium">
@@ -431,37 +633,28 @@ const RequestManagement = () => {
 
                 <div className="flex items-center gap-3 lg:ml-auto">
                   <div className="text-right">
-                    <div className="text-slate-900 font-bold">
-                      {formatAmount(r.amount)}
-                    </div>
                     <div className="text-xs text-slate-500">
-                      Items: {r.items}
+                      Items:{" "}
+                      {Array.isArray(r.items) ? r.items.length : r.items || 0}
                     </div>
                   </div>
 
                   <div className="flex flex-col gap-2">
                     <button
-                      onClick={() => setOpenRequest(r)}
+                      onClick={() => fetchRequestDetail(r.requestId || r.id)}
                       className="h-10 px-6 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg font-semibold"
                     >
                       Review
                     </button>
-                    <div className="flex gap-2">
-                      {stuck && (
-                        <button
-                          onClick={() => handleOverride(r.id)}
-                          className="h-10 px-3 bg-amber-50 text-amber-700 rounded-lg text-sm font-semibold"
-                        >
-                          Override
-                        </button>
-                      )}
+                    {stuck && (
                       <button
-                        onClick={() => setOpenRequest(r)}
-                        className="h-10 px-3 bg-slate-100 border-2 border-slate-200 text-slate-700 rounded-lg text-sm font-semibold"
+                        onClick={() => handleOverride(r.requestId || r.id)}
+                        className="h-10 px-3 bg-pink-50 text-amber-700 rounded-lg text-sm font-semibold"
                       >
-                        Details
+                        Override
                       </button>
-                    </div>
+                    )}
+                    <div className="flex gap-2"></div>
                   </div>
                 </div>
               </div>
@@ -489,60 +682,26 @@ const RequestManagement = () => {
         <>
           <div
             className="fixed inset-0 bg-black/40 z-40"
-            onClick={() => setOpenRequest(null)}
+            onClick={() => {
+              setOpenRequest(null);
+              setComments([]);
+              setNewComment("");
+            }}
           />
           <div className="fixed left-1/2 -translate-x-1/2 top-8 z-50 w-[95%] max-w-6xl">
             {/* Modal body: full request detail (no sidebar) */}
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-           
-
               <div className="p-6 space-y-6 max-h-[75vh] overflow-auto">
                 {/* Workflow (detailed, matches RequestDetailDemo) */}
                 <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-3xl px-8 py-6 mb-8 shadow-lg">
                   <h3 className="text-sm font-semibold text-slate-600 mb-6 uppercase tracking-wider">
                     Request Workflow
                   </h3>
-                  <div className="relative">
-                    {/* Progress Line - Behind icons */}
-                    <div className="absolute top-6 left-0 right-0 h-0.5 bg-slate-200 -z-10">
-                      <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 w-1/6 transition-all duration-500" />
+                  {workflowPath && workflowPath.length > 0 && (
+                    <div className="mt-6">
+                      <RequestWorkflow workflowPath={workflowPath} />
                     </div>
-
-                    {/* Stages */}
-                    <div className="relative flex items-start justify-between">
-                      {workflowStages.map((stage) => (
-                        <div
-                          key={stage.id}
-                          className="flex flex-col items-center z-10"
-                          style={{ width: `${100 / workflowStages.length}%` }}
-                        >
-                          <div
-                            className={`w-12 h-12 rounded-full border-2 flex items-center justify-center mb-2 text-xl font-bold transition-all duration-300 bg-white ${getStageColor(
-                              stage.status
-                            )}`}
-                          >
-                            {getStageIcon(stage.status)}
-                          </div>
-                          <p
-                            className={`text-xs font-medium text-center leading-tight ${
-                              stage.status === "completed"
-                                ? "text-emerald-600"
-                                : stage.status === "current"
-                                ? "text-teal-600"
-                                : "text-slate-400"
-                            }`}
-                          >
-                            {stage.name}
-                          </p>
-                          {stage.status === "current" && (
-                            <span className="mt-1 px-2 py-0.5 bg-teal-500/10 text-teal-600 text-[10px] font-semibold rounded-full">
-                              IN PROGRESS
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Request Details */}
@@ -556,13 +715,18 @@ const RequestManagement = () => {
                     <div className="px-4 py-3 border-b border-r border-slate-200">
                       <p className="text-xs text-slate-500">Request ID</p>
                       <p className="text-sm text-slate-900 font-semibold font-mono">
-                        {openRequest.id}
+                        {openRequest.requestId || openRequest.id || "—"}
                       </p>
                     </div>
                     <div className="px-4 py-3 border-b border-r border-slate-200">
                       <p className="text-xs text-slate-500">Requester</p>
                       <p className="text-sm text-slate-900 font-semibold">
-                        {openRequest.requester}
+                        {typeof openRequest.requester === "object"
+                          ? openRequest.requester.displayName ||
+                            openRequest.requester.username ||
+                            openRequest.requester.userId ||
+                            "—"
+                          : openRequest.requester || "—"}
                       </p>
                     </div>
                     <div className="px-4 py-3 border-b border-r border-slate-200">
@@ -593,9 +757,13 @@ const RequestManagement = () => {
                       <p className="text-xs text-slate-500">Request Type</p>
                       <p className="text-sm font-semibold">
                         <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                          {openRequest.type === "purchase-order"
+                          {openRequest.requestType === "purchaseOrder"
                             ? "Purchase Order"
-                            : "Petty Cash"}
+                            : openRequest.requestType === "pettyCash"
+                            ? "Petty Cash"
+                            : openRequest.requestType ||
+                              openRequest.type ||
+                              "—"}
                         </span>
                       </p>
                     </div>
@@ -607,8 +775,6 @@ const RequestManagement = () => {
                     </div>
                   </div>
                 </div>
-
-               
 
                 {/* Items List (prototype rows) */}
                 <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
@@ -637,46 +803,54 @@ const RequestManagement = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {/** use a small demo list derived from openRequest (if no real items exist) */}
-                        {(
-                          openRequest._itemsPreview || [
-                            {
-                              id: 1,
-                              name: openRequest.title || "Item A",
-                              quantity: 1,
-                              unit: "pcs",
-                              unitPrice: openRequest.amountFormatted || "$0",
-                              total: openRequest.amountFormatted || "$0",
-                            },
-                          ]
-                        ).map((it) => (
+                        {(Array.isArray(openRequest.items) &&
+                        openRequest.items.length > 0
+                          ? openRequest.items
+                          : [
+                              {
+                                itemId: "placeholder-1",
+                                name:
+                                  openRequest.purpose ||
+                                  openRequest.title ||
+                                  "No items",
+                                quantity: 1,
+                                unit: "pcs",
+                                unitPrice: 0,
+                                totalPrice: openRequest.amount || 0,
+                              },
+                            ]
+                        ).map((it, idx) => (
                           <tr
-                            key={it.id}
+                            key={it.itemId || it.id || idx}
                             className="hover:bg-slate-50 transition-colors"
                           >
                             <td className="px-6 py-4">
                               <div className="text-sm font-medium text-slate-900">
-                                {it.name}
+                                {it.name || it.description || "—"}
                               </div>
                             </td>
                             <td className="px-6 py-4 text-center">
                               <div className="text-sm text-slate-700 font-semibold">
-                                {it.quantity}
+                                {it.quantity ?? 0}
                               </div>
                             </td>
                             <td className="px-6 py-4 text-center">
                               <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 text-xs rounded-lg">
-                                {it.unit}
+                                {it.unit || "pcs"}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="text-sm text-slate-700">
-                                {it.unitPrice}
+                                {typeof it.unitPrice === "number"
+                                  ? formatAmount(it.unitPrice)
+                                  : it.unitPrice || "—"}
                               </div>
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="text-sm font-bold text-slate-900">
-                                {it.total}
+                                {typeof it.totalPrice === "number"
+                                  ? formatAmount(it.totalPrice)
+                                  : it.totalPrice || it.total || "—"}
                               </div>
                             </td>
                           </tr>
@@ -721,35 +895,70 @@ const RequestManagement = () => {
                       </div>
                     ) : comments.length > 0 ? (
                       <ul className="space-y-3">
-                        {comments.map((c) => (
-                          <li
-                            key={c.id}
-                            className="flex items-start gap-3 bg-white rounded-lg p-3 border border-slate-100"
-                          >
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm">
-                              {(c.author || "U")
-                                .split(" ")
-                                .map((s) => s[0])
-                                .slice(0, 2)
-                                .join("")}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <div className="text-sm font-semibold text-slate-900">
-                                    {c.author}
-                                  </div>
-                                  <div className="text-xs text-slate-400">
-                                    {new Date(c.createdAt).toLocaleString()}
+                        {comments.map((c, idx) => {
+                          // Safely extract author name from various possible structures
+                          let authorName = "User";
+                          if (typeof c.author === "object" && c.author) {
+                            authorName =
+                              c.author.displayName ||
+                              c.author.username ||
+                              c.author.userId ||
+                              "User";
+                          } else if (typeof c.author === "string" && c.author) {
+                            authorName = c.author;
+                          } else if (typeof c.userId === "object" && c.userId) {
+                            authorName =
+                              c.userId.displayName ||
+                              c.userId.username ||
+                              c.userId.userId ||
+                              "User";
+                          } else if (typeof c.userId === "string" && c.userId) {
+                            authorName = c.userId;
+                          }
+
+                          // Ensure authorName is always a string
+                          if (typeof authorName !== "string") {
+                            authorName = String(authorName || "User");
+                          }
+
+                          const commentText =
+                            c.content || c.text || c.message || "";
+                          const commentDate =
+                            c.timestamp ||
+                            c.createdAt ||
+                            new Date().toISOString();
+
+                          return (
+                            <li
+                              key={c.id || c._id || idx}
+                              className="flex items-start gap-3 bg-white rounded-lg p-3 border border-slate-100"
+                            >
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm">
+                                {String(authorName || "U")
+                                  .split(" ")
+                                  .map((s) => (s && s[0]) || "")
+                                  .slice(0, 2)
+                                  .join("")
+                                  .toUpperCase() || "U"}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="text-sm font-semibold text-slate-900">
+                                      {authorName}
+                                    </div>
+                                    <div className="text-xs text-slate-400">
+                                      {new Date(commentDate).toLocaleString()}
+                                    </div>
                                   </div>
                                 </div>
+                                <div className="mt-2 text-sm text-slate-700 whitespace-pre-line">
+                                  {commentText}
+                                </div>
                               </div>
-                              <div className="mt-2 text-sm text-slate-700 whitespace-pre-line">
-                                {c.text}
-                              </div>
-                            </div>
-                          </li>
-                        ))}
+                            </li>
+                          );
+                        })}
                       </ul>
                     ) : (
                       <div className="py-6 text-center text-slate-500">
@@ -759,8 +968,89 @@ const RequestManagement = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </>
+      )}
 
-          
+      {/* Override Reason Modal */}
+      {overrideModalOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-50"
+            onClick={closeOverrideModal}
+          />
+          <div className="fixed left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-50 w-[95%] max-w-md">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-white">
+                    Override Request
+                  </h3>
+                  <button
+                    onClick={closeOverrideModal}
+                    className="text-white/80 hover:text-white text-xl"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-amber-100 text-sm mt-1">
+                  Request ID: {overrideRequestId}
+                </p>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                {overrideSuccess ? (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <MdCheckCircle className="text-4xl text-emerald-600" />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-900 mb-2">
+                      Request Successfully Overridden
+                    </h4>
+                    <p className="text-sm text-slate-500">
+                      The request has been overridden and the latest data has
+                      been fetched.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Reason for Override{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      rows={4}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none resize-none"
+                      placeholder="Provide a reason"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              {!overrideSuccess && (
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                  <button
+                    onClick={closeOverrideModal}
+                    disabled={overrideLoading}
+                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitOverride}
+                    disabled={overrideLoading || !overrideReason.trim()}
+                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg font-semibold hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {overrideLoading ? "Submitting..." : "Override Request"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </>

@@ -30,20 +30,24 @@ const RequesterSidebar = ({
   const navigate = useNavigate();
 
   useEffect(() => {
-    const requestsViews = ["createNew", "pending", "myrequests"];
+    const requestsViews = ["createNew", "pending", "myrequests", "completed"];
     // include merged only for users in the Freight department (case-insensitive)
     const dept = (user?.department || "").toString().toLowerCase();
     if (dept.includes("freight")) {
       requestsViews.push("merged");
     }
 
-    if (requestsViews.includes(activeView)) {
+    // Also expand if viewing detail from a request sub-view
+    const isDetailFromRequests =
+      activeView === "detail" &&
+      ["pending", "myrequests", "completed", "merged"].includes(selectedRequestOrigin);
+
+    if (requestsViews.includes(activeView) || isDetailFromRequests) {
       setRequestsExpanded(true);
     } else {
       setRequestsExpanded(false);
     }
-  }, [activeView, user]);
-  // ...existing code...
+  }, [activeView, user, selectedRequestOrigin]);
 
   const handleLogout = () => {
     logout();
@@ -164,10 +168,12 @@ const RequesterSidebar = ({
                   .toString()
                   .toLowerCase()
                   .includes("freight") && (
-                  <button
+                    <button
                     onClick={() => setActiveView("merged")}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                      activeView === "merged"
+                      activeView === "merged" ||
+                      (activeView === "detail" &&
+                        selectedRequestOrigin === "merged")
                         ? "bg-gray-800/80 text-white"
                         : "text-gray-300 hover:text-white hover:bg-gray-800/50"
                     }`}
@@ -182,7 +188,9 @@ const RequesterSidebar = ({
                 <button
                   onClick={() => setActiveView("completed")}
                   className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                    activeView === "completed"
+                    activeView === "completed" ||
+                    (activeView === "detail" &&
+                      selectedRequestOrigin === "completed")
                       ? "bg-gray-800/80 text-white"
                       : "text-gray-300 hover:text-white hover:bg-gray-800/50"
                   }`}

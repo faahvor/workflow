@@ -1,6 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
-import { MdAdd, MdEdit, MdArchive, MdBuild, MdSearch } from "react-icons/md";
+import {
+  MdAdd,
+  MdEdit,
+  MdArchive,
+  MdBuild,
+  MdSearch,
+  MdMoreVert,
+  MdCheckCircle,
+} from "react-icons/md";
 import { useAuth } from "../../../context/AuthContext";
 
 const StatusBadge = ({ status }) => {
@@ -38,6 +46,9 @@ const VesselManagement = () => {
   const [limit, setLimit] = useState(10);
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState("createdAt_desc");
+  const [openActionMenuId, setOpenActionMenuId] = useState(null);
+  const actionMenuRef = useRef(null);
+  const [actionMenuCoords, setActionMenuCoords] = useState(null);
 
   // form
   const blank = {
@@ -65,6 +76,46 @@ const VesselManagement = () => {
       token ? token.slice?.(0, 20) + "..." : ""
     );
     return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  useEffect(() => {
+    const handleDocClick = (e) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(e.target)) {
+        setOpenActionMenuId(null);
+      }
+    };
+    const handleKey = (e) => {
+      if (e.key === "Escape") setOpenActionMenuId(null);
+    };
+    document.addEventListener("click", handleDocClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("click", handleDocClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, []);
+
+  const toggleActionMenu = (id, anchorEl) => {
+    setOpenActionMenuId((prev) => {
+      const next = prev === id ? null : id;
+      if (!next) {
+        setActionMenuCoords(null);
+        return null;
+      }
+      if (anchorEl && typeof anchorEl.getBoundingClientRect === "function") {
+        const rect = anchorEl.getBoundingClientRect();
+        // clamp width between 140 and 220 so dropdown doesn't get too wide
+        const clampedWidth = Math.min(Math.max(140, rect.width), 220);
+        setActionMenuCoords({
+          left: rect.left,
+          top: rect.bottom,
+          width: clampedWidth,
+        });
+      } else {
+        setActionMenuCoords(null);
+      }
+      return id;
+    });
   };
 
   // ensure we log mount and trigger an initial fetch (helps debug network/authorization)
@@ -407,7 +458,7 @@ const VesselManagement = () => {
 
   return (
     <div className="space-y-6">
-         <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse pointer-events-none" />
+      <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse pointer-events-none" />
       <div
         className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse pointer-events-none"
         style={{ animationDelay: "1s" }}
@@ -543,41 +594,113 @@ const VesselManagement = () => {
                         }
                       />
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center gap-2">
+                    <td className="px-4 py-3 text-center">
+                      <div className="relative inline-flex items-center justify-end">
                         <button
-                          onClick={() => openEdit(v)}
-                          className="px-3 py-2 bg-white border rounded-lg text-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleActionMenu(
+                              v.vesselId || v.id || idx,
+                              e.currentTarget
+                            );
+                          }}
+                          className="px-3 py-2 bg-white border rounded-lg text-sm inline-flex items-center gap-2"
+                          aria-haspopup="true"
+                          aria-expanded={
+                            openActionMenuId === (v.vesselId || v.id || idx)
+                          }
                         >
-                          <MdEdit />
+                          <span>Select action</span>
+                          <MdMoreVert />
                         </button>
 
-                        {v.status !== "Maintenance" &&
-                          v.status !== "Archived" && (
-                            <button
-                              onClick={() => changeStatus(v, "Maintenance")}
-                              className="px-3 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm"
-                            >
-                              <MdBuild /> Maintenance
-                            </button>
-                          )}
-
-                        {v.status !== "Archived" && (
-                          <button
-                            onClick={() => changeStatus(v, "Archived")}
-                            className="px-3 py-2 bg-red-50 text-red-700 rounded-lg text-sm"
+                        {openActionMenuId === (v.vesselId || v.id || idx) && (
+                          <div
+                            ref={actionMenuRef}
+                            style={{
+                              position: actionMenuCoords ? "fixed" : "absolute",
+                              left: actionMenuCoords
+                                ? actionMenuCoords.left
+                                : 0,
+                              top: actionMenuCoords
+                                ? actionMenuCoords.top
+                                : "100%",
+                              // use exact width from coords and cap it with maxWidth
+                              width: actionMenuCoords
+                                ? actionMenuCoords.width
+                                : 176,
+                              maxWidth: 260,
+                              zIndex: 9999,
+                            }}
+                            className="mt-1 bg-white border rounded-lg shadow-lg overflow-hidden"
                           >
-                            <MdArchive />
-                          </button>
-                        )}
+                            <button
+                              onClick={() => {
+                                openEdit(v);
+                                setOpenActionMenuId(null);
+                                setActionMenuCoords(null);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50"
+                            >
+                              Edit
+                            </button>
 
-                        {/* show delete for admins (superadmin check optional) */}
-                        <button
-                          onClick={() => remove(v)}
-                          className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm"
-                        >
-                          Remove
-                        </button>
+                            {v.status !== "Maintenance" &&
+                              v.status !== "maintenance" && (
+                                <button
+                                  onClick={() => {
+                                    changeStatus(v, "Maintenance");
+                                    setOpenActionMenuId(null);
+                                    setActionMenuCoords(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50"
+                                >
+                                  Maintenance
+                                </button>
+                              )}
+
+                            {v.status !== "Archived" &&
+                              v.status !== "archived" && (
+                                <button
+                                  onClick={() => {
+                                    changeStatus(v, "Archived");
+                                    setOpenActionMenuId(null);
+                                    setActionMenuCoords(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50"
+                                >
+                                  Archive
+                                </button>
+                              )}
+
+                            {(v.status === "Maintenance" ||
+                              v.status === "maintenance" ||
+                              v.status === "Archived" ||
+                              v.status === "archived") && (
+                              <button
+                                onClick={() => {
+                                  changeStatus(v, "Active");
+                                  setOpenActionMenuId(null);
+                                  setActionMenuCoords(null);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50"
+                              >
+                                Activate
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                remove(v);
+                                setOpenActionMenuId(null);
+                                setActionMenuCoords(null);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -591,8 +714,6 @@ const VesselManagement = () => {
         <div className="flex items-center justify-between mt-3 px-3">
           <div className="text-xs text-slate-500">Total: {total}</div>
           <div className="flex items-center gap-2">
-          
-
             <button
               onClick={() => {
                 if (page > 1) {

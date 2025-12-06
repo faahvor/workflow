@@ -976,11 +976,7 @@ const ProcurementTable = ({
                         Switch to Petty Cash
                       </th>
                     )}
-                    {shouldShowItemTypeColumns && (
-                      <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
-                        Destination
-                      </th>
-                    )}
+                 
                     {showItemTypeAndDept && (
                       <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                         In Stock
@@ -1272,53 +1268,14 @@ const ProcurementTable = ({
                                 (editedRequests.find(
                                   (it) => it.itemId === request.itemId
                                 )?.itemType === "pettyCash"
-                                  ? "cursor-not-allowed"
+                                  ? ""
                                   : "") ||
                                 (request.inStock ? "cursor-not-allowed" : "")
                               }
                             />
                           </td>
                         )}
-                        {shouldShowItemTypeColumns && (
-                          <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
-                            {request.itemType === "pettyCash" ? (
-                              <Select
-                                options={departmentOptions}
-                                value={
-                                  departmentOptions.find(
-                                    (option) =>
-                                      option.value === request.destination
-                                  ) || null
-                                }
-                                onChange={(selected) =>
-                                  handleChange(
-                                    itemId,
-                                    "destination",
-                                    selected?.value || ""
-                                  )
-                                }
-                                className="w-32 text-black"
-                                styles={{
-                                  control: (provided) => ({
-                                    ...provided,
-                                    minWidth: "100px",
-                                    fontSize: "14px",
-                                    zIndex: 9999,
-                                  }),
-                                  menuPortal: (base) => ({
-                                    ...base,
-                                    zIndex: 9999,
-                                  }),
-                                }}
-                                menuPortalTarget={document.body}
-                                menuPlacement="auto"
-                                placeholder="Select "
-                              />
-                            ) : (
-                              "N/A"
-                            )}
-                          </td>
-                        )}
+                       
                         {showItemTypeAndDept && (
                           <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                             <input
@@ -1466,18 +1423,17 @@ const ProcurementTable = ({
                                 isPreview ||
                                 readOnly ||
                                 allowLogisticsChange === false ||
-                                request.inStock
+                                request.inStock ||
+                                request.itemType === "pettyCash"
                               }
                               className={`border px-2 py-1 rounded-md w-32 text-black ${
-                                isPreview || request.inStock
+                                isPreview || request.inStock || request.itemType === "pettyCash"
                                   ? "bg-gray-200 cursor-not-allowed"
                                   : ""
                               }`}
                             >
                               <option value="local">Local</option>
-                              <option value="international">
-                                International
-                              </option>
+                              <option value="international">International</option>
                             </select>
                           </td>
                         )}
@@ -1657,7 +1613,7 @@ const ProcurementTable = ({
 
                         {showUnitPrice && showVat && (
                           <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
-                            <input
+                             <input
                               type="checkbox"
                               checked={
                                 editedRequests.find(
@@ -1673,10 +1629,13 @@ const ProcurementTable = ({
                                 );
                               }}
                               disabled={
-                                isPreview || readOnly || request.inStock
+                                isPreview ||
+                                readOnly ||
+                                request.inStock ||
+                                request.itemType === "pettyCash"
                               }
                               className={
-                                isPreview || request.inStock
+                                isPreview || request.inStock || request.itemType === "pettyCash"
                                   ? "cursor-not-allowed"
                                   : ""
                               }

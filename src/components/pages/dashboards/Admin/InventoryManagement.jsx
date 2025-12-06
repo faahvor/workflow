@@ -16,6 +16,8 @@ import {
   MdChevronRight,
   MdFileDownload,
   MdPrint,
+    MdVerified,
+  MdPending,
 } from "react-icons/md";
 
 const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
@@ -54,6 +56,7 @@ export default function InventoryManagement() {
     quantity: 0,
     maker: "",
     makerPartNumber: "",
+     isVerified: true,
   });
 
   const [activeStat, setActiveStat] = useState("all"); // 'all' | 'low'
@@ -239,6 +242,8 @@ export default function InventoryManagement() {
             quantity: 0,
             maker: "",
             makerPartNumber: "",
+                        isVerified: true,
+
           });
           alert("Inventory added.");
           return;
@@ -380,7 +385,9 @@ export default function InventoryManagement() {
       quantity: item.quantity ?? 0,
       maker: item.maker || "",
       makerPartNumber: item.makerPartNumber || "",
+      isVerified: item.isVerified ?? false,
     });
+    setEditPhotos([]);
     setShowEdit(true);
   };
 
@@ -391,6 +398,11 @@ export default function InventoryManagement() {
       setLoading(true);
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      // Check if verification status changed from false to true
+      const wasUnverified = editing.isVerified === false;
+      const nowVerified = form.isVerified === true;
+      const needsVerification = wasUnverified && nowVerified;
 
       // If there are new photos selected for edit, use FormData
       if (editPhotos && editPhotos.length > 0) {
@@ -406,12 +418,13 @@ export default function InventoryManagement() {
           formData.append("photos", file);
         });
 
-        const resp = await axios.patch(
+        await axios.patch(
           `${API_BASE}/inventory/${encodeURIComponent(editing.inventoryId)}`,
           formData,
           { headers }
         );
       } else {
+        // Regular JSON payload (without isVerified - that's handled separately)
         const payload = {
           department: form.department,
           name: form.name,
@@ -419,11 +432,20 @@ export default function InventoryManagement() {
           maker: form.maker,
           makerPartNumber: form.makerPartNumber,
         };
-        const resp = await axios.patch(
+        await axios.patch(
           `${API_BASE}/inventory/${encodeURIComponent(editing.inventoryId)}`,
           payload,
           { headers }
         );
+      }
+
+      // If user toggled from unverified to verified, call the verify endpoint
+      if (needsVerification) {
+        const verified = await handleVerifyItem(editing.inventoryId);
+        if (!verified) {
+          // Verification failed but other updates succeeded
+          alert("Item updated but verification failed. Please try verifying again.");
+        }
       }
 
       // refresh both lists to get latest server state
@@ -440,6 +462,27 @@ export default function InventoryManagement() {
       alert(err.response?.data?.message || "Failed to update item");
     } finally {
       setLoading(false);
+    }
+  };
+    const handleVerifyItem = async (inventoryId) => {
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      if (!token) {
+        alert("Authentication required.");
+        return false;
+      }
+      const headers = { Authorization: `Bearer ${token}` };
+
+      await axios.patch(
+        `${API_BASE}/inventory/${encodeURIComponent(inventoryId)}/verify`,
+        {},
+        { headers }
+      );
+      return true;
+    } catch (err) {
+      console.error("Error verifying inventory:", err);
+      alert(err.response?.data?.message || "Failed to verify item");
+      return false;
     }
   };
 
@@ -627,7 +670,7 @@ export default function InventoryManagement() {
                   <th className="px-4 py-3">Maker</th>
                   <th className="px-4 py-3">Maker PN</th>
                   <th className="px-4 py-3">Uploads</th>
-
+<th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
@@ -668,6 +711,19 @@ export default function InventoryManagement() {
                       </td>
                       <td className="px-4 py-3">{it.maker}</td>
                       <td className="px-4 py-3">{it.makerPartNumber}</td>
+                      <td className="px-4 py-3">
+                        {it.isVerified ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                            <MdVerified className="text-sm" />
+                            Verified
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                            <MdPending className="text-sm" />
+                            Unverified
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-center">
                         {Array.isArray(it.photos) && it.photos.length > 0 ? (
                           <button
@@ -838,6 +894,8 @@ export default function InventoryManagement() {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
+
+              
 
               {/* Photo upload dropzone (Add Modal) */}
               <div className="md:col-span-2">
@@ -1075,6 +1133,65 @@ export default function InventoryManagement() {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
+            
+              {/* Status Toggle - Only show if item is unverified (one-way verification) */}
+              <div className="md:col-span-2">
+                <label className="text-xs text-slate-500 block mb-2">
+                  Verification Status
+                </label>
+                {editing?.isVerified ? (
+                  // Already verified - show read-only badge
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold bg-emerald-100 text-emerald-700">
+                      <MdVerified className="text-base" />
+                      Verified
+                    </span>
+                    <p className="text-xs text-slate-400">
+                      This item is already verified
+                    </p>
+                  </div>
+                ) : (
+                  // Unverified - allow toggling to verified
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm({ ...form, isVerified: !form.isVerified })
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+                        form.isVerified ? "bg-emerald-500" : "bg-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          form.isVerified ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                    <span
+                      className={`text-sm font-medium ${
+                        form.isVerified ? "text-emerald-700" : "text-amber-700"
+                      }`}
+                    >
+                      {form.isVerified ? (
+                        <span className="inline-flex items-center gap-1">
+                          <MdVerified /> Mark as Verified
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <MdPending /> Unverified
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+                <p className="text-xs text-slate-400 mt-1">
+                  {editing?.isVerified
+                    ? "Verified items cannot be changed back to unverified"
+                    : "Toggle to verify this inventory item"}
+                </p>
+              </div>
+
               <div className="md:col-span-2">
                 <label className="text-xs text-slate-500">
                   Photos (images only)

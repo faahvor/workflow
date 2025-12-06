@@ -127,11 +127,16 @@ const DirectOfOpTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
-                 {showFeeColumns && (
-              <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
-                {feeLabel}
-              </th>
-            )}
+              {showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Shipping Qty
+                </th>
+              )}
+              {showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
+                  {feeLabel}
+                </th>
+              )}
               {!hidePrices && (
                 <>
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
@@ -198,15 +203,23 @@ const DirectOfOpTable = ({
                     </span>
                   )}
                 </td>
-                 {showFeeColumns && (
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                  {item.currency || "NGN"}{" "}
-                  {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-              )}
+                {showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">
+                      {item.shippingQuantity ?? 0}
+                    </span>
+                  </td>
+                )}
+
+                {showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                    {item.currency || "NGN"}{" "}
+                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                )}
 
                 {!hidePrices && (
                   <>

@@ -1,6 +1,6 @@
 // src/components/layout/Sidebar.jsx
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { IoMdMenu, IoMdClose } from "react-icons/io";
 import {
   MdDashboard,
@@ -12,6 +12,8 @@ import {
   MdHelp,
   MdVerified,
   MdDoneAll,
+  MdExpandLess,
+  MdExpandMore,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -26,16 +28,40 @@ const Sidebar = ({
   isRequester = false,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [requestsExpanded, setRequestsExpanded] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const isProcurement = String(user?.role || "") === "Procurement Manager";
-    const isAccountingLead = ["accountingofficer", "accounting officer", "account officer"].includes(
-    String(user?.role || "").toLowerCase()
-  );
+  
+  const roleLower = String(user?.role || "").toLowerCase();
+  const isProcurement = roleLower === "procurement manager" || roleLower === "procurement officer";
+  const isProcurementManager = String(user?.role || "") === "Procurement Manager";
+  const isAccountingLead = ["accountingofficer", "accounting officer", "account officer"].includes(roleLower);
+
+  const isDeliveryRole =
+    roleLower === "deliverybase" ||
+    roleLower === "delivery base" ||
+    roleLower === "deliveryjetty" ||
+    roleLower === "delivery jetty" ||
+    roleLower === "deliveryvessel" ||
+    roleLower === "delivery vessel";
+
+  // Auto-expand requests submenu when sub-views are active (for procurement roles)
+  useEffect(() => {
+    if (isProcurement) {
+      const requestsViews = ["createNew", "pending", "myRequests"];
+      if (requestsViews.includes(activeView)) {
+        setRequestsExpanded(true);
+      }
+    }
+  }, [activeView, isProcurement]);
 
   const handleLogout = () => {
     logout();
     navigate("/login");
+  };
+
+  const toggleRequests = () => {
+    setRequestsExpanded((prev) => !prev);
   };
 
   // Get user initials for avatar
@@ -122,31 +148,126 @@ const Sidebar = ({
               </button>
             )}
 
-            {/* Pending Requests */}
-            <button
-              onClick={() => {
-                setActiveView("pending");
-                setIsSidebarOpen(false);
-              }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                activeView === "pending"
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-              }`}
-            >
-              <MdPendingActions className="text-xl shrink-0" />
-              <span className="font-medium text-sm">
-                {isRequester ? "My Requests" : "Pending Requests"}
-              </span>
-              {pendingCount > 0 && (
-                <span className="ml-auto bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
-                  {pendingCount}
+            {/* ✅ Requests submenu for Procurement roles */}
+            {isProcurement ? (
+              <div>
+                <button
+                  onClick={toggleRequests}
+                  aria-expanded={requestsExpanded}
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                    requestsExpanded ||
+                    activeView === "pending" ||
+                    activeView === "createNew" ||
+                    activeView === "myRequests"
+                      ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                      : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                  }`}
+                >
+                  <MdPendingActions className="text-xl shrink-0" />
+                  <span className="font-medium text-sm">Requests</span>
+                  {pendingCount > 0 && (
+                    <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
+                      {pendingCount}
+                    </span>
+                  )}
+                  <span className="ml-auto">
+                    {requestsExpanded ? <MdExpandLess /> : <MdExpandMore />}
+                  </span>
+                </button>
+
+                {/* Sub-list */}
+                {requestsExpanded && (
+                  <div className="mt-2 pl-4 space-y-1">
+                    {/* Create Request */}
+                    <button
+                      onClick={() => {
+                        setActiveView("createNew");
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                        activeView === "createNew"
+                          ? "bg-gray-800/80 text-white"
+                          : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                      }`}
+                    >
+                      <MdAdd className="text-lg" />
+                      <span className="text-sm">Create Request</span>
+                    </button>
+
+                    {/* Pending Requests (default) */}
+                    <button
+                      onClick={() => {
+                        setActiveView("pending");
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                        activeView === "pending"
+                          ? "bg-gray-800/80 text-white"
+                          : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <MdPendingActions className="text-lg" />
+                        <span className="text-sm">Pending Requests</span>
+                      </div>
+                      {pendingCount > 0 && (
+                        <span className="bg-orange-500/20 text-orange-400 text-xs px-2 py-0.5 rounded-lg font-semibold">
+                          {pendingCount}
+                        </span>
+                      )}
+                    </button>
+
+                    {/* My Requests */}
+                    <button
+                      onClick={() => {
+                        setActiveView("myRequests");
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                        activeView === "myRequests"
+                          ? "bg-gray-800/80 text-white"
+                          : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <MdDescription className="text-lg" />
+                        <span className="text-sm">My Requests</span>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+                ) : (
+              /* Non-procurement roles: flat Pending Requests button */
+              <button
+                onClick={() => {
+                  setActiveView("pending");
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                  activeView === "pending"
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                }`}
+              >
+                <MdPendingActions className="text-xl shrink-0" />
+                <span className="font-medium text-sm">
+                  {isRequester
+                    ? "My Requests"
+                    : isDeliveryRole
+                    ? "Pending  Approval"
+                    : "Pending Requests"}
                 </span>
-              )}
-            </button>
+                {pendingCount > 0 && (
+                  <span className="ml-auto bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Approved */}
-            <button
+             <button
               onClick={() => {
                 setActiveView("approved");
                 setIsSidebarOpen(false);
@@ -158,9 +279,11 @@ const Sidebar = ({
               }`}
             >
               <MdVerified className="text-xl shrink-0" />
-              <span className="font-medium text-sm">Approved</span>
+              <span className="font-medium text-sm">
+                {isDeliveryRole ? "Delivered Requests" : "Approved"}
+              </span>
             </button>
-              {isAccountingLead && (
+            {isAccountingLead && (
               <button
                 onClick={() => {
                   setActiveView("merged");
@@ -178,7 +301,8 @@ const Sidebar = ({
                 </div>
               </button>
             )}
-                  {/* Queried Requests */}
+
+            {/* Queried Requests */}
             <button
               onClick={() => {
                 setActiveView("queried");
@@ -198,8 +322,9 @@ const Sidebar = ({
                 </span>
               )}
             </button>
+
             {/* Completed Requests */}
-            <button
+               <button
               onClick={() => {
                 setActiveView("completed");
                 setIsSidebarOpen(false);
@@ -211,7 +336,9 @@ const Sidebar = ({
               }`}
             >
               <MdDoneAll className="text-xl shrink-0" />
-              <span className="font-medium text-sm">Completed</span>
+              <span className="font-medium text-sm">
+                {isDeliveryRole ? "Completed Deliveries" : "Completed"}
+              </span>
             </button>
 
             <button
@@ -229,7 +356,7 @@ const Sidebar = ({
               <span className="font-medium text-sm">Signature Manager</span>
             </button>
 
-            {isProcurement && (
+            {isProcurementManager && (
               <button
                 onClick={() => {
                   setActiveView("vendorManagement");
@@ -246,7 +373,7 @@ const Sidebar = ({
               </button>
             )}
 
-             {isProcurement && (
+            {isProcurementManager && (
               <button
                 onClick={() => {
                   setActiveView("inventoryManagement");

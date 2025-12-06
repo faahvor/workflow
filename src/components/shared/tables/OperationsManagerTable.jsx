@@ -125,8 +125,19 @@ return (
               Quantity
             </th>
                {showFeeColumns && (
+              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                Shipping Qty
+              </th>
+            )}
+               {showFeeColumns && (
               <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
                 {feeLabel}
+              </th>
+            )}
+            {/* ✅ PRN - only when tag is shipping/clearing */}
+            {showFeeColumns && (
+              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                PRN
               </th>
             )}
            
@@ -182,6 +193,13 @@ return (
                   <span className="font-semibold text-slate-900">{item.quantity}</span>
                 )}
               </td>
+                 {showFeeColumns && (
+                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                  <span className="font-semibold text-slate-900">
+                    {item.shippingQuantity ?? 0}
+                  </span>
+                </td>
+              )}
                {showFeeColumns && (
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                   {item.currency || "NGN"}{" "}
@@ -191,7 +209,11 @@ return (
                   })}
                 </td>
               )}
-
+   {showFeeColumns && (
+                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                  {item.purchaseRequisitionNumber || "N/A"}
+                </td>
+              )}
           
             </tr>
           ))}

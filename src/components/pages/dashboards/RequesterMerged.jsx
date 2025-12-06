@@ -125,9 +125,11 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
 
   return (
     <div>
-                <h2 className="text-3xl font-extrabold mb-[2rem] text-slate-900">Merged Request</h2>
+      <h2 className="text-3xl font-extrabold mb-[2rem] text-slate-900">
+        Merged Request
+      </h2>
 
-     {!selectedMergedRequest && (
+      {!selectedMergedRequest && (
         <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
@@ -174,7 +176,9 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
             </div>
 
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">Company</p>
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Company
+              </p>
               <p className="text-sm text-slate-900 font-semibold font-mono">
                 {selectedMergedRequest.company?.name || "N/A"}
               </p>
@@ -221,7 +225,9 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
               </p>
               <p className="text-sm text-slate-900 font-semibold">
                 {selectedMergedRequest.createdAt
-                  ? new Date(selectedMergedRequest.createdAt).toLocaleDateString()
+                  ? new Date(
+                      selectedMergedRequest.createdAt
+                    ).toLocaleDateString()
                   : ""}
               </p>
             </div>
@@ -267,19 +273,23 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
             </div>
           </div>
 
-               {selectedMergedRequest.purpose && (
-                  <div className="mb-8 mt-[4rem]">
-                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                      <MdDescription className="text-xl pl-[2rem]" />
-                      Purpose
-                    </h3>
-                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-                      <p className="text-slate-700 leading-relaxed">{selectedMergedRequest.purpose}</p>
-                    </div>
-                  </div>
-                )}
-           <div className="mt-6">
-            <h4 className="text-md font-semibold mb-3 pl-[2rem]">Moved Items</h4>
+          {selectedMergedRequest.purpose && (
+            <div className="mb-8 mt-[4rem]">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <MdDescription className="text-xl pl-[2rem]" />
+                Purpose
+              </h3>
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <p className="text-slate-700 leading-relaxed">
+                  {selectedMergedRequest.purpose}
+                </p>
+              </div>
+            </div>
+          )}
+          <div className="mt-6">
+            <h4 className="text-md font-semibold mb-3 pl-[2rem]">
+              Moved Items
+            </h4>
             <div className="bg-white/90 border rounded-lg p-4">
               <MergeTable
                 movedItems={
@@ -293,7 +303,6 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
             </div>
           </div>
         </div>
-        
       ) : (
         <>
           <div className="space-y-4">

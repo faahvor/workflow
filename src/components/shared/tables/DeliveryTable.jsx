@@ -2,8 +2,8 @@
 
 import React, { useState } from "react";
 
-const DeliveryTable = ({ 
-  items = [], 
+const DeliveryTable = ({
+  items = [],
   onEditItem,
   isReadOnly = false,
   userRole = "deliverybase", // Can be deliverybase, deliveryjetty, or deliveryvessel
@@ -14,7 +14,7 @@ const DeliveryTable = ({
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
 
-   React.useEffect(() => {
+  React.useEffect(() => {
     const incoming = Array.isArray(items) ? items : [];
     const existing = Array.isArray(editedItems) ? editedItems : [];
 
@@ -23,7 +23,12 @@ const DeliveryTable = ({
       sameLength &&
       incoming.every((it, idx) => {
         const inId = it.itemId ?? it._id ?? it.id ?? `__idx_${idx}`;
-        const exId = existing[idx] && (existing[idx].itemId ?? existing[idx]._id ?? existing[idx].id ?? `__idx_${idx}`);
+        const exId =
+          existing[idx] &&
+          (existing[idx].itemId ??
+            existing[idx]._id ??
+            existing[idx].id ??
+            `__idx_${idx}`);
         return String(inId) === String(exId);
       });
 
@@ -36,16 +41,16 @@ const DeliveryTable = ({
   // Check if table needs horizontal scrolling
   React.useEffect(() => {
     const checkScroll = () => {
-      const container = document.getElementById('delivery-table-container');
+      const container = document.getElementById("delivery-table-container");
       if (container) {
         setNeedsScroll(container.scrollWidth > container.clientWidth);
       }
     };
 
     checkScroll();
-    window.addEventListener('resize', checkScroll);
-    
-    return () => window.removeEventListener('resize', checkScroll);
+    window.addEventListener("resize", checkScroll);
+
+    return () => window.removeEventListener("resize", checkScroll);
   }, [editedItems]);
 
   // Update editedItems when items prop changes
@@ -56,22 +61,19 @@ const DeliveryTable = ({
   // Determine the delivered field based on user role
   const deliveredField = "deliveredQuantity";
 
-
   // Handle delivery quantity change
   const handleDeliveryQuantityChange = (itemId, value) => {
     const numeric = Number(value) || 0;
-    const newItems = editedItems.map(item => 
-      item.itemId === itemId 
-        ? { ...item, [deliveredField]: numeric }
-        : item
+    const newItems = editedItems.map((item) =>
+      item.itemId === itemId ? { ...item, [deliveredField]: numeric } : item
     );
-    
+
     setEditedItems(newItems);
-    
+
     // Call parent handler if provided
     if (onDeliveryQuantityChange) {
       // pass numeric value; parent expects (requestId, itemId, quantity, outstanding)
-      const updatedItem = newItems.find(it => it.itemId === itemId) || {};
+      const updatedItem = newItems.find((it) => it.itemId === itemId) || {};
       const qtyVal = Number(updatedItem.quantity || 0);
       const outstandingVal = Math.max(0, qtyVal - numeric);
       onDeliveryQuantityChange(requestId, itemId, numeric, outstandingVal);
@@ -98,8 +100,8 @@ const DeliveryTable = ({
     };
   };
 
-    const checkAllFullyDelivered = () => {
-    return editedItems.every(item => {
+  const checkAllFullyDelivered = () => {
+    return editedItems.every((item) => {
       const status = getDeliveryStatus(item);
       return status.isFull;
     });
@@ -114,20 +116,28 @@ const DeliveryTable = ({
 
   // Get column headers based on role
   const getDeliveredColumnHeader = () => {
-    switch(userRole) {
-      case "deliverybase": return "DBDQ";
-      case "deliveryjetty": return "DJDQ";
-      case "deliveryvessel": return "DVDQ";
-      default: return "Delivered Qty";
+    switch (userRole) {
+      case "deliverybase":
+        return "DBDQ";
+      case "deliveryjetty":
+        return "DJDQ";
+      case "deliveryvessel":
+        return "DVDQ";
+      default:
+        return "Delivered Qty";
     }
   };
 
   const getOutstandingColumnHeader = () => {
-    switch(userRole) {
-      case "deliverybase": return "DBOQ";
-      case "deliveryjetty": return "DJOQ";
-      case "deliveryvessel": return "DVOQ";
-      default: return "Outstanding Qty";
+    switch (userRole) {
+      case "deliverybase":
+        return "DBOQ";
+      case "deliveryjetty":
+        return "DJOQ";
+      case "deliveryvessel":
+        return "DVOQ";
+      default:
+        return "Outstanding Qty";
     }
   };
 
@@ -138,8 +148,10 @@ const DeliveryTable = ({
       </div>
     );
   }
-
-
+  const hasMovedFromRequestId = items.some(
+    (item) =>
+      item.movedFromRequestId && String(item.movedFromRequestId).trim() !== ""
+  );
 
   return (
     <div className="relative">
@@ -163,6 +175,11 @@ const DeliveryTable = ({
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Maker's Part No
               </th>
+              {hasMovedFromRequestId && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[150px]">
+                  Source Request
+                </th>
+              )}
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Vendor
               </th>
@@ -198,10 +215,10 @@ const DeliveryTable = ({
           <tbody>
             {editedItems.map((item, index) => {
               const status = getDeliveryStatus(item);
-              
+
               return (
-                <tr 
-                  key={item.itemId || index} 
+                <tr
+                  key={item.itemId || index}
                   className="hover:bg-emerald-50 transition-colors duration-150"
                 >
                   {/* Serial Number */}
@@ -228,6 +245,17 @@ const DeliveryTable = ({
                   <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                     {item.makersPartNo || "N/A"}
                   </td>
+                  {hasMovedFromRequestId && (
+                    <td className="border border-slate-200 px-4 py-3 text-center">
+                      {item.movedFromRequestId ? (
+                        <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold font-mono">
+                          {item.movedFromRequestId}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                  )}
 
                   {/* Vendor */}
                   <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
@@ -236,7 +264,9 @@ const DeliveryTable = ({
 
                   {/* Quantity */}
                   <td className="border border-slate-200 px-4 py-3 text-center">
-                    <span className="font-semibold text-slate-900">{item.quantity}</span>
+                    <span className="font-semibold text-slate-900">
+                      {item.quantity}
+                    </span>
                   </td>
 
                   {/* Unit Price */}
@@ -284,11 +314,18 @@ const DeliveryTable = ({
                         min="0"
                         max={item.quantity}
                         value={status.delivered || ""}
-                        onChange={(e) => handleDeliveryQuantityChange(item.itemId, e.target.value)}
+                        onChange={(e) =>
+                          handleDeliveryQuantityChange(
+                            item.itemId,
+                            e.target.value
+                          )
+                        }
                         className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                       />
                     ) : (
-                      <span className="font-semibold text-slate-900">{status.delivered}</span>
+                      <span className="font-semibold text-slate-900">
+                        {status.delivered}
+                      </span>
                     )}
                   </td>
 
@@ -302,7 +339,9 @@ const DeliveryTable = ({
                     <div className="flex justify-center">
                       {status.isPartial ? (
                         <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">P</span>
+                          <span className="text-white text-xs font-bold">
+                            P
+                          </span>
                         </div>
                       ) : (
                         <div className="w-6 h-6 bg-gray-300 rounded-full"></div>
@@ -315,7 +354,9 @@ const DeliveryTable = ({
                     <div className="flex justify-center">
                       {status.isFull ? (
                         <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">✓</span>
+                          <span className="text-white text-xs font-bold">
+                            ✓
+                          </span>
                         </div>
                       ) : (
                         <div className="w-6 h-6 bg-gray-300 rounded-full"></div>
@@ -335,7 +376,9 @@ const DeliveryTable = ({
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById('delivery-table-container');
+              const container = document.getElementById(
+                "delivery-table-container"
+              );
               if (container) {
                 container.scrollLeft -= 100;
               }
@@ -346,7 +389,9 @@ const DeliveryTable = ({
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById('delivery-table-container');
+              const container = document.getElementById(
+                "delivery-table-container"
+              );
               if (container) {
                 container.scrollLeft += 100;
               }

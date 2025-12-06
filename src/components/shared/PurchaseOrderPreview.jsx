@@ -62,7 +62,6 @@ const PurchaseOrderPreview = forwardRef(
         const base64 = arrayBufferToBase64(resp.data);
         return `data:${contentType};base64,${base64}`;
       } catch (err) {
-       
         return url;
       }
     };
@@ -155,10 +154,7 @@ const PurchaseOrderPreview = forwardRef(
           const procurementOnly = prepared.filter((p) => {
             const r = (p.role || "").toString().toLowerCase();
             // require "procurement" and either "officer" or "manager"
-            return (
-              r.includes("procurement") &&
-               r.includes("manager")
-            );
+            return r.includes("procurement") && r.includes("manager");
           });
           setSignaturesPrepared(procurementOnly);
         } catch (err) {
@@ -210,6 +206,8 @@ const PurchaseOrderPreview = forwardRef(
       createdAt.getTime() + 24 * 60 * 60 * 1000
     ).toLocaleDateString();
     const reference = req.reference || "N/A";
+        const paymentType = req.paymentType || "N/A";
+
     const grandTotal = usedItems.reduce((s, it) => {
       const qty = Number(it.quantity || 0);
       const total =
@@ -246,12 +244,18 @@ const PurchaseOrderPreview = forwardRef(
         ? getVendorAddressLines(usedItems[0].vendor)
         : null;
 
+   
+
     const issuedToLines = [vendorNameLine, addressPart]
       .filter(Boolean)
       .join("\n");
+            const tagLower = String(req.tag || "").toLowerCase();
+    const isShippingTag = tagLower === "shipping";
+    const isClearingTag = tagLower === "clearing";
+    const showFeeColumns = isShippingTag || isClearingTag;
 
     return (
-      <div ref={ref} className="bg-white p-6 print:p-8 text-slate-900">
+      <div ref={ref} className="bg-white px-12 md:px-16 lg:px-20 print:px-8 py-6 text-slate-900 max-w-5xl mx-auto">
         <div className="px-4 py-4 border-b bg-gradient-to-r from-white to-slate-50">
           <h2 className="text-2xl font-extrabold">Purchase Order</h2>
         </div>
@@ -299,6 +303,10 @@ const PurchaseOrderPreview = forwardRef(
                 <div className="font-semibold">Reference:</div>
                 <div className="text-sm text-slate-500">{reference}</div>
               </div>
+            </div>
+            <div className="flex justify-center items-center gap-2 mt-1">
+              <div className="font-semibold">Timeline:</div>
+              <div className="text-sm text-slate-500">{paymentType}</div>
             </div>
           </div>
         </div>
@@ -357,11 +365,41 @@ const PurchaseOrderPreview = forwardRef(
                     <th className="pb-2">#</th>
                     <th className="pb-2">Description</th>
                     <th className="pb-2">Qty</th>
-                    <th className="pb-2">Unit</th>
-                    <th className="pb-2 text-right">Unit Price</th>
-                    <th className="pb-2 text-right">Discount</th>
-                    <th className="pb-2 text-right">VAT</th>
-                    <th className="pb-2 text-right">Total</th>
+
+                    {/* ✅ Shipping Qty - only for shipping/clearing */}
+                    {showFeeColumns && (
+                      <th className="pb-2 text-center">Shipping Qty</th>
+                    )}
+
+                    {/* ✅ Shipping Fee - only for shipping/clearing */}
+                    {showFeeColumns && (
+                      <th className="pb-2 text-right">Shipping Fee</th>
+                    )}
+
+                    {/* ✅ Clearing Fee - only for clearing */}
+                    {isClearingTag && (
+                      <th className="pb-2 text-right">Clearing Fee</th>
+                    )}
+
+                    {/* ✅ Unit Price - hide for shipping/clearing */}
+                    {!showFeeColumns && (
+                      <th className="pb-2 text-right">Unit Price</th>
+                    )}
+
+                    {/* ✅ Discount - hide for shipping/clearing */}
+                    {!showFeeColumns && (
+                      <th className="pb-2 text-right">Discount</th>
+                    )}
+
+                    {/* ✅ VAT - hide for shipping/clearing */}
+                    {!showFeeColumns && (
+                      <th className="pb-2 text-right">VAT</th>
+                    )}
+
+                    {/* ✅ Total - hide for shipping/clearing */}
+                    {!showFeeColumns && (
+                      <th className="pb-2 text-right">Total</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -370,39 +408,90 @@ const PurchaseOrderPreview = forwardRef(
                       <td className="py-3 text-slate-700">{i + 1}</td>
                       <td className="py-3 text-slate-900">{it.name}</td>
                       <td className="py-3 text-slate-700">{it.quantity}</td>
-                      <td className="py-3 text-slate-700">
-                        {it.unit || "pcs"}
-                      </td>
-                      <td className="py-3 text-right text-slate-700">
-                        {formatCurrency(it.unitPrice, req.currency)}
-                      </td>
-                      <td className="py-3 text-right text-slate-700">
-                        {it.discount
-                          ? formatCurrency(it.discount, req.currency)
-                          : "-"}
-                      </td>
-                      <td className="py-3 text-right text-slate-700">
-                        {it.vat ? `${it.vat}%` : "-"}
-                      </td>
-                      <td className="py-3 text-right font-semibold text-slate-900">
-                        {formatCurrency(
-                          it.total || it.unitPrice * it.quantity,
-                          req.currency
-                        )}
-                      </td>
+                      
+
+                      {/* ✅ Shipping Qty - only for shipping/clearing */}
+                      {showFeeColumns && (
+                        <td className="py-3 text-center text-slate-700">
+                          {it.shippingQuantity ?? 0}
+                        </td>
+                      )}
+
+                      {/* ✅ Shipping Fee - only for shipping/clearing */}
+                      {showFeeColumns && (
+                        <td className="py-3 text-right text-slate-700">
+                          {formatCurrency(
+                            it.shippingFee || 0,
+                            it.currency || req.currency
+                          )}
+                        </td>
+                      )}
+
+                      {/* ✅ Clearing Fee - only for clearing */}
+                      {isClearingTag && (
+                        <td className="py-3 text-right text-slate-700">
+                          {formatCurrency(
+                            it.clearingFee || 0,
+                            it.currency || req.currency
+                          )}
+                        </td>
+                      )}
+
+                      {/* ✅ Unit Price - hide for shipping/clearing */}
+                      {!showFeeColumns && (
+                        <td className="py-3 text-right text-slate-700">
+                          {formatCurrency(
+                            it.unitPrice,
+                            it.currency || req.currency
+                          )}
+                        </td>
+                      )}
+
+                      {/* ✅ Discount - hide for shipping/clearing */}
+                      {!showFeeColumns && (
+                        <td className="py-3 text-right text-slate-700">
+                          {it.discount
+                            ? formatCurrency(
+                                it.discount,
+                                it.currency || req.currency
+                              )
+                            : "-"}
+                        </td>
+                      )}
+
+                      {/* ✅ VAT - hide for shipping/clearing */}
+                      {!showFeeColumns && (
+                        <td className="py-3 text-right text-slate-700">
+                          {it.vat ? `${it.vat}%` : "-"}
+                        </td>
+                      )}
+
+                      {/* ✅ Total - hide for shipping/clearing */}
+                      {!showFeeColumns && (
+                        <td className="py-3 text-right font-semibold text-slate-900">
+                          {formatCurrency(
+                            it.total || it.unitPrice * it.quantity,
+                            it.currency || req.currency
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={7} className="pt-4 text-right font-bold">
-                      Grand Total
-                    </td>
-                    <td className="pt-4 text-right text-xl font-bold">
-                      {formatCurrency(grandTotal, req.currency)}
-                    </td>
-                  </tr>
-                </tfoot>
+
+                {/* ✅ Grand Total - only for non-shipping/clearing */}
+                {!showFeeColumns && (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={7} className="pt-4 text-right font-bold">
+                        Grand Total
+                      </td>
+                      <td className="pt-4 text-right text-xl font-bold">
+                        {formatCurrency(grandTotal, req.currency)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>

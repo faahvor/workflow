@@ -2,16 +2,13 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
 import Cookies from "js-cookie";
 import { IoMdAdd } from "react-icons/io";
-import { MdPersonAdd, MdEdit, MdDelete ,MdMoreVert} from "react-icons/md";
+import { MdPersonAdd, MdEdit, MdDelete, MdMoreVert } from "react-icons/md";
 import { useAuth } from "../../../context/AuthContext";
 import { ROLES } from "../../../utils/roles";
 
-
 const defaultRoleTypes = Object.values(ROLES).filter(Boolean);
 
-
 const accessLevels = ["User", "Admin", "Superadmin"];
-  
 
 // Add departments list
 const departments = [
@@ -64,8 +61,8 @@ const AdminUserManagement = () => {
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState("createdAt_desc");
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
-    const actionMenuRef = useRef(null);
-useEffect(() => {
+  const actionMenuRef = useRef(null);
+  useEffect(() => {
     const handleDocClick = (e) => {
       // if there's an open menu and the click is outside it, close
       if (actionMenuRef.current && !actionMenuRef.current.contains(e.target)) {
@@ -84,7 +81,6 @@ useEffect(() => {
       document.removeEventListener("keydown", handleKey);
     };
   }, []);
-  
 
   const toggleActionMenu = (id) => {
     setOpenActionMenuId((prev) => (prev === id ? null : id));
@@ -100,7 +96,13 @@ useEffect(() => {
       return;
     }
     // confirm
-    if (!window.confirm(`Permanently delete user "${u.displayName || u.username}"? This action cannot be undone.`)) {
+    if (
+      !window.confirm(
+        `Permanently delete user "${
+          u.displayName || u.username
+        }"? This action cannot be undone.`
+      )
+    ) {
       return;
     }
     try {
@@ -431,10 +433,12 @@ useEffect(() => {
           backgroundSize: "50px 50px",
         }}
       />
-       <div>
-          <h2 className="text-3xl font-extrabold text-slate-900">Users Management</h2>
-          <p className="text-slate-500 mt-1">Manage Users</p>
-        </div>
+      <div>
+        <h2 className="text-3xl font-extrabold text-slate-900">
+          Users Management
+        </h2>
+        <p className="text-slate-500 mt-1">Manage Users</p>
+      </div>
       <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-4 shadow-lg flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <input
@@ -582,7 +586,9 @@ useEffect(() => {
                         }}
                         className="px-3 py-2 bg-white border rounded-lg text-sm inline-flex items-center gap-2"
                         aria-haspopup="true"
-                        aria-expanded={openActionMenuId === (u.userId || u.id || idx)}
+                        aria-expanded={
+                          openActionMenuId === (u.userId || u.id || idx)
+                        }
                       >
                         <span>Select action</span>
                         <MdMoreVert />
@@ -591,7 +597,8 @@ useEffect(() => {
                       {openActionMenuId === (u.userId || u.id || idx) && (
                         <div
                           ref={actionMenuRef}
-                          className="absolute left-0 top-full mt-1 w-44 bg-white border rounded-lg shadow-lg z-50 overflow-hidden"
+                          className="absolute left-0 top-full mt-1 bg-white border rounded-lg shadow-lg z-50 overflow-hidden"
+                          style={{ width: 140, maxWidth: 220 }}
                         >
                           <button
                             onClick={() => {
@@ -614,8 +621,9 @@ useEffect(() => {
                             >
                               Suspend
                             </button>
-                          ) : (u.status || "active").toString().toLowerCase() ===
-                            "suspended" ? (
+                          ) : (u.status || "active")
+                              .toString()
+                              .toLowerCase() === "suspended" ? (
                             <button
                               onClick={() => {
                                 unsuspendUser(u);
@@ -627,21 +635,22 @@ useEffect(() => {
                             </button>
                           ) : null}
 
-                          {(user?.accessLevel &&
+                          {user?.accessLevel &&
                             ["admin", "superadmin"].includes(
                               user.accessLevel.toString().toLowerCase()
                             ) &&
-                            (user?.userId || user?.id) !== (u.userId || u.id)) && (
-                            <button
-                              onClick={() => {
-                                deleteUser(u);
-                                setOpenActionMenuId(null);
-                              }}
-                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                            >
-                              Delete
-                            </button>
-                          )}
+                            (user?.userId || user?.id) !==
+                              (u.userId || u.id) && (
+                              <button
+                                onClick={() => {
+                                  deleteUser(u);
+                                  setOpenActionMenuId(null);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            )}
                         </div>
                       )}
                     </div>

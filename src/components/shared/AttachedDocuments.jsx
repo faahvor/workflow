@@ -538,6 +538,9 @@ const AttachedDocuments = ({
       const paymentAdviceFiles = Array.isArray(requestData.paymentAdviceFiles)
         ? requestData.paymentAdviceFiles
         : [];
+           const requestImages = Array.isArray(requestData.requestImages)
+        ? requestData.requestImages
+        : [];
 
       const buildMeta = (arr, typeKey) =>
         (arr || []).map((url) => {
@@ -558,6 +561,8 @@ const AttachedDocuments = ({
       const rawQuotations = buildMeta(quotationFiles, "quotation");
       const rawPaymentAdvice = buildMeta(paymentAdviceFiles, "paymentAdvice");
       const rawInvoices = buildMeta(invoiceFiles, "invoice");
+            const rawRequestImages = buildMeta(requestImages, "requestImage");
+
 
       const dedupeByVendor = (list) => {
         const map = new Map();
@@ -582,6 +587,7 @@ const AttachedDocuments = ({
         ...rawQuotations,
         ...rawPaymentAdvice,
         ...rawInvoices,
+        ...rawRequestImages, 
       ];
 
       if (!mounted) return;
@@ -652,6 +658,13 @@ const AttachedDocuments = ({
         display = "Payment Advice";
       } else if (m.type === "invoice") {
         display = "Invoice";
+  } else if (m.type === "requestImage") {
+        // ✅ ADD: Display name for request images
+        // Count how many requestImages we've seen so far
+        const imageIndex = fileMeta
+          .slice(0, fileMeta.indexOf(m) + 1)
+          .filter((x) => x.type === "requestImage").length;
+        display = `Request Image ${imageIndex}`;
       } else if (["requisition", "purchaseOrder", "request"].includes(m.type)) {
         const vendor = m.vendor || "Vendor";
         const typeLabel =
@@ -1124,20 +1137,21 @@ const AttachedDocuments = ({
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <div className="flex items-center gap-3">
-                  {active.vendorId === null && (
-                    <button
-                      onClick={handleSendAsMailFromRequestForm}
-                      disabled={preparingEmailPdf}
-                      className={`px-3 py-2 rounded-lg shadow-md transition text-sm flex items-center gap-2 ${
-                        preparingEmailPdf
-                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                          : "bg-emerald-500 text-white hover:bg-emerald-600"
-                      }`}
-                    >
-                      ✉️ {preparingEmailPdf ? "Preparing PDF…" : "Send as Mail"}
-                    </button>
-                  )}
-
+                 {active.vendorId === null &&
+                    ((user?.role || "").toLowerCase() === "procurement officer" ||
+                      (user?.role || "").toLowerCase() === "procurementofficer") && (
+                      <button
+                        onClick={handleSendAsMailFromRequestForm}
+                        disabled={preparingEmailPdf}
+                        className={`px-3 py-2 rounded-lg shadow-md transition text-sm flex items-center gap-2 ${
+                          preparingEmailPdf
+                            ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                            : "bg-emerald-500 text-white hover:bg-emerald-600"
+                        }`}
+                      >
+                        ✉️ {preparingEmailPdf ? "Preparing PDF…" : "Send as Mail"}
+                      </button>
+                    )}
                   <div className="text-sm font-semibold text-slate-900 truncate max-w-[360px]">
                     {active.displayName || active.name}
                   </div>

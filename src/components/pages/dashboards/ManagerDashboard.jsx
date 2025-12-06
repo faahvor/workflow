@@ -15,6 +15,7 @@ import {
   MdAttachMoney,
   MdCheckCircle,
   MdInventory,
+  MdLocalShipping,
 } from "react-icons/md";
 import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
@@ -26,6 +27,9 @@ import VendorManagement from "./VendorManagement";
 import InventoryManagement from "./InventoryManagement";
 import AccountMerged from "./AccountMerged";
 import QueriedRequest from "./QueriedRequest";
+import ProcurementCreateRequest from "./ProcurementCreateRequest";
+import ProcurementMyRequests from "./ProcurementMyRequests";
+import OverviewDashboard from "./OverviewDashboard";
 
 // ManagerDashboard component
 const ManagerDashboard = () => {
@@ -140,9 +144,12 @@ const ManagerDashboard = () => {
       const token = getToken();
       if (!token) return;
       // request a single item page to get total count if the API exposes `total`
-      const resp = await axios.get(`${API_BASE_URL}/requests/approved?limit=1`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await axios.get(
+        `${API_BASE_URL}/requests/approved?limit=1`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
       const total =
         resp.data?.total ??
         (Array.isArray(resp.data?.data) ? resp.data.data.length : 0);
@@ -497,7 +504,11 @@ const ManagerDashboard = () => {
           <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
             <div className="mb-6 md:mb-8">
               <h1 className="text-3xl md:text-4xl font-bold text-[#0a0a0a] mb-2">
-                {activeView === "overview"
+                {activeView === "createNew"
+                  ? "Create New Request"
+                  : activeView === "myRequests"
+                  ? "My Requests"
+                  : activeView === "overview"
                   ? `${user?.role} Dashboard`
                   : activeView === "pending"
                   ? "Pending Requests"
@@ -510,7 +521,11 @@ const ManagerDashboard = () => {
                   : ""}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
-                {activeView === "overview"
+                {activeView === "createNew"
+                  ? "Fill in the details below to submit your request"
+                  : activeView === "myRequests"
+                  ? "View and track requests you have created"
+                  : activeView === "overview"
                   ? "Manage and process requests efficiently"
                   : activeView === "pending"
                   ? "Review and process pending requests"
@@ -539,78 +554,39 @@ const ManagerDashboard = () => {
               </div>
             ) : (
               <>
-                {activeView === "overview" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-                          <MdPendingActions className="text-2xl text-white" />
-                        </div>
-                      </div>
-                      <p className="text-slate-500 text-sm mb-1 font-semibold">
-                        Pending Requests
-                      </p>
-                      <p className="text-slate-900 text-3xl font-bold">
-                        {pendingRequests.length}
-                      </p>
-                    </div>
-
-                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                          <MdShoppingCart className="text-2xl text-white" />
-                        </div>
-                      </div>
-                      <p className="text-slate-500 text-sm mb-1 font-semibold">
-                        Purchase Orders
-                      </p>
-                      <p className="text-slate-900 text-3xl font-bold">
-                        {
-                          pendingRequests.filter(
-                            (r) => r.requestType === "purchaseOrder"
-                          ).length
-                        }
-                      </p>
-                    </div>
-
-                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-12 h-12 bg-teal-500 rounded-xl flex items-center justify-center shadow-lg shadow-teal-500/20">
-                          <MdAttachMoney className="text-2xl text-white" />
-                        </div>
-                      </div>
-                      <p className="text-slate-500 text-sm mb-1 font-semibold">
-                        Petty Cash
-                      </p>
-                      <p className="text-slate-900 text-3xl font-bold">
-                        {
-                          pendingRequests.filter(
-                            (r) => r.requestType !== "purchaseOrder"
-                          ).length
-                        }
-                      </p>
-                    </div>
-
-                    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-200">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
-                          <MdCheckCircle className="text-2xl text-white" />
-                        </div>
-                      </div>
-                      <p className="text-slate-500 text-sm mb-1 font-semibold">
-                        Approved Today
-                      </p>
-                      <p className="text-slate-900 text-3xl font-bold">
-                         {approvedTodayCount}
-                      </p>
-                    </div>
-                  </div>
+                {activeView === "createNew" && (
+                  <ProcurementCreateRequest
+                    onRequestCreated={() => {
+                      // After creating, switch to pending view and refresh
+                      setActiveView("pending");
+                      fetchPendingRequests();
+                    }}
+                  />
+                )}
+                {/* ✅ ADD: My Requests View for Procurement roles */}
+                {activeView === "myRequests" && (
+                  <ProcurementMyRequests onOpenDetail={handleOpenDetail} />
                 )}
 
-                {activeView !== "signature" &&
+                  {activeView === "overview" && (
+                  <OverviewDashboard
+                    user={user}
+                    pendingRequests={pendingRequests}
+                    approvedTodayCount={approvedTodayCount}
+                    department={user?.department || ""}
+                    destination={user?.destination || ""}
+                    setActiveView={setActiveView}
+                    onViewDetails={handleViewDetails}
+                  />
+                )}
+
+              {activeView !== "signature" &&
                   activeView !== "vendorManagement" &&
                   activeView !== "inventoryManagement" &&
-                  activeView !== "merged" && (
+                  activeView !== "merged" &&
+                  activeView !== "createNew" &&
+                  activeView !== "myRequests" &&
+                  activeView !== "overview" && (
                     <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
                       <div className="flex flex-col md:flex-row gap-4">
                         <div className="flex-1 relative">
@@ -672,9 +648,12 @@ const ManagerDashboard = () => {
                     API_BASE_URL={API_BASE_URL}
                     onOpenDetail={handleOpenDetail}
                   />
-                ) : activeView !== "signature" &&
+                 ) : activeView !== "signature" &&
                   activeView !== "vendorManagement" &&
-                  activeView !== "inventoryManagement" ? (
+                  activeView !== "createNew" &&
+                  activeView !== "myRequests" &&
+                  activeView !== "inventoryManagement" &&
+                  activeView !== "overview" ? (
                   <div className="space-y-4">
                     {filteredRequests.map((request) => (
                       <div
@@ -687,7 +666,12 @@ const ManagerDashboard = () => {
                               <span className="text-slate-500 text-xs font-mono font-semibold">
                                 {request.requestId}
                               </span>
-
+                              {request.isIncompleteDelivery && (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                                  <MdLocalShipping className="text-sm" />
+                                  <span>Incomplete Delivery</span>
+                                </span>
+                              )}
                               {/* Tag badge (shows first, when present) */}
                               {request.tag && (
                                 <span

@@ -1,7 +1,10 @@
 // src/components/tables/ProcurementMTable.jsx
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { MdCheckCircle } from "react-icons/md";
+import axios from "axios";
+import { useAuth } from "../../context/AuthContext";
 
 const ProcurementMTable = ({
   items = [],
@@ -10,14 +13,144 @@ const ProcurementMTable = ({
   vendors = [],
   requestType = "",
   tag = "",
+  isIncompleteDelivery = false,
+  requestId = "",
+  onRefreshRequest = () => {},
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
   const tagLower = String(tag || "").toLowerCase();
+  const [calculatedVat, setCalculatedVat] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const { getToken } = useAuth();
+  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+
+  // Determine if editing is allowed (override isReadOnly when isIncompleteDelivery)
+  const canEdit = isIncompleteDelivery || !isReadOnly;
+    const isPettyCash = (requestType || "").toString().toLowerCase() === "pettycash";
+
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
+
+  useEffect(() => {
+    const fetchVat = async () => {
+      try {
+        const token = getToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const resp = await axios.get(`${API_BASE_URL}/vat`, { headers });
+        const value = resp?.data?.value;
+        setCalculatedVat(typeof value === "number" ? value / 100 : 0);
+      } catch (error) {
+        console.error("Error fetching VAT:", error);
+        setCalculatedVat(0);
+      }
+    };
+
+    if (isIncompleteDelivery) {
+      fetchVat();
+    }
+  }, [getToken, isIncompleteDelivery]);
+
+  const calculateItemTotal = (item) => {
+    const quantity = parseFloat(item.quantity) || 0;
+    const unitPrice = parseFloat(item.unitPrice) || 0;
+    const discount =
+      item.discount !== "" &&
+      item.discount !== null &&
+      item.discount !== undefined
+        ? parseFloat(item.discount) || 0
+        : 0;
+    const isVatted = !!item.vatted;
+
+    const baseTotal = quantity * unitPrice;
+    const discountFactor =
+      discount >= 0 && discount <= 100 ? (100 - discount) / 100 : 1;
+    const discountedTotal = baseTotal * discountFactor;
+    const vatAmount = isVatted ? discountedTotal * calculatedVat : 0;
+    const totalPrice = discountedTotal + vatAmount;
+
+    return {
+      totalPrice,
+      vatAmount,
+      discountedTotal,
+    };
+  };
+
+  const handleChange = (index, field, value) => {
+    setEditedItems((prevItems) => {
+      const newItems = [...prevItems];
+      const item = { ...newItems[index] };
+
+      if (field === "quantity") {
+        item.quantity = value === "" ? 0 : parseInt(value) || 0;
+      } else {
+        item[field] = value;
+      }
+
+      // Recalculate totals
+      const { totalPrice, vatAmount } = calculateItemTotal(item);
+      item.totalPrice = totalPrice;
+      item.total = totalPrice;
+      item.vatAmount = vatAmount;
+      item._dirty = true;
+
+      newItems[index] = item;
+      return newItems;
+    });
+  };
+
+  const handleSaveAll = async () => {
+    if (!window.confirm("Save all changes to the items?")) return;
+
+    const dirtyItems = editedItems.filter((it) => it._dirty);
+
+    if (!dirtyItems || dirtyItems.length === 0) {
+      alert("No changes to save.");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      for (const item of dirtyItems) {
+        const { totalPrice, vatAmount } = calculateItemTotal(item);
+
+        const payload = {
+          itemId: item.itemId || item._id,
+          quantity: item.quantity,
+          totalPrice: totalPrice,
+          vatAmount: vatAmount,
+          requestId: requestId,
+        };
+
+        console.log("Saving item:", payload);
+
+        await onEditItem(payload);
+      }
+
+      // Clear dirty flags
+      setEditedItems((prev) =>
+        prev.map((itm) => ({
+          ...itm,
+          _dirty: false,
+        }))
+      );
+
+      alert("Saved successfully!");
+
+      // Refresh request details
+      if (typeof onRefreshRequest === "function") {
+        await onRefreshRequest();
+      }
+    } catch (err) {
+      console.error("Error saving items:", err);
+      alert("Error saving changes. See console for details.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const getFeeValue = (item) => {
     if (!item) return 0;
@@ -176,12 +309,17 @@ const ProcurementMTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
-
                  {showFeeColumns && (
-              <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
-                {feeLabel}
+              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                Shipping Qty
               </th>
             )}
+
+              {showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
+                  {feeLabel}
+                </th>
+              )}
               {!isAnyItemInStock && (
                 <>
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
@@ -192,7 +330,20 @@ const ProcurementMTable = ({
                   </th>
                 </>
               )}
-              {(requestType !== "pettyCash" || !isAnyItemInStock) && (
+                            {!isAnyItemInStock && (
+
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                  Discount (%)
+                </th>
+                            )}
+             
+              {!isPettyCash && !isAnyItemInStock  && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  VAT Amount
+                </th>
+              )}
+            
+              {(requestType !== "pettyCash" && !isAnyItemInStock) && (
                 <>
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                     PRN
@@ -244,7 +395,17 @@ const ProcurementMTable = ({
 
                 {/* Quantity - Editable */}
                 <td className="border border-slate-200 px-4 py-3 text-center">
-                  {editingIndex === index ? (
+                  {isIncompleteDelivery ? (
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity || ""}
+                      onChange={(e) =>
+                        handleChange(index, "quantity", e.target.value)
+                      }
+                      className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+                  ) : editingIndex === index ? (
                     <input
                       type="number"
                       min="1"
@@ -260,15 +421,31 @@ const ProcurementMTable = ({
                     </span>
                   )}
                 </td>
-                 {showFeeColumns && (
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                  {item.currency || "NGN"}{" "}
-                  {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                   {showFeeColumns && (
+                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                  <span className="font-semibold text-slate-900">
+                    {item.shippingQuantity ?? 0}
+                  </span>
                 </td>
               )}
+                {showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                    {item.currency || "NGN"}{" "}
+                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                )}
+                {showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                    {item.currency || "NGN"}{" "}
+                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                )}
 
                 {/* Unit Price - Read Only */}
                 {!isAnyItemInStock && (
@@ -289,7 +466,9 @@ const ProcurementMTable = ({
                       <span className="font-semibold">
                         {item.currency || "NGN"}{" "}
                         {Number(
-                          item.totalPrice || item.total || 0
+                          isIncompleteDelivery
+                            ? calculateItemTotal(item).totalPrice
+                            : item.totalPrice || item.total || 0
                         ).toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
@@ -298,7 +477,38 @@ const ProcurementMTable = ({
                     </td>
                   </>
                 )}
-              {(requestType !== "pettyCash" || !isAnyItemInStock) && (
+                              {!isAnyItemInStock && (
+
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    {item.discount !== "" &&
+                    item.discount !== null &&
+                    item.discount !== undefined
+                      ? `${item.discount}%`
+                      : "0%"}
+                  </td>
+                              )}
+
+                {/* VAT Amount Column - Only show when isIncompleteDelivery */}
+              {!isPettyCash && !isAnyItemInStock  && (
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    {item.vatted ? (
+                      <>
+                        {item.currency || "NGN"}{" "}
+                        {Number(
+                          calculateItemTotal(item).vatAmount || 0
+                        ).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </>
+                    ) : (
+                      "N/A"
+                    )}
+                  </td>
+                )}
+                
+
+                {(requestType !== "pettyCash" && !isAnyItemInStock) && (
                   <>
                     <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
                       {item.purchaseRequisitionNumber || "N/A"}
@@ -330,6 +540,23 @@ const ProcurementMTable = ({
           >
             ◄
           </button>
+          {isIncompleteDelivery && (
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={handleSaveAll}
+                disabled={isSaving || !editedItems.some((it) => it._dirty)}
+                className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
+                  isSaving || !editedItems.some((it) => it._dirty)
+                    ? "bg-gray-300 text-gray-700 cursor-not-allowed"
+                    : "bg-[#036173] text-white hover:bg-[#024f57]"
+                }`}
+              >
+                <MdCheckCircle className="text-lg" />
+                {isSaving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          )}
+
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {

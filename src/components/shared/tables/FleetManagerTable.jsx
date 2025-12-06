@@ -3,21 +3,31 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const FleetManagerTable = ({ 
-  items = [], 
+const FleetManagerTable = ({
+  items = [],
   onEditItem,
-  isReadOnly = false ,
-  vendors =[],
-   requestType = "",
-  
+  isReadOnly = false,
+  vendors = [],
+  requestType = "",
+  tag = "",
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
- 
 
+  // ✅ ADD shipping/clearing fee logic
+  const tagLower = String(tag || "").toLowerCase();
+  const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
+  const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
+  const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
 
-   const vendorsById = React.useMemo(() => {
+  const getFeeValue = (item) => {
+    if (!item) return 0;
+    const v = item[feeFieldName];
+    return typeof v === "number" ? v : Number(v || 0);
+  };
+
+  const vendorsById = React.useMemo(() => {
     const map = new Map();
     (vendors || []).forEach((v) => {
       const id = v.vendorId || v._id || v.id;
@@ -35,47 +45,47 @@ const FleetManagerTable = ({
     return vendorField;
   };
   React.useEffect(() => {
-  const checkScroll = () => {
-    const container = document.getElementById("fleet-table-container");
-    if (!container) {
-      console.log("fleet-table: container not found");
-      setNeedsScroll(false);
-      return;
-    }
-    const scrollW = container.scrollWidth;
-    const clientW = container.clientWidth;
-    console.log("fleet-table: scrollWidth", scrollW, "clientWidth", clientW);
-    // small tolerance to avoid off-by-one layout reports
-    setNeedsScroll(scrollW > clientW + 1);
-  };
+    const checkScroll = () => {
+      const container = document.getElementById("fleet-table-container");
+      if (!container) {
+        console.log("fleet-table: container not found");
+        setNeedsScroll(false);
+        return;
+      }
+      const scrollW = container.scrollWidth;
+      const clientW = container.clientWidth;
+      console.log("fleet-table: scrollWidth", scrollW, "clientWidth", clientW);
+      // small tolerance to avoid off-by-one layout reports
+      setNeedsScroll(scrollW > clientW + 1);
+    };
 
-  // run after paint/layout
-  const runCheck = () => {
-    requestAnimationFrame(checkScroll);
-    // also schedule a small timeout in case fonts/images changed layout
-    setTimeout(checkScroll, 50);
-  };
+    // run after paint/layout
+    const runCheck = () => {
+      requestAnimationFrame(checkScroll);
+      // also schedule a small timeout in case fonts/images changed layout
+      setTimeout(checkScroll, 50);
+    };
 
-  runCheck();
-  window.addEventListener("resize", runCheck);
+    runCheck();
+    window.addEventListener("resize", runCheck);
 
-  return () => window.removeEventListener("resize", runCheck);
-}, [editedItems]);
+    return () => window.removeEventListener("resize", runCheck);
+  }, [editedItems]);
 
-// Check if table needs horizontal scrolling
-React.useEffect(() => {
-  const checkScroll = () => {
-    const container = document.getElementById('fleet-table-container');
-    if (container) {
-      setNeedsScroll(container.scrollWidth > container.clientWidth);
-    }
-  };
+  // Check if table needs horizontal scrolling
+  React.useEffect(() => {
+    const checkScroll = () => {
+      const container = document.getElementById("fleet-table-container");
+      if (container) {
+        setNeedsScroll(container.scrollWidth > container.clientWidth);
+      }
+    };
 
-  checkScroll();
-  window.addEventListener('resize', checkScroll);
-  
-  return () => window.removeEventListener('resize', checkScroll);
-}, [editedItems]);
+    checkScroll();
+    window.addEventListener("resize", checkScroll);
+
+    return () => window.removeEventListener("resize", checkScroll);
+  }, [editedItems]);
 
   // Update editedItems when items prop changes
   React.useEffect(() => {
@@ -88,7 +98,7 @@ React.useEffect(() => {
 
   const handleSaveClick = async (index) => {
     const item = editedItems[index];
-    
+
     if (!item.quantity || item.quantity < 1) {
       alert("Quantity must be at least 1");
       return;
@@ -120,9 +130,10 @@ React.useEffect(() => {
     const quantity = parseFloat(item.quantity) || 0;
     const unitPrice = parseFloat(item.unitPrice) || 0;
     const discount = parseInt(item.discount) || 0;
-    
+
     const baseTotal = quantity * unitPrice;
-    const discountFactor = discount >= 1 && discount <= 100 ? (100 - discount) / 100 : 1;
+    const discountFactor =
+      discount >= 1 && discount <= 100 ? (100 - discount) / 100 : 1;
     return (baseTotal * discountFactor).toFixed(2);
   };
 
@@ -134,161 +145,214 @@ React.useEffect(() => {
     );
   }
 
-return (
-  <div className="relative">
-    {/* ✅ Scrollable table container */}
-    <div className="overflow-x-auto" id="fleet-table-container">
-      <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
-        <thead>
-          <tr className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
-            <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
-              SN
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[200px]">
-              Description
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-              Item Type
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-              Maker
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-              Maker's Part No
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-              Vendor
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
-              Quantity
-            </th>
-            <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-              Unit Price
-            </th>
-             
-            <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-              Total Price
-            </th>
-              {requestType !== "pettyCash" && (
-            <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-             PRN
-            </th>
+  return (
+    <div className="relative">
+      {/* ✅ Scrollable table container */}
+      <div className="overflow-x-auto" id="fleet-table-container">
+        <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
+          <thead>
+            <tr className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
+              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
+                SN
+              </th>
+              <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[200px]">
+                Description
+              </th>
+              <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
+                Item Type
+              </th>
+              <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                Maker
+              </th>
+              <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
+                Maker's Part No
+              </th>
+              <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
+                Vendor
+              </th>
+              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                Quantity
+              </th>
+              {showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Shipping Qty
+                </th>
               )}
-          </tr>
-        </thead>
-        <tbody>
-          {editedItems.map((item, index) => (
-            <tr 
-              key={item.itemId || index} 
-              className="hover:bg-emerald-50 transition-colors duration-150"
-            >
-              {/* Serial Number */}
-              <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
-                {index + 1}
-              </td>
 
-              {/* Description */}
-              <td className="border border-slate-200 px-4 py-3 text-sm text-slate-900">
-                {item.name || "N/A"}
-              </td>
+              {/* ✅ Shipping/Clearing Fee - only when tag is shipping/clearing */}
+              {showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
+                  {feeLabel}
+                </th>
+              )}
 
-              {/* Item Type */}
-              <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                {item.itemType || item.makersType || "N/A"}
-              </td>
+              {/* ✅ Unit Price - HIDE when showing fee columns */}
+              {!showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Unit Price
+                </th>
+              )}
 
-              {/* Maker */}
-              <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                {item.maker || "N/A"}
-              </td>
+              {/* ✅ Total Price - HIDE when showing fee columns */}
+              {!showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Total Price
+                </th>
+              )}
 
-              {/* Maker's Part No */}
-              <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                {item.makersPartNo || "N/A"}
-              </td>
-
-              {/* ✅ Vendor Column */}
-               <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                      {resolveVendorName(item.vendor)}
-                    </td>
-              {/* Quantity - Editable */}
-              <td className="border border-slate-200 px-4 py-3 text-center">
-                {editingIndex === index ? (
-                  <input
-                    type="number"
-                    min="1"
-                    value={item.quantity || ""}
-                    onChange={(e) => handleQuantityChange(index, e.target.value)}
-                    className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  />
-                ) : (
-                  <span className="font-semibold text-slate-900">{item.quantity}</span>
-                )}
-              </td>
-
-              {/* Unit Price - Read Only */}
-              <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                {item.unitPrice ? (
-                  <>
-                    {item.currency || "NGN"} {parseFloat(item.unitPrice).toFixed(2)}
-                  </>
-                ) : (
-                  "N/A"
-                )}
-              </td>
-
-              {/* Total Price - Calculated */}
-              <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                 <span className="font-semibold">
-                        {item.currency || "NGN"}{" "}
-                        {Number(
-                          item.totalPrice || item.total || 0
-                        ).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-              </td>
-                {requestType !== "pettyCash" && (
-              <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                {item.purchaseRequisitionNumber || "N/A"}
-              </td>
-                )}
+              {requestType !== "pettyCash" && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  PRN
+                </th>
+              )}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {editedItems.map((item, index) => (
+              <tr
+                key={item.itemId || index}
+                className="hover:bg-emerald-50 transition-colors duration-150"
+              >
+                {/* Serial Number */}
+                <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
+                  {index + 1}
+                </td>
 
-    {/* ✅ Fixed scroll arrows - only show when needed */}
-    {needsScroll && (
-      <div className="flex justify-between mt-4">
-        <button
-          className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
-          onClick={() => {
-            const container = document.getElementById('fleet-table-container');
-            if (container) {
-              container.scrollLeft -= 100;
-            }
-          }}
-        >
-          ◄
-        </button>
-        <button
-          className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
-          onClick={() => {
-            const container = document.getElementById('fleet-table-container');
-            if (container) {
-              container.scrollLeft += 100;
-            }
-          }}
-        >
-          ►
-        </button>
+                {/* Description */}
+                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-900">
+                  {item.name || "N/A"}
+                </td>
+
+                {/* Item Type */}
+                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                  {item.itemType || item.makersType || "N/A"}
+                </td>
+
+                {/* Maker */}
+                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                  {item.maker || "N/A"}
+                </td>
+
+                {/* Maker's Part No */}
+                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                  {item.makersPartNo || "N/A"}
+                </td>
+
+                {/* ✅ Vendor Column */}
+                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                  {resolveVendorName(item.vendor)}
+                </td>
+                {/* Quantity - Editable */}
+                <td className="border border-slate-200 px-4 py-3 text-center">
+                  {editingIndex === index ? (
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity || ""}
+                      onChange={(e) =>
+                        handleQuantityChange(index, e.target.value)
+                      }
+                      className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+                  ) : (
+                    <span className="font-semibold text-slate-900">
+                      {item.quantity}
+                    </span>
+                  )}
+                </td>
+
+                {/* ✅ Shipping Qty - only when tag is shipping/clearing */}
+                {showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">
+                      {item.shippingQuantity ?? 0}
+                    </span>
+                  </td>
+                )}
+
+                {/* ✅ Shipping/Clearing Fee - only when tag is shipping/clearing */}
+                {showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                    {item.currency || "NGN"}{" "}
+                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                )}
+
+                {/* ✅ Unit Price - HIDE when showing fee columns */}
+                {!showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                    {item.unitPrice ? (
+                      <>
+                        {item.currency || "NGN"}{" "}
+                        {parseFloat(item.unitPrice).toFixed(2)}
+                      </>
+                    ) : (
+                      "N/A"
+                    )}
+                  </td>
+                )}
+
+                {/* ✅ Total Price - HIDE when showing fee columns */}
+                {!showFeeColumns && (
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
+                    <span className="font-semibold">
+                      {item.currency || "NGN"}{" "}
+                      {Number(
+                        item.totalPrice || item.total || 0
+                      ).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </td>
+                )}
+                {requestType !== "pettyCash" && (
+                  <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
+                    {item.purchaseRequisitionNumber || "N/A"}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-    )}
-  </div>
-);
+
+      {/* ✅ Fixed scroll arrows - only show when needed */}
+      {needsScroll && (
+        <div className="flex justify-between mt-4">
+          <button
+            className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
+            onClick={() => {
+              const container = document.getElementById(
+                "fleet-table-container"
+              );
+              if (container) {
+                container.scrollLeft -= 100;
+              }
+            }}
+          >
+            ◄
+          </button>
+          <button
+            className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
+            onClick={() => {
+              const container = document.getElementById(
+                "fleet-table-container"
+              );
+              if (container) {
+                container.scrollLeft += 100;
+              }
+            }}
+          >
+            ►
+          </button>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default FleetManagerTable;

@@ -75,13 +75,21 @@ const ShippingTable = ({
       label: v.name || v.vendorName || v.name,
     }));
 
-  const handleChange = (itemId, field, value) => {
+   const handleChange = (itemId, field, value) => {
     setEditedRequests((prev) =>
-      prev.map((it) =>
-        (it.itemId || it._id) === itemId
-          ? { ...it, [field]: value, _dirty: true }
-          : it
-      )
+      prev.map((it) => {
+        if ((it.itemId || it._id) !== itemId) return it;
+        
+        // For shippingQuantity, ensure it doesn't exceed quantity
+        if (field === "shippingQuantity") {
+          const maxQty = Number(it.quantity) || 0;
+          const numVal = typeof value === "number" ? value : parseInt(value) || 0;
+          const cappedVal = Math.min(numVal, maxQty);
+          return { ...it, [field]: cappedVal, _dirty: true };
+        }
+        
+        return { ...it, [field]: value, _dirty: true };
+      })
     );
   };
 
@@ -471,17 +479,30 @@ const ShippingTable = ({
                         </span>
                       </td>
                       <td className="border p-3 border-slate-200 text-center">
-                        <input
+                      <input
                           type="number"
                           min="0"
-                          value={it.shippingQuantity || ""}
-                          onChange={(e) =>
-                            handleChange(
-                              itemId,
-                              "shippingQuantity",
-                              e.target.value
-                            )
+                          max={it.quantity || 0}
+                          placeholder="0"
+                          value={
+                            it.shippingQuantity === 0 ||
+                            it.shippingQuantity === undefined ||
+                            it.shippingQuantity === null
+                              ? ""
+                              : it.shippingQuantity
                           }
+                          onChange={(e) => {
+                            const maxQty = Number(it.quantity) || 0;
+                            let val = e.target.value === "" ? "" : parseInt(e.target.value) || 0;
+                            
+                            // Cap shipping quantity to not exceed item quantity
+                            if (val !== "" && val > maxQty) {
+                              val = maxQty;
+                              alert(`Shipping quantity cannot exceed item quantity (${maxQty})`);
+                            }
+                            
+                            handleChange(itemId, "shippingQuantity", val === "" ? 0 : val);
+                          }}
                           className="w-20 border px-2 py-1 rounded"
                         />
                       </td>
@@ -514,22 +535,29 @@ const ShippingTable = ({
                     Shipping Fee - {vendorLabel}
                   </td>
                   <td className="border p-3 border-slate-200 text-center">
-                    <input
+                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      value={shippingFees[vendorKey] ?? ""}
+                      placeholder="0"
+                      value={
+                        shippingFees[vendorKey] === 0 ||
+                        shippingFees[vendorKey] === undefined ||
+                        shippingFees[vendorKey] === null
+                          ? ""
+                          : shippingFees[vendorKey]
+                      }
                       onChange={(e) => {
                         const val =
                           e.target.value === ""
-                            ? 0
+                            ? ""
                             : parseFloat(e.target.value) || 0;
                         const vkey = vendorKey;
                         setShippingFees((prev) => ({ ...prev, [vkey]: val }));
                         setEditedRequests((prev) =>
                           prev.map((it) =>
                             (it.vendorId ?? it.vendor ?? "No Vendor") === vkey
-                              ? { ...it, shippingFee: val, _dirty: true }
+                              ? { ...it, shippingFee: val === "" ? 0 : val, _dirty: true }
                               : it
                           )
                         );

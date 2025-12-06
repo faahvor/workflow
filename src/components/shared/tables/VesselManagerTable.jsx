@@ -12,15 +12,31 @@ const VesselManagerTable = ({
   isReadOnly = false,
   currentState = "",
   requestType = "",
-  vendors = [], // ✅ ADD THIS PROP
+  vendors = [],
+  tag = "", // ✅ ADD THIS PROP
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
+    const isSecondApproval = currentState === "PENDING_VESSEL_MANAGER_APPROVAL_2";
+  const isPettyCash = requestType === "pettyCash";
+   const tagLower = String(tag || "").toLowerCase();
+  const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
+  const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
+  const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
+
+  const getFeeValue = (item) => {
+    if (!item) return 0;
+    const v = item[feeFieldName];
+    return typeof v === "number" ? v : Number(v || 0);
+  };
+
+  // ✅ Hide actions when showing fee columns (first approval with shipping/clearing tag)
+  const hideActionsForFee = showFeeColumns && !isSecondApproval;
+
 
   // ✅ Check if we're in second approval stage
-  const isSecondApproval = currentState === "PENDING_VESSEL_MANAGER_APPROVAL_2";
-  const isPettyCash = requestType === "pettyCash";
+
 
   const vendorsById = React.useMemo(() => {
     const map = new Map();
@@ -216,6 +232,18 @@ const VesselManagerTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
+                {showFeeColumns && !isSecondApproval && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Shipping Qty
+                </th>
+              )}
+
+              {/* ✅ Shipping/Clearing Fee column - only in first approval when tag is shipping/clearing */}
+              {showFeeColumns && !isSecondApproval && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
+                  {feeLabel}
+                </th>
+              )}
 
               {/* ✅ Show pricing columns in second approval */}
               {(isSecondApproval || isPettyCash) && (
@@ -245,14 +273,14 @@ const VesselManagerTable = ({
                   )}
                 </>
               )}
-              {isSecondApproval && (
+              {(isSecondApproval || (showFeeColumns && !isSecondApproval)) && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   PRN
                 </th>
               )}
 
               {/* ✅ Hide Actions column in second approval */}
-              {!isReadOnly && !(isSecondApproval || isPettyCash) && (
+              {!isReadOnly && !isSecondApproval && !isPettyCash && !hideActionsForFee && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Actions
                 </th>
@@ -308,6 +336,26 @@ const VesselManagerTable = ({
                     </span>
                   )}
                 </td>
+
+                  {/* ✅ Shipping Qty - only in first approval when tag is shipping/clearing */}
+                {showFeeColumns && !isSecondApproval && (
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">
+                      {item.shippingQuantity ?? 0}
+                    </span>
+                  </td>
+                )}
+
+                {/* ✅ Shipping/Clearing Fee - only in first approval when tag is shipping/clearing */}
+                {showFeeColumns && !isSecondApproval && (
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                    {item.currency || "NGN"}{" "}
+                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                )}
 
                 {/* ✅ Pricing Columns (only in second approval) */}
                 {(isSecondApproval || isPettyCash) && (
@@ -369,7 +417,7 @@ const VesselManagerTable = ({
                     )}
                   </>
                 )}
-                {isSecondApproval && (
+              {(isSecondApproval || (showFeeColumns && !isSecondApproval)) && (
                   <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                     {item.purchaseRequisitionNumber ||
                       item.purchaseRequisitionNumber ||
@@ -378,7 +426,7 @@ const VesselManagerTable = ({
                 )}
 
                 {/* ✅ Actions (hidden in second approval) */}
-                {!isReadOnly && !isSecondApproval && !isPettyCash && (
+              {!isReadOnly && !isSecondApproval && !isPettyCash && !hideActionsForFee && (
                   <td className="border border-slate-200 px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       {editingIndex === index ? (

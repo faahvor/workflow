@@ -28,7 +28,8 @@ const RequesterDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
 
-  const [activeView, setActiveView] = useState("overview");
+   const [activeView, setActiveView] = useState("overview");
+  const [overviewActiveCard, setOverviewActiveCard] = useState("pending");
   const [myRequests, setMyRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1013,16 +1014,22 @@ const RequesterDashboard = () => {
         <div className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-[1200px] mx-auto">
             {/* Header */}
-            <div className="mb-6 md:mb-8">
+          <div className="mb-6 md:mb-8">
               <h1 className="text-3xl md:text-4xl font-bold text-[#0a0a0a] mb-2">
                 {activeView === "createNew"
                   ? "Create New Request"
                   : activeView === "pending"
                   ? "Pending Requests"
+                  : activeView === "myrequests"
+                  ? "My Requests"
+                  : activeView === "completed"
+                  ? "Completed Requests"
                   : activeView === "overview"
                   ? "Overview"
                   : activeView === "shipping"
                   ? "Shipping Request"
+                  : activeView === "detail"
+                  ? "Request Details"
                   : ""}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
@@ -1030,11 +1037,17 @@ const RequesterDashboard = () => {
                   ? "Fill in the details below to submit your request"
                   : activeView === "pending"
                   ? "View and track your submitted requests"
+                  : activeView === "myrequests"
+                  ? "View all your submitted requests"
+                  : activeView === "completed"
+                  ? "View completed requests"
                   : activeView === "overview"
                   ? "Requester dashboard"
                   : activeView === "shipping"
-                  ? "Shipping  dashboard"
-                  : ``}
+                  ? "Shipping dashboard"
+                  : activeView === "detail"
+                  ? "View request details"
+                  : ""}
               </p>
             </div>
 
@@ -1655,12 +1668,14 @@ const RequesterDashboard = () => {
                 </div>
               </form>
             )}
-            {activeView === "detail" && selectedRequest && (
+           {activeView === "detail" && selectedRequest && (
               <RequestDetailView
                 request={selectedRequest}
                 onBack={() => {
+                  // Go back to the origin view, or default to pending
+                  const origin = selectedRequest?.origin || "pending";
                   setSelectedRequest(null);
-                  setActiveView("pending");
+                  setActiveView(origin);
                 }}
                 isReadOnly={selectedRequestReadOnly}
                 onApprove={handleApprove}
@@ -1703,28 +1718,30 @@ const RequesterDashboard = () => {
                   searchQuery={searchQuery}
                   filterType={filterType}
                   onOpenDetail={(req) =>
-                    handleOpenDetail(req, { readOnly: true })
+                    handleOpenDetail(req, { readOnly: true, origin: "completed" })
                   }
                 />
               </>
             )}
             {activeView === "myrequests" && (
-              <RequesterHistory
+               <RequesterHistory
                 searchQuery={searchQuery}
                 filterType={filterType}
                 onOpenDetail={(req, opts = {}) => {
-                  // ensure history opens detail read-only
-                  handleOpenDetail(req, { ...opts, readOnly: true });
+                  // ensure history opens detail read-only with correct origin
+                  handleOpenDetail(req, { ...opts, readOnly: true, origin: "myrequests" });
                 }}
               />
             )}
 
             {/* My Requests View - Placeholder */}
             {activeView === "pending" && (
-              <RequesterPending
+          <RequesterPending
                 searchQuery={searchQuery}
                 filterType={filterType}
-                onOpenDetail={handleOpenDetail}
+                onOpenDetail={(req, opts = {}) => {
+                  handleOpenDetail(req, { ...opts, origin: "pending" });
+                }}
               />
             )}
 
@@ -1741,12 +1758,32 @@ const RequesterDashboard = () => {
             {/* Overview - Placeholder */}
             {activeView === "overview" && (
               <div>
+                {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                  {/* Pending Requests Card */}
+                  <button
+                    onClick={() => setOverviewActiveCard("pending")}
+                    className={`bg-white/90 backdrop-blur-xl border-2 rounded-2xl p-6 shadow-lg text-left transition-all duration-200 hover:shadow-xl ${
+                      overviewActiveCard === "pending"
+                        ? "border-emerald-500 ring-2 ring-emerald-500/30"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
                     <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg ${
+                          overviewActiveCard === "pending"
+                            ? "bg-emerald-500 shadow-emerald-500/30"
+                            : "bg-orange-500 shadow-orange-500/20"
+                        }`}
+                      >
                         <MdPendingActions className="text-2xl text-white" />
                       </div>
+                      {overviewActiveCard === "pending" && (
+                        <span className="text-xs font-semibold text-emerald-600 bg-emerald-100 px-2 py-1 rounded-lg">
+                          Active
+                        </span>
+                      )}
                     </div>
                     <p className="text-slate-500 text-sm mb-1 font-semibold">
                       Pending Requests
@@ -1754,13 +1791,32 @@ const RequesterDashboard = () => {
                     <p className="text-slate-900 text-3xl font-bold">
                       {totalRequestsCount}
                     </p>
-                  </div>
+                  </button>
 
-                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                  {/* My Requests Card */}
+                  <button
+                    onClick={() => setOverviewActiveCard("myrequests")}
+                    className={`bg-white/90 backdrop-blur-xl border-2 rounded-2xl p-6 shadow-lg text-left transition-all duration-200 hover:shadow-xl ${
+                      overviewActiveCard === "myrequests"
+                        ? "border-emerald-500 ring-2 ring-emerald-500/30"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
                     <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg ${
+                          overviewActiveCard === "myrequests"
+                            ? "bg-emerald-500 shadow-emerald-500/30"
+                            : "bg-emerald-500 shadow-emerald-500/20"
+                        }`}
+                      >
                         <MdDirectionsBoat className="text-2xl text-white" />
                       </div>
+                      {overviewActiveCard === "myrequests" && (
+                        <span className="text-xs font-semibold text-emerald-600 bg-emerald-100 px-2 py-1 rounded-lg">
+                          Active
+                        </span>
+                      )}
                     </div>
                     <p className="text-slate-500 text-sm mb-1 font-semibold">
                       My Requests
@@ -1768,107 +1824,76 @@ const RequesterDashboard = () => {
                     <p className="text-slate-900 text-3xl font-bold">
                       {pendingCount}
                     </p>
-                  </div>
+                  </button>
 
-                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                  {/* Create Request Card - Navigates to createNew */}
+                  <button
+                    onClick={() => setActiveView("createNew")}
+                    className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg text-left transition-all duration-200 hover:shadow-xl hover:border-purple-400 hover:ring-2 hover:ring-purple-400/30 group"
+                  >
                     <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+                      <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:scale-110 transition-transform duration-200">
                         <MdAdd className="text-2xl text-white" />
                       </div>
+                      <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        Click to create
+                      </span>
                     </div>
                     <p className="text-slate-500 text-sm mb-1 font-semibold">
                       Create Request
                     </p>
-                    <p className="text-slate-900 text-3xl font-bold">
-                      {approvedCount}
+                    <p className="text-slate-900 text-lg font-bold">
+                      New Request →
                     </p>
-                  </div>
+                  </button>
                 </div>
 
-                {/* Search / filter bar (simple) */}
-                <div className="bg-white/90 p-4 rounded-2xl border-2 border-slate-200 mb-6">
-                  <div className="flex gap-4 flex-col md:flex-row">
-                    <div className="flex-1 relative">
-                      <input
-                        type="text"
-                        placeholder="Search by request ID, title, or vessel..."
-                        className="w-full h-12 pl-4 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl"
-                        disabled
-                      />
-                    </div>
-                    <div>
-                      <select
-                        value=""
-                        onChange={() => {}}
-                        className="h-12 pl-3 pr-8 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl"
-                        disabled
-                      >
-                        <option value="">All</option>
-                      </select>
-                    </div>
-                  </div>
+                {/* Section Title */}
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {overviewActiveCard === "pending"
+                      ? "Pending Requests"
+                      : "My Requests"}
+                  </h2>
+                  <button
+                    onClick={() =>
+                      setActiveView(
+                        overviewActiveCard === "pending" ? "pending" : "myrequests"
+                      )
+                    }
+                    className="text-sm text-emerald-600 hover:text-emerald-700 font-semibold"
+                  >
+                    View All →
+                  </button>
                 </div>
 
-                {/* Pending list (derived from myRequests) */}
-                <div className="space-y-4">
-                  {myRequests
-                    .filter((r) => String(r.status).toLowerCase() === "pending")
-                    .map((request) => (
-                      <div
-                        key={request.requestId || request.id}
-                        className="bg-white/90 p-4 rounded-2xl border-2 border-slate-200 shadow-sm flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="text-xs text-slate-500 font-mono">
-                            {request.requestId || request.id}
-                          </div>
-                          <div className="text-sm font-semibold text-slate-900">
-                            {request.title || request.name || "No title"}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {request.vesselId || request.vessel || "N/A"} •{" "}
-                            {request.createdAt
-                              ? new Date(request.createdAt).toLocaleDateString()
-                              : ""}
-                          </div>
-                        </div>
+                {/* Dynamic Content based on active card */}
+                 {overviewActiveCard === "pending" && (
+                  <RequesterPending
+                    searchQuery=""
+                    filterType="all"
+                    onOpenDetail={(req, opts = {}) => {
+                      handleOpenDetail(req, { ...opts, origin: "pending" });
+                    }}
+                  />
+                )}
 
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => {
-                              // open details using existing handler if present
-                              if (typeof handleOpenDetail === "function") {
-                                handleOpenDetail(request);
-                              } else {
-                                setActiveView("pending");
-                              }
-                            }}
-                            className="px-4 py-2 bg-emerald-500 text-white rounded-lg"
-                          >
-                            View
-                          </button>
-                          <span className="text-xs text-orange-500 font-semibold">
-                            Pending
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-
-                  {myRequests.filter(
-                    (r) => String(r.status).toLowerCase() === "pending"
-                  ).length === 0 && (
-                    <div className="bg-white/90 p-12 rounded-2xl border-2 border-slate-200 text-center shadow-lg">
-                      <p className="text-slate-700 text-lg font-semibold">
-                        No pending requests
-                      </p>
-                      <p className="text-slate-500 text-sm mt-2">
-                        Create a request or check your My Requests list
-                      </p>
-                    </div>
-                  )}
-                </div>
+                {overviewActiveCard === "myrequests" && (
+                  <RequesterHistory
+                    searchQuery=""
+                    filterType="all"
+                    onOpenDetail={(req, opts = {}) => {
+                      handleOpenDetail(req, {
+                        ...opts,
+                        readOnly: true,
+                        origin: "myrequests",
+                      });
+                    }}
+                  />
+                )}
               </div>
             )}
+
           </div>
         </div>
       </div>

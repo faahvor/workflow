@@ -38,6 +38,8 @@ import AccountLeadTable from "../../shared/tables/AccountLeadtable";
 import CFOTable from "../../shared/tables/CFOTable";
 import ClearingTable from "../../shared/tables/ClearingTable";
 import TechnicalManagerTable from "../../shared/tables/TechnicalManagerTable";
+import MovedTable from "../../shared/tables/MovedTable";
+import SnapShotTable from "../../shared/tables/SnapShotTable";
 
 const RequestDetailView = ({
   request,
@@ -72,6 +74,7 @@ const RequestDetailView = ({
   const [attachDropdownLoading, setAttachDropdownLoading] = useState(false);
   const [attachFocusedIndex, setAttachFocusedIndex] = useState(-1);
   const attachInputRef = useRef(null);
+  const [showSnapshot, setShowSnapshot] = useState(false);
 
   const [accAttachSearchTerm, setAccAttachSearchTerm] = useState("");
   const [accAttachDropdownResults, setAccAttachDropdownResults] = useState([]);
@@ -89,6 +92,8 @@ const RequestDetailView = ({
   const fileInputRef = useRef(null);
   const [quotationFiles, setQuotationFiles] = useState([]); // [{ id, file, previewUrl, progress, uploaded }]
   const [isUploading, setIsUploading] = useState(false);
+    const [uploadType, setUploadType] = useState("quotation"); // "quotation" | "invoice"
+
   const userRole = user?.role?.toLowerCase() || "";
   const deliveryOptions = [
     { value: "Delivery Base", label: "Delivery Base" },
@@ -119,10 +124,84 @@ const RequestDetailView = ({
   const [queryTargets, setQueryTargets] = useState([]);
   const [queryTargetsLoading, setQueryTargetsLoading] = useState(false);
   const [selectedQueryTarget, setSelectedQueryTarget] = useState(null);
+  const [paymentType, setPaymentType] = useState(null);
+  const [isSavingPaymentType, setIsSavingPaymentType] = useState(false);
+  const [freightRoute, setFreightRoute] = useState(null);
+  const [isSavingFreightRoute, setIsSavingFreightRoute] = useState(false);
   const nextApprovalOptions = [
     { value: "Fleet Manager", label: "Fleet Manager" },
     { value: "Technical Manager", label: "Technical Manager" },
   ];
+  const paymentTypeOptions = [
+    { value: "Advanced Payment", label: "Advanced Payment" },
+    { value: "15 days", label: "15 days" },
+    { value: "30 days", label: "30 days" },
+    { value: "60 days", label: "60 days" },
+  ];
+  const flowRouteOptions = [
+    { value: "Marine", label: "Marine" },
+    { value: "IT", label: "IT" },
+    { value: "Account", label: "Account" },
+    { value: "Protocol", label: "Protocol" },
+    { value: "Compliance/QHSE", label: "Compliance/QHSE" },
+    { value: "Operations", label: "Operations" },
+    { value: "Project", label: "Project" },
+    { value: "Purchase", label: "Purchase" },
+    { value: "Store", label: "Store" },
+    { value: "HR", label: "HR" },
+    { value: "Admin", label: "Admin" },
+  ];
+
+  const handlePaymentTypeChange = async (option) => {
+    setPaymentType(option);
+    if (!option) return;
+
+    try {
+      setIsSavingPaymentType(true);
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+
+      await axios.patch(
+        `${API_BASE_URL}/requests/${encodeURIComponent(request.requestId)}`,
+        { paymentType: option.value },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const updated = await fetchRequestDetails();
+      setSelectedRequest(updated);
+    } catch (err) {
+      console.error("Error saving payment type:", err);
+      alert(err?.response?.data?.message || "Failed to save payment type");
+      setPaymentType(null);
+    } finally {
+      setIsSavingPaymentType(false);
+    }
+  };
+  const handleFreightRouteChange = async (option) => {
+    setFreightRoute(option);
+    if (!option) return;
+
+    try {
+      setIsSavingFreightRoute(true);
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+
+      await axios.patch(
+        `${API_BASE_URL}/requests/${encodeURIComponent(request.requestId)}`,
+        { freightRoute: option.value },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const updated = await fetchRequestDetails();
+      setSelectedRequest(updated);
+    } catch (err) {
+      console.error("Error saving freight route:", err);
+      alert(err?.response?.data?.message || "Failed to save flow route");
+      setFreightRoute(null);
+    } finally {
+      setIsSavingFreightRoute(false);
+    }
+  };
 
   useEffect(() => {
     if (!approveDropdownOpen) return;
@@ -141,6 +220,23 @@ const RequestDetailView = ({
       (request && request.nextApproverAfterVesselManager2) ||
       null;
     setNextApprovalRole(saved ? { value: saved, label: saved } : null);
+  }, [selectedRequest, request]);
+
+  useEffect(() => {
+    const saved =
+      (selectedRequest && selectedRequest.freightRoute) ||
+      (request && request.freightRoute) ||
+      null;
+
+    if (saved) {
+      // Find matching option from flowRouteOptions, or create one
+      const matchedOption = flowRouteOptions.find(
+        (opt) => opt.value.toLowerCase() === saved.toLowerCase()
+      );
+      setFreightRoute(matchedOption || { value: saved, label: saved });
+    } else {
+      setFreightRoute(null);
+    }
   }, [selectedRequest, request]);
 
   const COMMENTS_PER_PAGE = 3;
@@ -201,6 +297,32 @@ const RequestDetailView = ({
         new Date().toISOString(),
       raw: item,
     };
+  };
+  const getCommentAuthorId = (c) => {
+    const raw = c && c.raw ? c.raw : c || {};
+    // common locations
+    const candidate =
+      raw.userId ??
+      raw.user_id ??
+      raw.authorId ??
+      raw.author_id ??
+      raw.author ??
+      raw.user;
+    if (!candidate) return null;
+    if (typeof candidate === "object") {
+      return candidate._id || candidate.id || candidate.userId || null;
+    }
+    return candidate;
+  };
+
+  // ADDED: check if comments array contains a comment authored by the given user id
+  const hasCommentByUser = (userIdToCheck) => {
+    if (!userIdToCheck) return false;
+    const uidStr = String(userIdToCheck).trim();
+    return (comments || []).some((c) => {
+      const aid = getCommentAuthorId(c);
+      return aid && String(aid).trim() === uidStr;
+    });
   };
 
   const fetchComments = async () => {
@@ -351,8 +473,8 @@ const RequestDetailView = ({
   const allowedQueryRoles = [
     "vessel manager",
     "managing director",
-    "CFO",
-    "Accounting Lead",
+    "cfo",
+    "accounting lead",
   ];
   const isVesselManagerBlockedForActions =
     userRole === "vessel manager" &&
@@ -517,7 +639,7 @@ const RequestDetailView = ({
       setQueryTargetsLoading(false);
     }
   };
-  // ...existing code...;
+  ;
 
   const submitQuery = async () => {
     const trimmed = (queryComment || "").trim();
@@ -596,24 +718,46 @@ const RequestDetailView = ({
     setNextDeliveryTarget(initial);
   }, [selectedRequest, request]);
 
-  useEffect(() => {
+ useEffect(() => {
     // sync deliveryTarget from request data when details load
-    const loc =
-      (selectedRequest && selectedRequest.deliveryLocation) ||
-      (request && request.deliveryLocation) ||
-      null;
+    // For freight requesters, use freightDeliveryLocation; otherwise use deliveryLocation
+    const isFreightRequester =
+      userRole === "requester" &&
+      (request?.department || "").toString().toLowerCase() === "freight";
+
+    const loc = isFreightRequester
+      ? (selectedRequest && selectedRequest.freightDeliveryLocation) ||
+        (request && request.freightDeliveryLocation) ||
+        null
+      : (selectedRequest && selectedRequest.deliveryLocation) ||
+        (request && request.deliveryLocation) ||
+        null;
+
     const found = deliveryOptions.find((o) => o.value === loc) || null;
     setDeliveryTarget(found);
-  }, [selectedRequest, request]);
+  }, [selectedRequest, request, userRole]);
 
   const handleDeliveryChange = async (option) => {
     // update UI immediately
     setDeliveryTarget(option);
 
-    const prev =
-      (selectedRequest && selectedRequest.deliveryLocation) ||
-      (request && request.deliveryLocation) ||
-      null;
+    // Determine if this is a freight requester
+    const isFreightRequester =
+      userRole === "requester" &&
+      (request?.department || "").toString().toLowerCase() === "freight";
+
+    // Use the correct field based on role/department
+    const fieldName = isFreightRequester
+      ? "freightDeliveryLocation"
+      : "deliveryLocation";
+
+    const prev = isFreightRequester
+      ? (selectedRequest && selectedRequest.freightDeliveryLocation) ||
+        (request && request.freightDeliveryLocation) ||
+        null
+      : (selectedRequest && selectedRequest.deliveryLocation) ||
+        (request && request.deliveryLocation) ||
+        null;
 
     // determine payload value (null if cleared)
     const payloadValue = option ? option.value : null;
@@ -625,18 +769,18 @@ const RequestDetailView = ({
 
       await axios.patch(
         `${API_BASE_URL}/requests/${request.requestId}`,
-        { deliveryLocation: payloadValue },
+        { [fieldName]: payloadValue },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       // update local request copy
       setSelectedRequest((prevReq) => ({
         ...(prevReq || {}),
-        deliveryLocation: payloadValue,
+        [fieldName]: payloadValue,
       }));
     } catch (err) {
-      console.error("Error saving delivery location:", err);
-      alert(err?.response?.data?.message || "Failed to save delivery location");
+      console.error(`Error saving ${fieldName}:`, err);
+      alert(err?.response?.data?.message || `Failed to save ${fieldName}`);
       // revert selection on error
       const prevOption = deliveryOptions.find((o) => o.value === prev) || null;
       setDeliveryTarget(prevOption);
@@ -1053,6 +1197,82 @@ const RequestDetailView = ({
       setIsUploading(false);
     }
   };
+  const uploadInvoiceEntry = async (entry) => {
+    if (!entry) return;
+    const id = entry.id;
+    try {
+      setIsUploading(true);
+
+      // ensure entry exists in state so progress UI updates
+      setQuotationFiles((prev) => {
+        if (prev.find((p) => p.id === id)) return prev;
+        return [...prev, entry];
+      });
+
+      setQuotationFiles((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, progress: 0, uploaded: false } : p
+        )
+      );
+
+      const token = getToken();
+      const formData = new FormData();
+      formData.append("files", entry.file);
+
+      const resp = await axios.post(
+        `${API_BASE_URL}/requests/${request.requestId}/invoice-files`,
+        formData,
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : undefined,
+            "Content-Type": "multipart/form-data",
+          },
+          onUploadProgress: (progressEvent) => {
+            const percent = Math.round(
+              (progressEvent.loaded * 100) / (progressEvent.total || 1)
+            );
+            setQuotationFiles((prev) =>
+              prev.map((p) => (p.id === id ? { ...p, progress: percent } : p))
+            );
+          },
+        }
+      );
+
+      // mark uploaded
+      setQuotationFiles((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, progress: 100, uploaded: true } : p
+        )
+      );
+        // mark uploaded
+      setQuotationFiles((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, progress: 100, uploaded: true } : p
+        )
+      );
+
+      // refresh request details so AttachedDocuments sees the new file
+      if (typeof fetchRequestDetails === "function")
+        await fetchRequestDetails();
+      if (typeof handleFilesChanged === "function") handleFilesChanged();
+
+      // remove the temporary entry after successful upload (keeps UI clean)
+      setQuotationFiles((prev) => {
+        const toRemove = prev.find((p) => p.id === id);
+        if (toRemove?.previewUrl) URL.revokeObjectURL(toRemove.previewUrl);
+        return prev.filter((p) => p.id !== id);
+      });
+    } catch (err) {
+      console.error("Error uploading invoice (immediate):", err);
+      alert(err?.response?.data?.message || "Upload failed");
+      // keep entry in list for retry and mark uploaded=false
+      setQuotationFiles((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, uploaded: false } : p))
+      );
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const fetchVessels = async () => {
     try {
@@ -1403,7 +1623,37 @@ const RequestDetailView = ({
     );
   const hideAssignForProcurement =
     reqTypeLower === "pettycash" && allItemsPettyCash;
+  // ADDED: derived flags for conditional rendering & validation
+  const isPurchaseOrder = reqTypeLower === "purchaseorder";
+  const isPettyCash = reqTypeLower === "pettycash";
+  const destinationLower = (currentRequest?.destination || "")
+    .toString()
+    .toLowerCase();
+  const isMarineDestination = destinationLower.includes("marine");
 
+  const _items = Array.isArray(currentRequest?.items)
+    ? currentRequest.items
+    : [];
+  const poSingleItemPettyCash =
+    isPurchaseOrder &&
+    _items.length === 1 &&
+    (_items[0]?.itemType || "").toString().toLowerCase() === "pettycash";
+  const poAllItemsPettyCash =
+    isPurchaseOrder &&
+    _items.length > 0 &&
+    _items.every(
+      (it) => (it?.itemType || "").toString().toLowerCase() === "pettycash"
+    );
+
+  // ADDED: combined flags used by UI & validation
+  const showDeliveryTarget =
+    isPurchaseOrder && !poSingleItemPettyCash && !poAllItemsPettyCash;
+  const showPaymentType =
+    !isPettyCash &&
+    !(isPurchaseOrder && (poSingleItemPettyCash || poAllItemsPettyCash));
+  const showNextApproval = isPurchaseOrder && isMarineDestination;
+
+  // ...existing code...
   const renderItemsTable = () => {
     const userRole = user?.role?.toLowerCase();
 
@@ -1413,6 +1663,7 @@ const RequestDetailView = ({
       .includes("shipping");
 
     const itemsSource = currentRequest?.items || [];
+    const reqType = (currentRequest?.requestType || "").toString().toLowerCase();
 
     // normalize fields so downstream tables can render consistently
     const items = (itemsSource || []).map((it, idx) => {
@@ -1436,9 +1687,7 @@ const RequestDetailView = ({
         maker: it.maker || it.manufacturer || "",
         makersPartNo:
           it.makersPartNo || it.makerPartNumber || it.partNumber || "",
-        // vendor is now a simple name string for downstream tables
         vendor: vendorName,
-        // preserve vendorId separately so saves/patches can send it
         vendorId:
           vendorObj?.vendorId ??
           it.vendorId ??
@@ -1468,7 +1717,6 @@ const RequestDetailView = ({
         purchaseOrderNumber:
           it.purchaseOrderNumber ?? it.PON ?? it.pon ?? it.purchaseOrder ?? "",
         discount: it.discount ?? it.discountPercent ?? "",
-
         currency: it.currency || "NGN",
         paymentStatus: it.paymentStatus || it.payment_status || "notpaid",
         percentagePaid: it.percentagePaid ?? it.percentage_paid ?? 0,
@@ -1496,6 +1744,8 @@ const RequestDetailView = ({
         storeLocation: it.storeLocation ?? it.inStockLocation ?? "",
         vatAmount: it.vatAmount ?? 0,
         vatted: it.vatted ?? false,
+        movedFromRequestId:
+          it.movedFromRequestId || it.__raw?.movedFromRequestId || "",
         __raw: it,
       };
     });
@@ -1503,11 +1753,26 @@ const RequestDetailView = ({
     // When viewing approved/completed set tables to read-only (also consider actionLoading)
     const tableReadOnly = isReadOnly || actionLoading;
 
+    // ✅ FIX: Only return CompletedTable when isReadOnly is true
     if (isReadOnly) {
-      return <CompletedTable items={items} userRole={userRole} />;
+      if (reqType === "purchaseorder" || reqType === "pettycash") {
+        return (
+          <CompletedTable
+            items={items}
+            userRole={userRole}
+          />
+        );
+      }
+      // Fallback for any other request type in read-only mode
+      return (
+        <CompletedTable
+          items={items}
+          userRole={userRole}
+        />
+      );
     }
 
-    // Role-based table selection
+    // Role-based table selection (for non-read-only mode)
     switch (userRole) {
       case "vesselmanager":
       case "vessel manager":
@@ -1524,8 +1789,10 @@ const RequestDetailView = ({
             requestType={
               selectedRequest?.requestType || request?.requestType || ""
             }
+            tag={currentRequest?.tag || ""}
           />
         );
+// ...existing code (rest of switch cases)...
 
       case "fleetmanager":
       case "fleet manager":
@@ -1551,6 +1818,7 @@ const RequestDetailView = ({
             requestType={
               selectedRequest?.requestType || request?.requestType || ""
             }
+            tag={currentRequest?.tag || ""}
           />
         );
 
@@ -1575,6 +1843,9 @@ const RequestDetailView = ({
             isReadOnly={tableReadOnly}
             vendors={vendors}
             tag={currentRequest?.tag}
+            isIncompleteDelivery={currentRequest?.isIncompleteDelivery || false}
+            requestId={request.requestId}
+            onRefreshRequest={fetchRequestDetails}
           />
         );
       case "storebase":
@@ -1691,6 +1962,8 @@ const RequestDetailView = ({
             requestId={request.requestId}
             onDeliveryQuantityChange={handleDeliveryQuantityChange}
             onDeliveryStatusChange={handleDeliveryStatusChange}
+                        tag={currentRequest?.tag || ""}
+
           />
         );
       case "requester":
@@ -1726,6 +1999,7 @@ const RequestDetailView = ({
               vendors={vendors}
               selectedRequest={currentRequest}
               onEditItem={handleEditItem}
+              onRefreshRequest={fetchRequestDetails}
             />
           );
         }
@@ -1733,8 +2007,6 @@ const RequestDetailView = ({
           <RequesterTable
             items={items}
             userRole={userRole}
-            isReadOnly={tableReadOnly}
-            onDeliveryQuantityChange={handleDeliveryQuantityChange}
             requestId={request.requestId}
             requestType={selectedRequest?.requestType || request?.requestType}
             onEditItem={handleEditItem}
@@ -1927,52 +2199,170 @@ const RequestDetailView = ({
     }
     return true;
   };
+
   const handleApproveClick = () => {
-    if ((userRole || "").toString().toLowerCase() === "procurement officer") {
-      if (!nextApprovalRole || !nextApprovalRole.value) {
-        alert("Please select 'Next Approval' before approving this request.");
+    const req = selectedRequest || request;
+    const reqType = (req?.requestType || "").toString().toLowerCase();
+    const dest = (req?.destination || "").toString().toLowerCase();
+    const isProcurementOfficer =
+      (userRole || "").toString().toLowerCase() === "procurement officer";
+    const reqItems = Array.isArray(req?.items) ? req.items : [];
+    const reqSinglePetty =
+      reqType === "purchaseorder" &&
+      reqItems.length === 1 &&
+      (reqItems[0]?.itemType || "").toString().toLowerCase() === "pettycash";
+    const reqAllPetty =
+      reqType === "purchaseorder" &&
+      reqItems.length > 0 &&
+      reqItems.every(
+        (it) => (it?.itemType || "").toString().toLowerCase() === "pettycash"
+      );
+
+    if (isProcurementOfficer) {
+      // Delivery Target required only for purchaseOrder and not the special petty-in-PO cases
+      if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
+        if (!deliveryTarget || !deliveryTarget.value) {
+          alert(
+            "Please select 'Delivery Target' before approving this request."
+          );
+          return;
+        }
+      }
+
+      // Payment Type must be selected for purchaseOrder (visible for all non-pettyCash)
+      if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
+        if (!paymentType || !paymentType.value) {
+          alert("Please select 'Payment Type' before approving this request.");
+          return;
+        }
+      }
+
+      // Next Approval is required only when destination is marine and request is purchaseOrder
+      if (reqType === "purchaseorder" && dest.includes("marine")) {
+        if (!nextApprovalRole || !nextApprovalRole.value) {
+          alert("Please select 'Next Approval' before approving this request.");
+          return;
+        }
+      }
+    }
+
+    const reqDepartment = (request?.department || "").toString().toLowerCase();
+    if (
+      (userRole || "").toString().toLowerCase() === "requester" &&
+      reqDepartment === "freight"
+    ) {
+      if (!freightRoute || !freightRoute.value) {
+        alert("Please select 'Flow Route' before approving this request.");
         return;
       }
     }
+
     // currentRequest may be the fresh copy or the original prop
-    const req = selectedRequest || request;
-    const reqType = (req?.requestType || "").toString().toLowerCase();
+
     if (reqType === "pettycash" && userRole === "requester") {
       const invoiceFiles = Array.isArray(req?.invoiceFiles)
         ? req.invoiceFiles
         : [];
-      if (!invoiceFiles || invoiceFiles.length === 0) {
-        alert(
-          "Please upload invoice file(s) before approving petty cash requests."
-        );
-        return;
-      }
     }
 
     const items = Array.isArray(req?.items) ? req.items : [];
 
+   
     // check for paid / partpayment statuses (case-insensitive)
-    const hasPaidOrPart = items.some((it) => {
-      const st = (it?.paymentStatus || "").toString().toLowerCase();
-      return st === "paid" || st === "partpayment";
-    });
+    const roleLowerForPayment = (userRole || "").toString().toLowerCase();
+    const isAccountingRoleForPayment =
+      roleLowerForPayment === "accountingofficer" ||
+      roleLowerForPayment === "accounting officer";
 
-    const adviceFiles = Array.isArray(req?.paymentAdviceFiles)
-      ? req.paymentAdviceFiles
-      : [];
+    if (isAccountingRoleForPayment) {
+      // Get current workflow state
+      const currentFlowState = (
+        req?.flow?.currentState ||
+        req?.status ||
+        ""
+      ).toString();
 
-    if (hasPaidOrPart && adviceFiles.length === 0) {
-      alert(" Please upload payment advice files ");
-      // blocked — user should upload files then click Approve again
-      return;
+      // Determine if we should validate payment status based on request type and state
+      const shouldValidatePayment =
+        (reqType === "purchaseorder" &&
+          currentFlowState === "PENDING_ACCOUNTING_OFFICER_APPROVAL") ||
+        (reqType === "pettycash" &&
+          currentFlowState === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2");
+
+      if (shouldValidatePayment) {
+        // Check if any item is still "notpaid"
+        const hasUnpaidItems = items.some((it) => {
+          const st = (it?.paymentStatus || "notpaid").toString().toLowerCase();
+          return st === "notpaid";
+        });
+
+        if (hasUnpaidItems) {
+          alert("Please update payment status for all items before approving");
+          return;
+        }
+      }
+
+      // Existing check: require payment advice files if any item is paid or partpayment
+      const hasPaidOrPart = items.some((it) => {
+        const st = (it?.paymentStatus || "").toString().toLowerCase();
+        return st === "paid" || st === "partpayment";
+      });
+
+      const adviceFiles = Array.isArray(req?.paymentAdviceFiles)
+        ? req.paymentAdviceFiles
+        : [];
+
+      if (hasPaidOrPart && adviceFiles.length === 0) {
+        alert("Please upload payment advice files");
+        // blocked — user should upload files then click Approve again
+        return;
+      }
     }
+
 
     // existing local validations
     if (!canProceedToApprove()) return;
 
+    const itemsList = Array.isArray(req?.items) ? req.items : [];
+    const roleLower = (userRole || "").toString().toLowerCase();
+    const deliveryRoles = [
+      "delivery base",
+      "delivery jetty",
+      "delivery vessel",
+      "deliverybase",
+      "deliveryjetty",
+      "deliveryvessel",
+    ];
+    const isDeliveryRoleNow = deliveryRoles.includes(roleLower);
+
+    // Only check delivery validation for delivery roles, NOT for requesters
+    if (isDeliveryRoleNow) {
+      const incompleteDelivery = (itemsList || []).some((it) => {
+        const delivered =
+          Number(
+            it.deliveredQuantity ??
+              it.deliverybaseDeliveredQuantity ??
+              it.deliveryjettyDeliveredQuantity ??
+              it.deliveryvesselDeliveredQuantity ??
+              0
+          ) || 0;
+        const qty = Number(it.quantity || 0) || 0;
+        return qty > 0 && delivered !== qty;
+      });
+
+      if (incompleteDelivery) {
+        const currentUserId = user?.userId || user?.id || user?._id || null;
+        if (!hasCommentByUser(currentUserId)) {
+          alert("Please state a reason for approving delivery not completed");
+          return; // block approval
+        }
+      }
+    }
+
     // finally call parent approve handler
     onApprove(request.requestId);
   };
+
   const handleDeliveryQuantityChange = async (
     requestIdParam,
     itemId,
@@ -2192,7 +2582,7 @@ const RequestDetailView = ({
     e.target.value = null;
   };
 
-  const processSelectedFiles = (files) => {
+   const processSelectedFiles = (files) => {
     const maxSize = 10 * 1024 * 1024;
     const newEntries = files
       .map((file, idx) => {
@@ -2215,10 +2605,16 @@ const RequestDetailView = ({
     // add to UI so user can see items (failed uploads remain for retry)
     setQuotationFiles((prev) => [...prev, ...newEntries]);
 
-    // start uploads immediately (do not await; uploadEntryImmediate handles state & errors)
+    // start uploads immediately using the correct endpoint based on uploadType
     newEntries.forEach((entry) => {
       // slight delay so state updates before upload begins (optional)
-      setTimeout(() => uploadEntryImmediate(entry), 50);
+      setTimeout(() => {
+        if (uploadType === "invoice") {
+          uploadInvoiceEntry(entry);
+        } else {
+          uploadEntryImmediate(entry);
+        }
+      }, 50);
     });
   };
 
@@ -2230,7 +2626,7 @@ const RequestDetailView = ({
     });
   };
 
-  const handleUploadFile = async (id) => {
+    const handleUploadFile = async (id) => {
     const entry = quotationFiles.find((e) => e.id === id);
     if (!entry) return;
     try {
@@ -2244,38 +2640,40 @@ const RequestDetailView = ({
 
       const token = getToken();
       const formData = new FormData();
-      formData.append("files", entry.file); // API accepts array, sending single file in "files"
+      formData.append("files", entry.file);
 
-      const resp = await axios.post(
-        `${API_BASE_URL}/requests/${request.requestId}/quotations`,
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
-          onUploadProgress: (progressEvent) => {
-            const percent = Math.round(
-              (progressEvent.loaded * 100) / (progressEvent.total || 1)
-            );
-            setQuotationFiles((prev) =>
-              prev.map((p) => (p.id === id ? { ...p, progress: percent } : p))
-            );
-          },
-        }
-      );
+      // Use different endpoint based on uploadType
+      const endpoint =
+        uploadType === "invoice"
+          ? `${API_BASE_URL}/requests/${request.requestId}/invoice-files`
+          : `${API_BASE_URL}/requests/${request.requestId}/quotations`;
+
+      const resp = await axios.post(endpoint, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+        onUploadProgress: (progressEvent) => {
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / (progressEvent.total || 1)
+          );
+          setQuotationFiles((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, progress: percent } : p))
+          );
+        },
+      });
 
       setQuotationFiles((prev) =>
         prev.map((p) =>
           p.id === id ? { ...p, progress: 100, uploaded: true } : p
         )
       );
-      // refresh request details to pick up persisted quotation URLs
+      // refresh request details to pick up persisted file URLs
       if (typeof fetchRequestDetails === "function")
         await fetchRequestDetails();
       alert(resp.data?.message || "File uploaded.");
     } catch (err) {
-      console.error("Error uploading quotation:", err);
+      console.error(`Error uploading ${uploadType}:`, err);
       alert(err.response?.data?.message || "Upload failed");
       setQuotationFiles((prev) =>
         prev.map((p) => (p.id === id ? { ...p, uploaded: false } : p))
@@ -2405,10 +2803,10 @@ const RequestDetailView = ({
           </div>
           <div className="px-4 py-3 border-b border-r border-slate-200">
             <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Asset ID
+             Reference
             </p>
             <p className="text-sm text-slate-900 font-semibold">
-              {request.assetId || "N/A"}
+              {request.reference || "N/A"}
             </p>
           </div>
 
@@ -2420,7 +2818,15 @@ const RequestDetailView = ({
               {request.logisticsType || "N/A"}
             </p>
           </div>
-          <div className="px-4 py-3 border-b border-r border-slate-200"></div>
+
+          <div className="px-4 py-3 border-b border-r border-slate-200">
+            <p className="text-xs text-slate-500 font-medium mb-0.5">
+              <i className="ri-secure-payment-fill"></i> Payment Type{" "}
+            </p>
+            <p className="text-sm text-slate-900 font-semibold capitalize">
+              {request.paymentType || "N/A"}
+            </p>
+          </div>
           <div className="px-4 py-3 border-b border-r border-slate-200">
             <p className="text-xs text-slate-500 font-medium mb-0.5">
               Job Number/Offshore Number
@@ -3054,7 +3460,7 @@ const RequestDetailView = ({
         </div>
       )}
 
-      {/* Quotation Upload - inserted ABOVE Requested Items (UPDATED for multiple files) */}
+          {/* Quotation/Invoice Upload - Procurement Officer gets toggle, Requester (shipping/clearing) gets quotation only */}
       {(canUploadQuotation ||
         ((String(currentRequest?.tag || "")
           .toLowerCase()
@@ -3067,10 +3473,65 @@ const RequestDetailView = ({
           <div className="mb-8">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
               <MdAttachFile className="text-xl" />
-              Upload Quotation
+              {/* Show toggle title only for Procurement Officer (non-shipping/clearing) */}
+              {canUploadQuotation &&
+              !String(currentRequest?.tag || "")
+                .toLowerCase()
+                .includes("shipping") &&
+              !String(currentRequest?.tag || "")
+                .toLowerCase()
+                .includes("clearing")
+                ? "Upload Quotation/Invoice"
+                : "Upload Quotation"}
             </h3>
 
             <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+              {/* Radio toggle - Only show for Procurement Officer when NOT shipping/clearing tag */}
+              {canUploadQuotation &&
+                !String(currentRequest?.tag || "")
+                  .toLowerCase()
+                  .includes("shipping") &&
+                !String(currentRequest?.tag || "")
+                  .toLowerCase()
+                  .includes("clearing") && (
+                  <div className="mb-4 flex items-center gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="uploadType"
+                        value="quotation"
+                        checked={uploadType === "quotation"}
+                        onChange={(e) => {
+                          setUploadType(e.target.value);
+                          // Clear pending files when switching type
+                          setQuotationFiles([]);
+                        }}
+                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700">
+                        Quotation
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="uploadType"
+                        value="invoice"
+                        checked={uploadType === "invoice"}
+                        onChange={(e) => {
+                          setUploadType(e.target.value);
+                          // Clear pending files when switching type
+                          setQuotationFiles([]);
+                        }}
+                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700">
+                        Invoice
+                      </span>
+                    </label>
+                  </div>
+                )}
+
               <div
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
@@ -3087,7 +3548,14 @@ const RequestDetailView = ({
                     <p className="text-sm font-semibold text-slate-900">
                       {quotationFiles.length > 0
                         ? `${quotationFiles.length} file(s) selected`
-                        : "Drag & drop quotation(s) here, or click to browse"}
+                        : `Drag & drop ${
+                            uploadType === "invoice" ? "invoice(s)" : "quotation(s)"
+                          } here, or click to browse`}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {uploadType === "invoice"
+                        ? "PDF invoices (max 10MB each)"
+                        : "PDF or images (max 10MB each)"}
                     </p>
                   </div>
                 </div>
@@ -3122,7 +3590,7 @@ const RequestDetailView = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,image/*"
+                  accept={uploadType === "invoice" ? ".pdf" : ".pdf,image/*"}
                   onChange={handleInputChange}
                   multiple
                   className="hidden"
@@ -3157,7 +3625,8 @@ const RequestDetailView = ({
                               {entry.file.name}
                             </p>
                             <p className="text-xs text-slate-500">
-                              {(entry.file.size / 1024 / 1024).toFixed(2)} MB
+                              {(entry.file.size / 1024 / 1024).toFixed(2)} MB •{" "}
+                              <span className="capitalize">{uploadType}</span>
                             </p>
                           </div>
 
@@ -3214,7 +3683,7 @@ const RequestDetailView = ({
             </div>
           </div>
         )}
-      {/* ===== End Quotation Upload ===== */}
+      {/* ===== End Quotation/Invoice Upload ===== */}
 
       {/* Items List - Role-based table */}
       {currentRequest?.items && currentRequest.items.length > 0 && (
@@ -3228,6 +3697,72 @@ const RequestDetailView = ({
             style={{ position: "relative", zIndex: 1 }}
           >
             {renderItemsTable()}
+          </div>
+
+          {/* Show Snapshot Button - Only if itemsSnapshot has data */}
+          {Array.isArray(currentRequest?.itemsSnapshot) &&
+            currentRequest.itemsSnapshot.length > 0 && (
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowSnapshot((prev) => !prev)}
+                  className="px-4 py-2 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center gap-2"
+                >
+                  {showSnapshot ? (
+                    <>
+                      <span>▲</span> Hide Snapshot
+                    </>
+                  ) : (
+                    <>
+                      <span>▼</span> Show Snapshot
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+          {/* Snapshot Table */}
+          {showSnapshot &&
+            Array.isArray(currentRequest?.itemsSnapshot) &&
+            currentRequest.itemsSnapshot.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <MdShoppingCart className="text-xl text-amber-500" />
+                  Original Items Snapshot
+                </h3>
+                <div
+                  className="bg-amber-50/50 backdrop-blur-xl border-2 border-amber-200 rounded-2xl p-4 shadow-lg"
+                  style={{ position: "relative", zIndex: 1 }}
+                >
+                  <SnapShotTable
+                    items={currentRequest.itemsSnapshot}
+                    requestType={currentRequest?.requestType || ""}
+                    tag={currentRequest?.tag || ""}
+                    vendors={vendors}
+                  />
+                </div>
+              </div>
+            )}
+        </div>
+      )}
+      {/* Moved Items Table */}
+      {((selectedRequest?.movedItems &&
+        selectedRequest.movedItems.length > 0) ||
+        (request?.movedItems && request.movedItems.length > 0)) && (
+        <div className="mb-8">
+          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <MdShoppingCart className="text-xl text-slate-400" />
+            Moved Items
+          </h3>
+          <div
+            className="bg-slate-100 backdrop-blur-xl border-2 border-slate-300 rounded-2xl p-4 shadow-lg"
+            style={{ position: "relative", zIndex: 1 }}
+          >
+            <MovedTable
+              items={selectedRequest?.movedItems || request?.movedItems || []}
+              requestType={
+                selectedRequest?.requestType || request?.requestType || ""
+              }
+            />
           </div>
         </div>
       )}
@@ -3435,51 +3970,145 @@ const RequestDetailView = ({
 
             <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
               <div className="flex flex-col md:flex-row gap-6">
-                <div className="flex-1 max-w-md">
-                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                    Delivery Target
-                  </label>
-                  <Select
-                    options={deliveryOptions}
-                    value={deliveryTarget}
-                    onChange={handleDeliveryChange}
-                    isClearable
-                    placeholder="Select delivery target..."
-                    styles={{
-                      control: (provided) => ({
-                        ...provided,
-                        minHeight: "48px",
-                        borderRadius: 12,
-                        boxShadow: "none",
-                      }),
-                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                    }}
-                    menuPortalTarget={document.body}
-                  />
-                  {deliveryTarget && (
-                    <p className="mt-3 text-sm text-slate-600">
-                      Selected:{" "}
-                      <span className="font-semibold">
-                        {deliveryTarget.label}
-                      </span>
-                      {isSavingDelivery && (
-                        <span className="ml-3 text-xs text-slate-500">
+                {/* Delivery Target: only for purchaseOrder */}
+                {showDeliveryTarget && (
+                  <div className="flex-1 max-w-md">
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                      Delivery Target
+                    </label>
+                    <Select
+                      options={deliveryOptions}
+                      value={deliveryTarget}
+                      onChange={handleDeliveryChange}
+                      isClearable
+                      placeholder="Select delivery target..."
+                      styles={{
+                        control: (provided) => ({
+                          ...provided,
+                          minHeight: "48px",
+                          borderRadius: 12,
+                          boxShadow: "none",
+                        }),
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                      }}
+                      menuPortalTarget={document.body}
+                    />
+                    {deliveryTarget && (
+                      <p className="mt-3 text-sm text-slate-600">
+                        Selected:{" "}
+                        <span className="font-semibold">
+                          {deliveryTarget.label}
+                        </span>
+                        {isSavingDelivery && (
+                          <span className="ml-3 text-xs text-slate-500">
+                            Saving...
+                          </span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Next Approval: only for purchaseOrder AND marine destination */}
+                {showNextApproval && (
+                  <div className="flex-1 max-w-md">
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                      Next Approval
+                    </label>
+                    <Select
+                      options={nextApprovalOptions}
+                      value={nextApprovalRole}
+                      onChange={handleNextApprovalChange}
+                      isClearable={false}
+                      placeholder="Select"
+                      styles={{
+                        control: (provided) => ({
+                          ...provided,
+                          minHeight: "48px",
+                          borderRadius: 12,
+                          boxShadow: "none",
+                        }),
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                      }}
+                      menuPortalTarget={document.body}
+                    />
+                    <div className="mt-2 text-sm text-slate-500 flex items-center justify-between">
+                      <div>
+                        {isSavingNextApproval ? (
+                          <span className="text-xs text-slate-500">
+                            Saving...
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500"></span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment Type: show for non-pettyCash; required only when purchaseOrder (validation enforced separately) */}
+                {showPaymentType && (
+                  <div className="flex-1 max-w-md">
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                      Payment Type
+                    </label>
+                    <Select
+                      options={paymentTypeOptions}
+                      value={paymentType}
+                      onChange={handlePaymentTypeChange}
+                      isClearable
+                      placeholder="Select"
+                      styles={{
+                        control: (provided) => ({
+                          ...provided,
+                          minHeight: "48px",
+                          borderRadius: 12,
+                          boxShadow: "none",
+                        }),
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                      }}
+                      menuPortalTarget={document.body}
+                    />
+                    <div className="mt-2 text-sm text-slate-500">
+                      {isSavingPaymentType ? (
+                        <span className="text-xs text-slate-500">
                           Saving...
                         </span>
+                      ) : (
+                        <span className="text-xs text-slate-500"></span>
                       )}
-                    </p>
-                  )}
-                </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
+      {userRole === "requester" &&
+        (request?.department || "").toString().toLowerCase() === "freight" &&
+        !isReadOnly && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdDirectionsBoat className="text-xl" />
+              {String(currentRequest?.tag || "").toLowerCase() === "shipping" ||
+              String(currentRequest?.tag || "").toLowerCase() === "clearing"
+                ? "Flow Route & Delivery Target"
+                : "Flow Route"}
+            </h3>
+
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+              <div className="flex flex-col md:flex-row gap-6">
+                {/* Flow Route Dropdown */}
                 <div className="flex-1 max-w-md">
                   <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                    Next Approval
+                    Flow Route
                   </label>
                   <Select
-                    options={nextApprovalOptions}
-                    value={nextApprovalRole}
-                    onChange={handleNextApprovalChange}
-                    isClearable={false}
+                    options={flowRouteOptions}
+                    value={freightRoute}
+                    onChange={handleFreightRouteChange}
+                    isClearable
                     placeholder="Select"
                     styles={{
                       control: (provided) => ({
@@ -3492,80 +4121,60 @@ const RequestDetailView = ({
                     }}
                     menuPortalTarget={document.body}
                   />
-                  <div className="mt-2 text-sm text-slate-500 flex items-center justify-between">
-                    <div>
-                      {isSavingNextApproval ? (
-                        <span className="text-xs text-slate-500">
-                          Saving...
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-500"></span>
-                      )}
-                    </div>
+                  <div className="mt-2 text-sm text-slate-500">
+                    {isSavingFreightRoute ? (
+                      <span className="text-xs text-slate-500">Saving...</span>
+                    ) : (
+                      <span className="text-xs text-slate-500"></span>
+                    )}
                   </div>
                 </div>
+
+                {/* Delivery Target Dropdown - Only for shipping/clearing tags */}
+                {(String(currentRequest?.tag || "").toLowerCase() ===
+                  "shipping" ||
+                  String(currentRequest?.tag || "").toLowerCase() ===
+                    "clearing") && (
+                  <div className="flex-1 max-w-md">
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                      Delivery Target
+                    </label>
+                    <Select
+                      options={deliveryOptions}
+                      value={deliveryTarget}
+                      onChange={handleDeliveryChange}
+                      isClearable
+                      placeholder="Select delivery target..."
+                      styles={{
+                        control: (provided) => ({
+                          ...provided,
+                          minHeight: "48px",
+                          borderRadius: 12,
+                          boxShadow: "none",
+                        }),
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                      }}
+                      menuPortalTarget={document.body}
+                    />
+                    {deliveryTarget && (
+                      <p className="mt-2 text-sm text-slate-600">
+                        Selected:{" "}
+                        <span className="font-semibold">
+                          {deliveryTarget.label}
+                        </span>
+                        {isSavingDelivery && (
+                          <span className="ml-3 text-xs text-slate-500">
+                            Saving...
+                          </span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
-      {["delivery base", "delivery jetty", "delivery vessel"].includes(
-        userRole
-      ) && (
-        <div className="mb-8">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <MdDirectionsBoat className="text-xl" />
-            Next Delivery
-          </h3>
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-            <div className="max-w-md">
-              <Select
-                options={
-                  Array.isArray(selectedRequest?.nextDeliveryStations) &&
-                  selectedRequest.nextDeliveryStations.length
-                    ? selectedRequest.nextDeliveryStations.map((s) => ({
-                        value: s,
-                        label: s,
-                      }))
-                    : Array.isArray(request?.nextDeliveryStations) &&
-                      request.nextDeliveryStations.length
-                    ? request.nextDeliveryStations.map((s) => ({
-                        value: s,
-                        label: s,
-                      }))
-                    : deliveryOptions
-                }
-                value={nextDeliveryTarget}
-                onChange={handleNextDeliveryChange}
-                isClearable
-                placeholder="Select next delivery station..."
-                styles={{
-                  control: (provided) => ({
-                    ...provided,
-                    minHeight: "48px",
-                    borderRadius: 12,
-                    boxShadow: "none",
-                  }),
-                  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                }}
-                menuPortalTarget={document.body}
-              />
-              {nextDeliveryTarget && (
-                <p className="mt-3 text-sm text-slate-600">
-                  Selected:{" "}
-                  <span className="font-semibold">
-                    {nextDeliveryTarget.label}
-                  </span>
-                  {isSavingNextDelivery && (
-                    <span className="ml-3 text-xs text-slate-500">
-                      Saving...
-                    </span>
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Attached Documents (quotationFiles from request) */}
       <AttachedDocuments
@@ -3653,7 +4262,7 @@ const RequestDetailView = ({
             className="fixed inset-0 bg-black/40 z-40"
             onClick={closeQueryModal}
           />
-          <div className="fixed left-1/2 -translate-x-1/2 top-1/3 z-50 w-[95%] max-w-2xl">
+          <div className="fixed left-1/2 -translate-x-1/2 top-1/6 z-50 w-[95%] max-w-2xl">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
               <div className="px-6 py-4 border-b flex items-center justify-between">
                 <div className="text-sm font-semibold">Query Request</div>
@@ -3705,13 +4314,22 @@ const RequestDetailView = ({
                       styles={{
                         control: (provided) => ({
                           ...provided,
-                          minHeight: "48px",
+                          minHeight: "15px",
                           borderRadius: 12,
                           boxShadow: "none",
                         }),
                         menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                        menu: (base) => ({ ...base, maxHeight: "220px" }),
+                        menuList: (base) => ({
+                          ...base,
+                          maxHeight: "220px",
+                          overflowY: "auto",
+                        }),
                       }}
-                      menuPortalTarget={document.body}
+                      menuPortalTarget={
+                        typeof document !== "undefined" ? document.body : null
+                      }
+                      menuPosition="fixed"
                     />
                   )}
                   <div className="text-xs text-slate-500 mt-2">
@@ -3865,36 +4483,19 @@ const RequestDetailView = ({
                   <div className="flex">
                     <button
                       onClick={handleApproveClick}
-                      disabled={
-                        actionLoading ||
-                        !computeCanApproveNow ||
-                        (isDeliveryUserRole && !canApproveDelivery)
-                      }
-                      className={`w-full sm:w-auto px-6 h-12 rounded-l-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
-                        !computeCanApproveNow ||
-                        (isDeliveryUserRole && !canApproveDelivery)
-                          ? "bg-gray-400 cursor-not-allowed opacity-50"
-                          : "bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
-                      } disabled:opacity-50`}
+                      disabled={actionLoading}
+                      className="w-full sm:w-auto px-6 h-12 rounded-l-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
                     >
                       <MdCheckCircle className="text-lg" />
                       {actionLoading ? "Processing..." : "Approve Request"}
                     </button>
                     <button
                       onClick={() => setApproveDropdownOpen((prev) => !prev)}
-                      disabled={
-                        actionLoading ||
-                        !computeCanApproveNow ||
-                        (isDeliveryUserRole && !canApproveDelivery)
-                      }
-                      className={`h-12 px-3 rounded-r-xl font-semibold transition-all duration-200 flex items-center justify-center border-l border-white/30 ${
-                        !computeCanApproveNow ||
-                        (isDeliveryUserRole && !canApproveDelivery)
-                          ? "bg-gray-400 cursor-not-allowed opacity-50"
-                          : "bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
-                      } disabled:opacity-50`}
+                      disabled={actionLoading}
+                      className="h-12 px-3 rounded-r-xl font-semibold transition-all duration-200 flex items-center justify-center border-l border-white/30 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
                       aria-label="Approval options"
                     >
+                      {" "}
                       <svg
                         className={`w-4 h-4 transition-transform ${
                           approveDropdownOpen ? "rotate-180" : ""
@@ -3945,17 +4546,8 @@ const RequestDetailView = ({
               ) : (
                 <button
                   onClick={handleApproveClick}
-                  disabled={
-                    actionLoading ||
-                    !computeCanApproveNow ||
-                    (isDeliveryUserRole && !canApproveDelivery)
-                  }
-                  className={`w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
-                    !computeCanApproveNow ||
-                    (isDeliveryUserRole && !canApproveDelivery)
-                      ? "bg-gray-400 cursor-not-allowed opacity-50"
-                      : "bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30"
-                  } disabled:opacity-50`}
+                  disabled={actionLoading}
+                  className="w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
                 >
                   <MdCheckCircle className="text-lg" />
                   {actionLoading ? "Processing..." : "Approve Request"}

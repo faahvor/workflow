@@ -26,7 +26,7 @@ const AccountTable = ({
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
 
- React.useEffect(() => {
+  React.useEffect(() => {
     setEditedItems(
       items.map((item) => {
         const feeValue = getFeeForItem(item);
@@ -44,7 +44,7 @@ const AccountTable = ({
     );
   }, [items, hidePrices, request]);
 
- // ...existing code...
+  // ...existing code...
   const getFeeForItem = (it) => {
     if (!it) return 0;
 
@@ -52,24 +52,40 @@ const AccountTable = ({
     const reqFees = request && request[feeFieldName];
 
     // If request-level fee is a plain number (global fee), use it
-    if (reqFees !== undefined && reqFees !== null && typeof reqFees === "number") {
+    if (
+      reqFees !== undefined &&
+      reqFees !== null &&
+      typeof reqFees === "number"
+    ) {
       return Number(reqFees) || 0;
     }
 
     // If request-level fee is an object/map, attempt to resolve by vendorId, vendor name, or itemId
     if (reqFees && typeof reqFees === "object") {
       const vendorKey = it.vendorId ?? it.vendor ?? null;
-      if (vendorKey && reqFees[vendorKey] !== undefined && reqFees[vendorKey] !== null) {
+      if (
+        vendorKey &&
+        reqFees[vendorKey] !== undefined &&
+        reqFees[vendorKey] !== null
+      ) {
         return Number(reqFees[vendorKey]) || 0;
       }
       // try vendor name fallback
       const vendorNameKey = (it.vendor || "").toString();
-      if (vendorNameKey && reqFees[vendorNameKey] !== undefined && reqFees[vendorNameKey] !== null) {
+      if (
+        vendorNameKey &&
+        reqFees[vendorNameKey] !== undefined &&
+        reqFees[vendorNameKey] !== null
+      ) {
         return Number(reqFees[vendorNameKey]) || 0;
       }
       // try item id key
       const itemKey = it.itemId || it._id || it.id;
-      if (itemKey && reqFees[itemKey] !== undefined && reqFees[itemKey] !== null) {
+      if (
+        itemKey &&
+        reqFees[itemKey] !== undefined &&
+        reqFees[itemKey] !== null
+      ) {
         return Number(reqFees[itemKey]) || 0;
       }
       // try default property
@@ -81,10 +97,15 @@ const AccountTable = ({
     // fallback to item-level fee (if present) or zero
     return Number(it[feeFieldName] ?? 0) || 0;
   };
-// ...existing code...
+  // ...existing code...
 
   const showPaymentColumns =
     requestType === "purchaseOrder" || (isPettyCash && isSecondApproval);
+
+  const hasMovedFromRequestId = items.some(
+    (item) =>
+      item.movedFromRequestId && String(item.movedFromRequestId).trim() !== ""
+  );
 
   // ...existing code...
   const buildChangesForAccountItem = (editedItem) => {
@@ -99,16 +120,15 @@ const AccountTable = ({
       paymentStatus: orig.paymentStatus || "notpaid",
       percentagePaid: orig.percentagePaid || 0,
       paid: orig.paid || 0,
-      balance:
-        orig.balance ??
-        (hidePrices ? origFee : orig.total ?? 0),
+      balance: orig.balance ?? (hidePrices ? origFee : orig.total ?? 0),
     };
 
     const fields = ["paymentStatus", "percentagePaid", "paid", "balance"];
     const changes = {};
 
     fields.forEach((f) => {
-      const a = origNorm[f] === undefined || origNorm[f] === null ? 0 : origNorm[f];
+      const a =
+        origNorm[f] === undefined || origNorm[f] === null ? 0 : origNorm[f];
       const b =
         editedItem[f] === undefined || editedItem[f] === null
           ? 0
@@ -118,9 +138,9 @@ const AccountTable = ({
 
     return changes;
   };
-// ...existing code...
+  // ...existing code...
 
-    const handleSaveAll = async () => {
+  const handleSaveAll = async () => {
     // build updates
     const updates = editedItems
       .map((it) => {
@@ -174,7 +194,7 @@ const AccountTable = ({
       setIsSaving(false);
     }
   };
-  
+
   const vendorsById = React.useMemo(() => {
     const map = new Map();
     (vendors || []).forEach((v) => {
@@ -211,7 +231,8 @@ const AccountTable = ({
   React.useEffect(() => {
     setEditedItems(
       items.map((item) => {
-        const effectiveTotal = Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
+        const effectiveTotal =
+          Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
         return {
           ...item,
           paymentStatus: item.paymentStatus || "notpaid",
@@ -223,7 +244,7 @@ const AccountTable = ({
     );
   }, [items]);
 
-    const handlePaymentStatusChange = (index, value) => {
+  const handlePaymentStatusChange = (index, value) => {
     const newItems = [...editedItems];
     const item = newItems[index];
 
@@ -269,7 +290,7 @@ const AccountTable = ({
     setEditedItems(newItems);
   };
 
-    const handleFeeChange = (index, value) => {
+  const handleFeeChange = (index, value) => {
     const newItems = [...editedItems];
     const item = newItems[index];
 
@@ -289,7 +310,10 @@ const AccountTable = ({
       item.balance = total;
       item.percentagePaid = 0;
     } else if (status === "partpayment") {
-      const pct = Math.max(0, Math.min(100, parseInt(item.percentagePaid || 0, 10) || 0));
+      const pct = Math.max(
+        0,
+        Math.min(100, parseInt(item.percentagePaid || 0, 10) || 0)
+      );
       item.paid = Math.round((pct / 100) * total * 100) / 100;
       item.balance = Math.round((total - item.paid) * 100) / 100;
     }
@@ -348,7 +372,7 @@ const AccountTable = ({
   };
 
   // Calculate total for each item
- const calculateTotal = (item) => {
+  const calculateTotal = (item) => {
     const quantity = parseFloat(item.quantity) || 0;
     const unitPrice = parseFloat(item.unitPrice) || 0;
     const discount = parseFloat(item.discount) || 0;
@@ -393,14 +417,24 @@ const AccountTable = ({
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Maker's Part No
               </th>
+              {hasMovedFromRequestId && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[150px]">
+                  Source Request
+                </th>
+              )}
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Vendor
               </th>
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
-              
-            {!hidePrices ? (
+                 {hidePrices && (
+              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                Shipping Qty
+              </th>
+            )}
+
+              {!hidePrices ? (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Unit Price
                 </th>
@@ -472,6 +506,17 @@ const AccountTable = ({
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   {item.makersPartNo || "N/A"}
                 </td>
+                {hasMovedFromRequestId && (
+                  <td className="border border-slate-200 px-4 py-3 text-center">
+                    {item.movedFromRequestId ? (
+                      <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold font-mono">
+                        {item.movedFromRequestId}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                )}
 
                 {/* ✅ Vendor Column */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
@@ -496,26 +541,37 @@ const AccountTable = ({
                     </span>
                   )}
                 </td>
+                   {hidePrices && (
+                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                  <span className="font-semibold text-slate-900">
+                    {item.shippingQuantity ?? 0}
+                  </span>
+                </td>
+              )}
 
-                   {!hidePrices ? (
+                {!hidePrices ? (
                   <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                     {item.unitPrice ? (
                       <>
-                        {item.currency || "NGN"} {parseFloat(item.unitPrice).toFixed(2)}
+                        {item.currency || "NGN"}{" "}
+                        {parseFloat(item.unitPrice).toFixed(2)}
                       </>
                     ) : (
                       "N/A"
                     )}
                   </td>
                 ) : (
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                     {typeof getFeeForItem(item) === "number" ? (
                       <>
                         {item.currency || "NGN"}{" "}
-                        {Number(getFeeForItem(item) || 0).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {Number(getFeeForItem(item) || 0).toLocaleString(
+                          undefined,
+                          {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }
+                        )}
                       </>
                     ) : (
                       "N/A"
@@ -525,7 +581,7 @@ const AccountTable = ({
                 {showPaymentColumns && (
                   <>
                     {/* Payment Status */}
-                   <td className="border border-slate-200 px-4 py-3 text-center">
+                    <td className="border border-slate-200 px-4 py-3 text-center">
                       {allowPaymentEditing ? (
                         <select
                           value={item.paymentStatus || "notpaid"}
@@ -563,14 +619,17 @@ const AccountTable = ({
                       {item.paymentStatus === "partpayment" ? (
                         allowPaymentEditing ? (
                           <div className="flex items-center justify-center gap-2">
-                          <input
+                            <input
                               type="number"
                               min="0"
                               max="100"
                               step="1"
                               value={item.percentagePaid || ""}
                               onChange={(e) => {
-                                handlePercentagePaidChange(index, e.target.value);
+                                handlePercentagePaidChange(
+                                  index,
+                                  e.target.value
+                                );
                               }}
                               className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
@@ -613,10 +672,13 @@ const AccountTable = ({
                   {hidePrices ? (
                     <>
                       {item.currency || "NGN"}{" "}
-                      {Number(getFeeForItem(item) || 0).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {Number(getFeeForItem(item) || 0).toLocaleString(
+                        undefined,
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}
                     </>
                   ) : item.total || item.unitPrice ? (
                     <>

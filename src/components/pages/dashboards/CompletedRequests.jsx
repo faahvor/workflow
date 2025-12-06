@@ -7,8 +7,12 @@ import {
   MdDirectionsBoat,
   MdArrowForward,
   MdPendingActions,
+   MdPriorityHigh,
+  MdInventory,
+  MdLocalShipping,
 } from "react-icons/md";
 import RequestDetailView from "../../pages/dashboards/RequestDetailView";
+import { HiClock } from "react-icons/hi";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -20,6 +24,40 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
   const { user, getToken } = useAuth();
   const normalizedSearch = (searchQuery || "").trim().toLowerCase();
   const normalizedFilter = (filterType || "all").trim().toLowerCase();
+
+  // Tag color helper
+  const getTagColor = (tag) => {
+    if (!tag) return "bg-slate-100 text-slate-600 border-slate-200";
+    switch (String(tag).toLowerCase()) {
+      case "shipping":
+        return "bg-teal-100 text-teal-600 border-teal-200";
+      case "clearing":
+        return "bg-purple-100 text-purple-600 border-purple-200";
+      default:
+        return "bg-slate-100 text-slate-600 border-slate-200";
+    }
+  };
+
+  // Tag icon helper
+  const getTagIcon = (tag) => {
+    if (!tag) return null;
+    switch (String(tag).toLowerCase()) {
+      case "shipping":
+        return <MdDirectionsBoat className="text-sm" />;
+      default:
+        return null;
+    }
+  };
+
+  // In Stock badge helpers
+  const getInStockColor = () => {
+    return "bg-green-100 text-green-700 border-green-200";
+  };
+
+  const getInStockIcon = () => {
+    return <MdInventory className="text-sm" />;
+  };
+
 
   const filteredRequests = (requests || []).filter((req) => {
     const matchesSearch =
@@ -189,19 +227,65 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
             >
               <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex-1 min-w-0">
+                  
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="text-slate-500 text-xs font-mono font-semibold">
                       {request.requestId}
                     </span>
+
+                    {/* Tag badge (shows first, when present) */}
+                    {request.tag && (
+                      <span
+                        className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTagColor(
+                          request.tag
+                        )}`}
+                      >
+                        {getTagIcon(request.tag)}
+                        <span>
+                          {String(request.tag).replace(
+                            /(^\w|\s\w)/g,
+                            (m) => m.toUpperCase()
+                          )}
+                        </span>
+                      </span>
+                    )}
+
+                    {/* In Stock badge */}
+                    {request.items &&
+                      request.items.some((it) => it && it.inStock) && (
+                        <span
+                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getInStockColor()}`}
+                        >
+                          {getInStockIcon()}
+                          <span>In Stock</span>
+                        </span>
+                      )}
+                        {request.isIncompleteDelivery && (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                                  <MdLocalShipping className="text-sm" />
+                                  <span>Incomplete Delivery</span>
+                                </span>
+                              )}
+
+                    {/* Request type badge */}
                     <span
-                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
+                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
                         request.requestType
                       )}`}
                     >
                       {getTypeIcon(request.requestType)}
                       <span>{getTypeLabel(request.requestType)}</span>
                     </span>
+
+                    {/* Priority/Urgent badge */}
+                    {request.priority === "high" && (
+                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">
+                        <MdPriorityHigh className="text-sm" />
+                        <span>URGENT</span>
+                      </span>
+                    )}
                   </div>
+
 
                   <p className="text-slate-600 text-sm mb-3">
                     Requested by{" "}
@@ -230,7 +314,8 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
                       </div>
                     )}
 
-                    <div className="flex items-center gap-1.5 text-slate-600">
+                   <div className="flex items-center gap-1.5 text-slate-600">
+                      <HiClock className="text-base" />
                       <span className="text-xs md:text-sm font-medium">
                         {new Date(request.createdAt).toLocaleDateString()}
                       </span>

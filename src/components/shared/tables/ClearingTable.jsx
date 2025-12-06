@@ -8,6 +8,7 @@ const ClearingTable = ({
   vendors = [],
   selectedRequest = null,
   onEditItem = async () => {},
+  onRefreshRequest = async () => {},
 }) => {
   const [editedRequests, setEditedRequests] = useState([]);
   const [clearingFees, setClearingFees] = useState({});
@@ -15,27 +16,50 @@ const ClearingTable = ({
   const { getToken } = useAuth(); // add this line to get auth token
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
+  // ...existing code...
   useEffect(() => {
-    // initialize clearingFees and editedRequests from incoming items
+    // Read clearingFee from request level, not item level
+    const requestClearingFee = selectedRequest?.clearingFee;
+
     const fees = {};
     const initial = (items || []).map((it, idx) => {
       const itemId = it.itemId || it._id || it.id || `gen-${idx}`;
       const vendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
-      if (it.clearingFee !== undefined && fees[vendorKey] === undefined) {
+
+      // If request-level clearingFee exists, use it
+      if (requestClearingFee !== undefined && fees[vendorKey] === undefined) {
+        if (
+          typeof requestClearingFee === "object" &&
+          requestClearingFee !== null
+        ) {
+          // clearingFee is an object keyed by vendor
+          fees[vendorKey] = requestClearingFee[vendorKey] ?? 0;
+        } else if (typeof requestClearingFee === "number") {
+          // clearingFee is a single number (applies to first/only vendor)
+          fees[vendorKey] = requestClearingFee;
+        }
+      } else if (
+        it.clearingFee !== undefined &&
+        fees[vendorKey] === undefined
+      ) {
+        // Fallback to item-level clearingFee
         fees[vendorKey] = it.clearingFee;
       }
+
       return {
         ...it,
         itemId,
         vendor: it.vendor || it.vendorName || "",
         vendorId: it.vendorId ?? null,
-        clearingFee: it.clearingFee ?? 0,
+        clearingFee: fees[vendorKey] ?? 0,
         _dirty: false,
       };
     });
+
     setClearingFees(fees);
     setEditedRequests(initial);
-  }, [items]);
+  }, [items, selectedRequest?.clearingFee]);
+  // ...existing code...
 
   const groupByVendor = (list) => {
     const groups = {};
@@ -97,7 +121,7 @@ const ClearingTable = ({
     return Promise.all(promises);
   };
 
- // ...existing code...
+  // ...existing code...
   const handleSaveAll = async () => {
     if (!window.confirm("Save clearing fee changes?")) return;
 
@@ -139,7 +163,8 @@ const ClearingTable = ({
       } else if (currentReqFee && typeof currentReqFee === "object") {
         // both objects: compare JSON
         requestNeedsUpdate =
-          JSON.stringify(currentReqFee || {}) !== JSON.stringify(localFees || {});
+          JSON.stringify(currentReqFee || {}) !==
+          JSON.stringify(localFees || {});
         requestPayload = localFees;
       } else {
         // no value on request yet
@@ -167,7 +192,9 @@ const ClearingTable = ({
       // Then: apply request-level clearingFee update if needed
       if (requestNeedsUpdate) {
         if (!selectedRequest || !selectedRequest.requestId) {
-          throw new Error("No selectedRequest.requestId to update request-level clearingFee");
+          throw new Error(
+            "No selectedRequest.requestId to update request-level clearingFee"
+          );
         }
         const token = await getToken();
         const url = `${API_BASE_URL}/requests/${selectedRequest.requestId}`;
@@ -190,6 +217,12 @@ const ClearingTable = ({
 
       // Clear local dirty flags (server may not return items)
       setEditedRequests((prev) => prev.map((it) => ({ ...it, _dirty: false })));
+
+      // Refresh request data to get latest from server
+      if (typeof onRefreshRequest === "function") {
+        await onRefreshRequest();
+      }
+
       alert("Saved successfully");
 
       return { itemResults, requestUpdated: requestNeedsUpdate };
@@ -201,7 +234,7 @@ const ClearingTable = ({
       setIsSaving(false);
     }
   };
-// ...existing code...
+  // ...existing code...
 
   if (!editedRequests || editedRequests.length === 0) {
     return (
@@ -222,7 +255,8 @@ const ClearingTable = ({
       )}
 
       {groups.map((g, gi) => {
-        const vendorKey = g.items[0]?.vendorId ?? g.items[0]?.vendor ?? "No Vendor";
+        const vendorKey =
+          g.items[0]?.vendorId ?? g.items[0]?.vendor ?? "No Vendor";
         const vendorLabel = g.items[0]?.vendor || vendorKey;
 
         return (
@@ -231,28 +265,68 @@ const ClearingTable = ({
             <table className="w-full border-collapse border-2 border-slate-200 text-sm">
               <thead>
                 <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
-                  <th className="p-3 border border-slate-200 text-center">SN</th>
-                  <th className="p-3 border border-slate-200 text-left">Description</th>
-                  <th className="p-3 border border-slate-200 text-left">Item Type</th>
-                  <th className="p-3 border border-slate-200 text-left">Maker</th>
-                  <th className="p-3 border border-slate-200 text-left">Maker's Part No</th>
-                  <th className="p-3 border border-slate-200 text-center">Vendor</th>
-                  <th className="p-3 border border-slate-200 text-center">Quantity</th>
-                  <th className="p-3 border border-slate-200 text-center">Clearing Fee</th>
+                  <th className="p-3 border border-slate-200 text-center">
+                    SN
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Description
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Item Type
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Maker
+                  </th>
+                  <th className="p-3 border border-slate-200 text-left">
+                    Maker's Part No
+                  </th>
+                  <th className="p-3 border border-slate-200 text-center">
+                    Vendor
+                  </th>
+                  <th className="p-3 border border-slate-200 text-center">
+                    Quantity
+                  </th>
+                  <th className="p-3 border border-slate-200 text-center">
+                    Shipping Fee
+                  </th>
+
+                  <th className="p-3 border border-slate-200 text-center">
+                    Clearing Fee
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {g.items.map((it, idx) => {
                   const itemId = it.itemId || it._id;
                   return (
-                    <tr key={itemId} className="hover:bg-emerald-50 transition-colors duration-150">
-                      <td className="border p-3 border-slate-200 text-center">{idx + 1}</td>
-                      <td className="border p-3 border-slate-200">{it.name || "N/A"}</td>
-                      <td className="border p-3 border-slate-200">{it.itemType || "N/A"}</td>
-                      <td className="border p-3 border-slate-200">{it.maker || "N/A"}</td>
-                      <td className="border p-3 border-slate-200">{it.makersPartNo || "N/A"}</td>
-                      <td className="border p-3 border-slate-200 text-center">{it.vendor || "N/A"}</td>
-                      <td className="border p-3 border-slate-200 text-center">{it.quantity ?? it.qty ?? "0"}</td>
+                    <tr
+                      key={itemId}
+                      className="hover:bg-emerald-50 transition-colors duration-150"
+                    >
+                      <td className="border p-3 border-slate-200 text-center">
+                        {idx + 1}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.name || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.itemType || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.maker || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200">
+                        {it.makersPartNo || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200 text-center">
+                        {it.vendor || "N/A"}
+                      </td>
+                      <td className="border p-3 border-slate-200 text-center">
+                        {it.quantity ?? it.qty ?? "0"}
+                      </td>
+                      <td className="border p-3 border-slate-200 text-center">
+                        {it.shippingFee || "N/A"}
+                      </td>
                       {idx === 0 ? (
                         <td
                           className="border p-3 border-slate-200 text-center"
@@ -263,8 +337,17 @@ const ClearingTable = ({
                             type="number"
                             min="0"
                             step="0.01"
-                            value={clearingFees[vendorKey] ?? ""}
-                            onChange={(e) => handleChangeFee(vendorKey, e.target.value)}
+                            placeholder="0"
+                            value={
+                              clearingFees[vendorKey] === 0 ||
+                              clearingFees[vendorKey] === undefined ||
+                              clearingFees[vendorKey] === null
+                                ? ""
+                                : clearingFees[vendorKey]
+                            }
+                            onChange={(e) =>
+                              handleChangeFee(vendorKey, e.target.value)
+                            }
                             className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
                           />
                         </td>
@@ -283,7 +366,9 @@ const ClearingTable = ({
           onClick={handleSaveAll}
           disabled={isSaving}
           className={`px-6 h-12 rounded-md font-semibold ${
-            isSaving ? "bg-gray-300 text-gray-700" : "bg-[#036173] text-white hover:bg-[#024f57]"
+            isSaving
+              ? "bg-gray-300 text-gray-700"
+              : "bg-[#036173] text-white hover:bg-[#024f57]"
           }`}
         >
           <MdCheckCircle className="inline mr-2" />

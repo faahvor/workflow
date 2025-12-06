@@ -7,7 +7,6 @@ import { MdDelete } from "react-icons/md";
 const RequesterTable = ({
   items = [],
   userRole = "",
-  onDeliveryQuantityChange = () => {},
   requestId = null,
   requestType = "purchaseOrder",
   onEditItem = null,
@@ -18,21 +17,12 @@ const RequesterTable = ({
     Array.isArray(items) ? items : []
   );
   const [needsScroll, setNeedsScroll] = useState(false);
-    const [editingIndex, setEditingIndex] = useState(null);
+  const [editingIndex, setEditingIndex] = useState(null);
 
   const isReadOnlyForPetty =
     (requestType || "").toString().toLowerCase() === "pettycash" &&
     (requestStatus || "") === "PENDING_REQUESTER_DELIVERY_CONFIRMATION";
-  const hasInStock = (items || []).some((it) => it.inStock === true);
-  
 
-  // Show delivery columns when inStock OR when viewing pettyCash in the special requester-delivery-confirmation state
-  const rt = (requestType || "").toString().toLowerCase();
-  const isPettyCashRt = rt === "pettycash";
-  const showDeliveryColumns =
-    hasInStock ||
-    (isPettyCashRt &&
-      requestStatus === "PENDING_REQUESTER_DELIVERY_CONFIRMATION");
   useEffect(() => {
     const incoming = Array.isArray(items) ? items : [];
     const sameLength = editedItems.length === incoming.length;
@@ -51,7 +41,6 @@ const RequesterTable = ({
     if (!sameIds) {
       setEditedItems(incoming);
     } else {
-      // even if same ids, ensure deliveredQuantity & paymentStatus from server are up-to-date
       setEditedItems((prev) =>
         incoming.map((it, i) => ({ ...prev[i], ...it }))
       );
@@ -100,7 +89,6 @@ const RequesterTable = ({
 
     try {
       await onEditItem(payload);
-      // update local copy and exit edit mode
       setEditedItems((prev) =>
         prev.map((it, i) => (i === index ? { ...it, quantity } : it))
       );
@@ -135,7 +123,6 @@ const RequesterTable = ({
     }
 
     try {
-      // Build per-item payloads and call onEditItem for each (parent handles patch)
       await Promise.all(
         dirty.map(async (it) => {
           const itemId = it.itemId || it._id || it.id;
@@ -160,7 +147,6 @@ const RequesterTable = ({
         })
       );
 
-      // clear dirty flags locally
       setEditedItems((prev) => prev.map((it) => ({ ...it, _dirty: false })));
       alert("Saved successfully");
     } catch (err) {
@@ -191,6 +177,9 @@ const RequesterTable = ({
     );
   }
   const currencies = ["NGN", "USD", "GBP", "EUR", "JPY", "CNY", "CAD", "AUD"];
+const isAnyItemInStock = React.useMemo(() => {
+    return (items || []).some((it) => !!it.inStock);
+  }, [items]);
 
   return (
     <div className="relative">
@@ -215,7 +204,7 @@ const RequesterTable = ({
                 Maker's Part No
               </th>
 
-              {requestType !== "pettyCash" && (
+              {requestType !== "pettyCash" && !isAnyItemInStock && (
                 <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                   Vendor
                 </th>
@@ -223,42 +212,31 @@ const RequesterTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
+                             {!isAnyItemInStock && (
 
               <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                 Unit Price
               </th>
+                             )}
+                                           {!isAnyItemInStock && (
+
               <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                 Total Price
               </th>
-              {showDeliveryColumns && (
-                <>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    RDQ
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    ROQ
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    Part Delivery
-                  </th>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    Full Delivery
-                  </th>
-                </>
-              )}
+                                           )}
 
-              {requestType !== "pettyCash" && !isQueried && (
+              {requestType !== "pettyCash" && !isQueried && !isAnyItemInStock  && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                   PRN
                 </th>
               )}
 
-              {requestType !== "pettyCash" && !isQueried && (
+              {requestType !== "pettyCash" && !isQueried &&!isAnyItemInStock  && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                   PON
                 </th>
               )}
-               {isQueried && (
+              {isQueried && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Actions
                 </th>
@@ -291,19 +269,21 @@ const RequesterTable = ({
                   {item.makersPartNo || "N/A"}
                 </td>
 
-                {requestType !== "pettyCash" && (
+                {requestType !== "pettyCash" && !isAnyItemInStock && (
                   <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                     {item.vendor || "N/A"}
                   </td>
                 )}
 
-                        <td className="border border-slate-200 px-4 py-3 text-center">
+                <td className="border border-slate-200 px-4 py-3 text-center">
                   {editingIndex === index && isQueried ? (
                     <input
                       type="number"
                       min="1"
                       value={item.quantity || ""}
-                      onChange={(e) => handleQuantityChange(index, e.target.value)}
+                      onChange={(e) =>
+                        handleQuantityChange(index, e.target.value)
+                      }
                       className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                     />
                   ) : (
@@ -313,9 +293,10 @@ const RequesterTable = ({
                   )}
                 </td>
 
+              {!isAnyItemInStock && (
+
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                   {requestType === "pettyCash" ? (
-                    // If pettyCash AND read-only mode, show values as text (no inputs).
                     isReadOnlyForPetty ? (
                       <div className="flex items-center justify-end gap-2">
                         <span className="text-sm text-slate-700">
@@ -420,6 +401,8 @@ const RequesterTable = ({
                     "N/A"
                   )}
                 </td>
+              )}
+               {!isAnyItemInStock && (
 
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
                   {requestType === "pettyCash" ? (
@@ -442,256 +425,60 @@ const RequesterTable = ({
                     "N/A"
                   )}
                 </td>
+               )}
 
-                {showDeliveryColumns && (
-                  <>
-                    {(() => {
-                      const eligibleForRow =
-                        item.inStock ||
-                        (isPettyCashRt &&
-                          requestStatus ===
-                            "PENDING_REQUESTER_DELIVERY_CONFIRMATION");
-                      const qty = Number(item.quantity || 0);
-                      const delivered = Number(item.deliveredQuantity || 0);
-
-                      const setDelivered = (newDelivered) => {
-                        setEditedItems((prev) =>
-                          prev.map((it, i) =>
-                            i === index
-                              ? { ...it, deliveredQuantity: newDelivered }
-                              : it
-                          )
-                        );
-
-                        // keep original onDeliveryQuantityChange call
-                        try {
-                          onDeliveryQuantityChange(
-                            requestId,
-                            item.itemId || item._id || item.id,
-                            newDelivered,
-                            Math.max(0, qty - newDelivered)
-                          );
-                        } catch (err) {
-                          console.error(
-                            "onDeliveryQuantityChange failed:",
-                            err
-                          );
-                        }
-                      };
-
-                      return (
-                        <>
-                          <td className="border border-slate-200 px-4 py-3 text-center">
-                            {eligibleForRow ? (
-                              <input
-                                type="number"
-                                min="0"
-                                max={qty || 0}
-                                placeholder="0"
-                                value={
-                                  item.deliveredQuantity === "" ||
-                                  item.deliveredQuantity === null ||
-                                  typeof item.deliveredQuantity === "undefined"
-                                    ? ""
-                                    : item.deliveredQuantity
-                                }
-                                onFocus={() => {
-                                  const cur = item.deliveredQuantity;
-                                  if (
-                                    cur === 0 ||
-                                    cur === "0" ||
-                                    cur === null ||
-                                    typeof cur === "undefined"
-                                  ) {
-                                    setEditedItems((prev) =>
-                                      prev.map((it, i) =>
-                                        i === index
-                                          ? { ...it, deliveredQuantity: "" }
-                                          : it
-                                      )
-                                    );
-                                  }
-                                }}
-                                onChange={(e) => {
-                                  const raw = e.target.value;
-                                  if (raw === "") {
-                                    setEditedItems((prev) =>
-                                      prev.map((it, i) =>
-                                        i === index
-                                          ? { ...it, deliveredQuantity: "" }
-                                          : it
-                                      )
-                                    );
-                                    return;
-                                  }
-                                  const parsed = Number(raw);
-                                  const clamped = Number.isNaN(parsed)
-                                    ? ""
-                                    : Math.max(0, Math.min(qty, parsed));
-                                  setEditedItems((prev) =>
-                                    prev.map((it, i) =>
-                                      i === index
-                                        ? { ...it, deliveredQuantity: clamped }
-                                        : it
-                                    )
-                                  );
-                                }}
-                                onBlur={(e) => {
-                                  const raw = e.target.value;
-                                  const parsed = Number(raw) || 0;
-                                  const finalVal = Math.max(
-                                    0,
-                                    Math.min(qty, parsed)
-                                  );
-                                  setEditedItems((prev) =>
-                                    prev.map((it, i) =>
-                                      i === index
-                                        ? { ...it, deliveredQuantity: finalVal }
-                                        : it
-                                    )
-                                  );
-                                  onDeliveryQuantityChange(
-                                    requestId,
-                                    item.itemId || item._id || item.id,
-                                    finalVal,
-                                    Math.max(0, qty - finalVal)
-                                  );
-                                }}
-                                className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                              />
-                            ) : (
-                              <span className="font-semibold text-slate-900">
-                                -
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="border border-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-700">
-                            {eligibleForRow ? Number(qty - delivered) : "-"}
-                          </td>
-
-                          <td className="border border-slate-200 px-4 py-3 text-center">
-                            {(() => {
-                              const isPartial =
-                                delivered > 0 && delivered < qty;
-                              const partialVal = Math.max(
-                                1,
-                                Math.floor(qty / 2)
-                              );
-                              return isPartial ? (
-                                <div
-                                  className="w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center mx-auto cursor-pointer"
-                                  title="Set partial delivery"
-                                  onClick={() =>
-                                    eligibleForRow && setDelivered(partialVal)
-                                  }
-                                >
-                                  <span className="text-white text-xs font-bold">
-                                    P
-                                  </span>
-                                </div>
-                              ) : (
-                                <div
-                                  className="w-6 h-6 bg-gray-200 rounded-full mx-auto cursor-pointer"
-                                  title={
-                                    eligibleForRow
-                                      ? "Mark partial delivery"
-                                      : ""
-                                  }
-                                  onClick={() =>
-                                    eligibleForRow && setDelivered(partialVal)
-                                  }
-                                />
-                              );
-                            })()}
-                          </td>
-
-                          <td className="border border-slate-200 px-4 py-3 text-center">
-                            {(() => {
-                              const isFull = delivered >= qty && qty > 0;
-                              return isFull ? (
-                                <div
-                                  className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mx-auto cursor-pointer"
-                                  title="Mark as fully delivered"
-                                  onClick={() =>
-                                    eligibleForRow && setDelivered(qty)
-                                  }
-                                >
-                                  <span className="text-white text-xs font-bold">
-                                    ✓
-                                  </span>
-                                </div>
-                              ) : (
-                                <div
-                                  className="w-6 h-6 bg-gray-200 rounded-full mx-auto cursor-pointer"
-                                  title={
-                                    eligibleForRow ? "Mark full delivery" : ""
-                                  }
-                                  onClick={() =>
-                                    eligibleForRow && setDelivered(qty)
-                                  }
-                                />
-                              );
-                            })()}
-                          </td>
-                        </>
-                      );
-                    })()}
-                  </>
-                )}
-
-                {requestType !== "pettyCash" && !isQueried && (
+                {requestType !== "pettyCash" && !isQueried && !isAnyItemInStock && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.purchaseRequisitionNumber || "N/A"}
                   </td>
                 )}
 
-                {requestType !== "pettyCash" && !isQueried && (
+                {requestType !== "pettyCash" && !isQueried && !isAnyItemInStock  && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.purchaseOrderNumber || "N/A"}
                   </td>
                 )}
                 {isQueried && (
-                <td className="border border-slate-200 px-4 py-3">
-                  <div className="flex items-center justify-center gap-2">
-                    {editingIndex === index ? (
-                      <>
-                        <button
-                          onClick={() => handleSaveClick(index)}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-150"
-                          title="Save"
-                        >
-                          <FaSave className="text-lg" />
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors duration-150"
-                          title="Cancel"
-                        >
-                          <FaTimes className="text-lg" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => handleEditClick(index)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
-                          title="Edit quantity"
-                        >
-                          <FaEdit className="text-lg" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClick(item)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150"
-                          title="Delete"
-                        >
-                          <MdDelete className="text-lg" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              )}
+                  <td className="border border-slate-200 px-4 py-3">
+                    <div className="flex items-center justify-center gap-2">
+                      {editingIndex === index ? (
+                        <>
+                          <button
+                            onClick={() => handleSaveClick(index)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-150"
+                            title="Save"
+                          >
+                            <FaSave className="text-lg" />
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors duration-150"
+                            title="Cancel"
+                          >
+                            <FaTimes className="text-lg" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleEditClick(index)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
+                            title="Edit quantity"
+                          >
+                            <FaEdit className="text-lg" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(item)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150"
+                            title="Delete"
+                          >
+                            <MdDelete className="text-lg" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
