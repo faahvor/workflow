@@ -197,7 +197,7 @@ const OverviewDashboard = ({
                   className="h-12 pl-12 pr-10 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none cursor-pointer"
                 >
                   <option value="all">All Types</option>
-                  <option value="purchaseOrder">Purchase Orders</option>
+                  <option value="purchaseOrder">Purchase Order</option>
                   <option value="pettycash">PettyCash</option>
                 </select>
                 <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
