@@ -68,10 +68,17 @@ const AdminUserManagement = () => {
       if (actionMenuRef.current && !actionMenuRef.current.contains(e.target)) {
         setOpenActionMenuId(null);
       }
+      // Close role dropdown if clicking outside
+      if (!e.target.closest('[data-role-dropdown]')) {
+        setShowRoleDropdown(false);
+      }
     };
 
     const handleKey = (e) => {
-      if (e.key === "Escape") setOpenActionMenuId(null);
+      if (e.key === "Escape") {
+        setOpenActionMenuId(null);
+        setShowRoleDropdown(false);
+      }
     };
 
     document.addEventListener("click", handleDocClick);
@@ -142,6 +149,8 @@ const AdminUserManagement = () => {
   // saving + success message
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+    const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+
   const successTimerRef = useRef(null);
 
   const showSuccess = (msg) => {
@@ -810,21 +819,59 @@ const AdminUserManagement = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="relative" data-role-dropdown>
                     <label className="text-xs text-slate-500">Role</label>
-                    <select
-                      value={form.role}
-                      onChange={(e) =>
-                        setForm({ ...form, role: e.target.value })
-                      }
-                      className="w-full px-3 py-2 border rounded-lg"
+                    <button
+                      type="button"
+                      onClick={() => setShowRoleDropdown((prev) => !prev)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm text-left bg-white flex items-center justify-between"
                     >
-                      {defaultRoleTypes.map((rt) => (
-                        <option key={rt} value={rt}>
-                          {rt}
-                        </option>
-                      ))}
-                    </select>
+                      <span>{form.role || "Select role"}</span>
+                      <svg
+                        className={`w-4 h-4 transition-transform ${
+                          showRoleDropdown ? "rotate-180" : ""
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </button>
+                        {showRoleDropdown && (
+                      <div 
+                        className="absolute left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto"
+                        style={{ 
+                          position: 'fixed',
+                          width: '18rem',
+                          zIndex: 9999,
+                          marginTop: '4px'
+                        }}
+                      >
+                        {defaultRoleTypes.map((rt) => (
+                          <button
+                            key={rt}
+                            type="button"
+                            onClick={() => {
+                              setForm({ ...form, role: rt });
+                              setShowRoleDropdown(false);
+                            }}
+                            className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${
+                              form.role === rt
+                                ? "bg-emerald-50 text-emerald-700 font-medium"
+                                : "text-slate-700"
+                            }`}
+                          >
+                            {rt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">

@@ -10,7 +10,8 @@ import {
   MdCheckCircle,
   MdArrowBack,
   MdAttachFile,
-  MdDirectionsBoat, // added icon
+  MdDirectionsBoat,
+    MdInfo,
 } from "react-icons/md";
 import RequestWorkflow from "../../shared/RequestWorkflow";
 import FleetManagerTable from "../../shared/tables/FleetManagerTable";
@@ -40,6 +41,8 @@ import ClearingTable from "../../shared/tables/ClearingTable";
 import TechnicalManagerTable from "../../shared/tables/TechnicalManagerTable";
 import MovedTable from "../../shared/tables/MovedTable";
 import SnapShotTable from "../../shared/tables/SnapShotTable";
+import DeliveryRequestView from "./DeliveryRequestView";
+import InvoiceControllerTable from "../../shared/tables/InvoiceControllerTable";
 
 const RequestDetailView = ({
   request,
@@ -55,6 +58,8 @@ const RequestDetailView = ({
 
   const [vessels, setVessels] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [doVendorSplit, setDoVendorSplit] = useState(false);
+const [savingVendorSplit, setSavingVendorSplit] = useState(false);
   const [vendors, setVendors] = useState([]);
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
   const { getToken } = useAuth();
@@ -92,7 +97,7 @@ const RequestDetailView = ({
   const fileInputRef = useRef(null);
   const [quotationFiles, setQuotationFiles] = useState([]); // [{ id, file, previewUrl, progress, uploaded }]
   const [isUploading, setIsUploading] = useState(false);
-    const [uploadType, setUploadType] = useState("quotation"); // "quotation" | "invoice"
+  const [uploadType, setUploadType] = useState("quotation"); // "quotation" | "invoice"
 
   const userRole = user?.role?.toLowerCase() || "";
   const deliveryOptions = [
@@ -128,7 +133,9 @@ const RequestDetailView = ({
   const [isSavingPaymentType, setIsSavingPaymentType] = useState(false);
   const [freightRoute, setFreightRoute] = useState(null);
   const [isSavingFreightRoute, setIsSavingFreightRoute] = useState(false);
+  
   const nextApprovalOptions = [
+    { value: "None", label: "None" },
     { value: "Fleet Manager", label: "Fleet Manager" },
     { value: "Technical Manager", label: "Technical Manager" },
   ];
@@ -151,6 +158,27 @@ const RequestDetailView = ({
     { value: "HR", label: "HR" },
     { value: "Admin", label: "Admin" },
   ];
+
+  const isDeliveryRole =
+    userRole === "deliverybase" ||
+    userRole === "delivery base" ||
+    userRole === "deliveryjetty" ||
+    userRole === "delivery jetty" ||
+    userRole === "deliveryvessel" ||
+    userRole === "delivery vessel";
+
+  // If delivery role, render DeliveryRequestView instead
+  if (isDeliveryRole) {
+    return (
+      <DeliveryRequestView
+        request={request}
+        onBack={onBack}
+        onApprove={onApprove}
+        actionLoading={actionLoading}
+        isReadOnly={isReadOnly}
+      />
+    );
+  }
 
   const handlePaymentTypeChange = async (option) => {
     setPaymentType(option);
@@ -639,8 +667,6 @@ const RequestDetailView = ({
       setQueryTargetsLoading(false);
     }
   };
-  ;
-
   const submitQuery = async () => {
     const trimmed = (queryComment || "").trim();
     if (!trimmed || trimmed.length < 3) {
@@ -718,7 +744,7 @@ const RequestDetailView = ({
     setNextDeliveryTarget(initial);
   }, [selectedRequest, request]);
 
- useEffect(() => {
+  useEffect(() => {
     // sync deliveryTarget from request data when details load
     // For freight requesters, use freightDeliveryLocation; otherwise use deliveryLocation
     const isFreightRequester =
@@ -1064,6 +1090,7 @@ const RequestDetailView = ({
       });
 
       setSelectedRequest(data);
+      setDoVendorSplit(!!data.doVendorSplit);
       try {
         const itemsForCheck = data?.items || [];
         const isDeliveryRole = (userRole || "")
@@ -1107,6 +1134,27 @@ const RequestDetailView = ({
       throw error;
     }
   };
+
+  const handleVendorSplitChange = async (value) => {
+  setSavingVendorSplit(true);
+  setDoVendorSplit(value);
+  try {
+    const token = getToken();
+    await axios.patch(
+      `${API_BASE_URL}/requests/${request.requestId}`,
+      { doVendorSplit: value },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    // Optionally refresh details
+    await fetchRequestDetails();
+        setFilesRefreshCounter((c) => c + 1);
+  } catch (err) {
+    console.error("Failed to update doVendorSplit:", err);
+    alert("Failed to update vendor split mode.");
+  } finally {
+    setSavingVendorSplit(false);
+  }
+};
 
   useEffect(() => {
     if (request?.requestId) {
@@ -1244,7 +1292,7 @@ const RequestDetailView = ({
           p.id === id ? { ...p, progress: 100, uploaded: true } : p
         )
       );
-        // mark uploaded
+      // mark uploaded
       setQuotationFiles((prev) =>
         prev.map((p) =>
           p.id === id ? { ...p, progress: 100, uploaded: true } : p
@@ -1663,7 +1711,9 @@ const RequestDetailView = ({
       .includes("shipping");
 
     const itemsSource = currentRequest?.items || [];
-    const reqType = (currentRequest?.requestType || "").toString().toLowerCase();
+    const reqType = (currentRequest?.requestType || "")
+      .toString()
+      .toLowerCase();
 
     // normalize fields so downstream tables can render consistently
     const items = (itemsSource || []).map((it, idx) => {
@@ -1756,20 +1806,10 @@ const RequestDetailView = ({
     // ✅ FIX: Only return CompletedTable when isReadOnly is true
     if (isReadOnly) {
       if (reqType === "purchaseorder" || reqType === "pettycash") {
-        return (
-          <CompletedTable
-            items={items}
-            userRole={userRole}
-          />
-        );
+        return <CompletedTable items={items} userRole={userRole} />;
       }
       // Fallback for any other request type in read-only mode
-      return (
-        <CompletedTable
-          items={items}
-          userRole={userRole}
-        />
-      );
+      return <CompletedTable items={items} userRole={userRole} />;
     }
 
     // Role-based table selection (for non-read-only mode)
@@ -1792,12 +1832,25 @@ const RequestDetailView = ({
             tag={currentRequest?.tag || ""}
           />
         );
-// ...existing code (rest of switch cases)...
+      // ...existing code (rest of switch cases)...
 
       case "fleetmanager":
       case "fleet manager":
         return (
           <FleetManagerTable
+            items={items}
+            onEditItem={handleEditItem}
+            isReadOnly={tableReadOnly}
+            vendors={vendors}
+            requestType={
+              selectedRequest?.requestType || request?.requestType || ""
+            }
+          />
+        );
+        case "invoicecontroller":
+      case "invoice controller":
+        return (
+          <InvoiceControllerTable
             items={items}
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
@@ -1962,8 +2015,7 @@ const RequestDetailView = ({
             requestId={request.requestId}
             onDeliveryQuantityChange={handleDeliveryQuantityChange}
             onDeliveryStatusChange={handleDeliveryStatusChange}
-                        tag={currentRequest?.tag || ""}
-
+            tag={currentRequest?.tag || ""}
           />
         );
       case "requester":
@@ -2048,6 +2100,7 @@ const RequestDetailView = ({
             readOnly={tableReadOnly}
             onSwitchInitiated={(itemId) => {}}
             onFilesChanged={handleFilesChanged}
+                doVendorSplit={doVendorSplit}
           />
         );
     }
@@ -2267,7 +2320,6 @@ const RequestDetailView = ({
 
     const items = Array.isArray(req?.items) ? req.items : [];
 
-   
     // check for paid / partpayment statuses (case-insensitive)
     const roleLowerForPayment = (userRole || "").toString().toLowerCase();
     const isAccountingRoleForPayment =
@@ -2318,7 +2370,6 @@ const RequestDetailView = ({
         return;
       }
     }
-
 
     // existing local validations
     if (!canProceedToApprove()) return;
@@ -2582,7 +2633,7 @@ const RequestDetailView = ({
     e.target.value = null;
   };
 
-   const processSelectedFiles = (files) => {
+  const processSelectedFiles = (files) => {
     const maxSize = 10 * 1024 * 1024;
     const newEntries = files
       .map((file, idx) => {
@@ -2626,7 +2677,7 @@ const RequestDetailView = ({
     });
   };
 
-    const handleUploadFile = async (id) => {
+  const handleUploadFile = async (id) => {
     const entry = quotationFiles.find((e) => e.id === id);
     if (!entry) return;
     try {
@@ -2803,7 +2854,7 @@ const RequestDetailView = ({
           </div>
           <div className="px-4 py-3 border-b border-r border-slate-200">
             <p className="text-xs text-slate-500 font-medium mb-0.5">
-             Reference
+              Reference
             </p>
             <p className="text-sm text-slate-900 font-semibold">
               {request.reference || "N/A"}
@@ -2827,16 +2878,29 @@ const RequestDetailView = ({
               {request.paymentType || "N/A"}
             </p>
           </div>
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Job Number/Offshore Number
-            </p>
-            <p className="text-sm font-semibold">
-              <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                {request.jobNumber || "N/A"}
-              </span>
-            </p>
-          </div>
+            {request.destination === "Marine" ? (
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                OffShore Number
+              </p>
+              <p className="text-sm font-semibold">
+                <span className="inline-block px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                  {request.offshoreReqNumber || "N/A"}
+                </span>
+              </p>
+            </div>
+          ) : (
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Job Number
+              </p>
+              <p className="text-sm font-semibold">
+                <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+                  {request.jobNumber || "N/A"}
+                </span>
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -2849,6 +2913,21 @@ const RequestDetailView = ({
           </h3>
           <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
             <p className="text-slate-700 leading-relaxed">{request.purpose}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Additional Information */}
+      {request.additionalInformation && (
+        <div className="mb-8">
+          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <MdInfo className="text-xl" />
+            Additional Information
+          </h3>
+          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+            <p className="text-slate-700 leading-relaxed">
+              {request.additionalInformation}
+            </p>
           </div>
         </div>
       )}
@@ -3460,7 +3539,7 @@ const RequestDetailView = ({
         </div>
       )}
 
-          {/* Quotation/Invoice Upload - Procurement Officer gets toggle, Requester (shipping/clearing) gets quotation only */}
+      {/* Quotation/Invoice Upload - Procurement Officer gets toggle, Requester (shipping/clearing) gets quotation only */}
       {(canUploadQuotation ||
         ((String(currentRequest?.tag || "")
           .toLowerCase()
@@ -3549,7 +3628,9 @@ const RequestDetailView = ({
                       {quotationFiles.length > 0
                         ? `${quotationFiles.length} file(s) selected`
                         : `Drag & drop ${
-                            uploadType === "invoice" ? "invoice(s)" : "quotation(s)"
+                            uploadType === "invoice"
+                              ? "invoice(s)"
+                              : "quotation(s)"
                           } here, or click to browse`}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">
@@ -3688,10 +3769,43 @@ const RequestDetailView = ({
       {/* Items List - Role-based table */}
       {currentRequest?.items && currentRequest.items.length > 0 && (
         <div className="mb-8 ">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <MdShoppingCart className="text-xl" />
-            Requested Items
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+    <MdShoppingCart className="text-xl" />
+    Requested Items
+  </h3>
+  {user?.role?.toLowerCase() === "procurement officer" && !isReadOnly && (
+    <div className="flex items-center gap-4">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="vendorSplit"
+          checked={doVendorSplit}
+          onChange={() => handleVendorSplitChange(true)}
+          disabled={savingVendorSplit}
+        />
+        <span className="text-sm font-medium text-slate-700">
+          Split by Vendor
+        </span>
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="vendorSplit"
+          checked={!doVendorSplit}
+          onChange={() => handleVendorSplitChange(false)}
+          disabled={savingVendorSplit}
+        />
+        <span className="text-sm font-medium text-slate-700">
+          Multiple Vendors
+        </span>
+      </label>
+      {savingVendorSplit && (
+        <span className="text-xs text-slate-500 ml-2">Saving...</span>
+      )}
+    </div>
+  )}
+</div>
           <div
             className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg"
             style={{ position: "relative", zIndex: 1 }}

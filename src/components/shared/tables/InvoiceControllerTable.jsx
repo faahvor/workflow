@@ -1,9 +1,9 @@
-// src/components/tables/FleetManagerTable.jsx
+// src/components/tables/InvoiceControllerTable.jsx
 
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const FleetManagerTable = ({
+const InvoiceControllerTable = ({
   items = [],
   onEditItem,
   isReadOnly = false,
@@ -46,15 +46,15 @@ const FleetManagerTable = ({
   };
   React.useEffect(() => {
     const checkScroll = () => {
-      const container = document.getElementById("fleet-table-container");
+      const container = document.getElementById("invoice-table-container");
       if (!container) {
-        console.log("fleet-table: container not found");
+        console.log("invoice-table: container not found");
         setNeedsScroll(false);
         return;
       }
       const scrollW = container.scrollWidth;
       const clientW = container.clientWidth;
-      console.log("fleet-table: scrollWidth", scrollW, "clientWidth", clientW);
+      console.log("invoice-table: scrollWidth", scrollW, "clientWidth", clientW);
       // small tolerance to avoid off-by-one layout reports
       setNeedsScroll(scrollW > clientW + 1);
     };
@@ -75,7 +75,7 @@ const FleetManagerTable = ({
   // Check if table needs horizontal scrolling
   React.useEffect(() => {
     const checkScroll = () => {
-      const container = document.getElementById("fleet-table-container");
+      const container = document.getElementById("invoice-table-container");
       if (container) {
         setNeedsScroll(container.scrollWidth > container.clientWidth);
       }
@@ -148,7 +148,7 @@ const FleetManagerTable = ({
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
-      <div className="overflow-x-auto" id="fleet-table-container">
+      <div className="overflow-x-auto" id="invoice-table-container">
         <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
           <thead>
             <tr className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
@@ -327,7 +327,7 @@ const FleetManagerTable = ({
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
               const container = document.getElementById(
-                "fleet-table-container"
+                "invoice-table-container"
               );
               if (container) {
                 container.scrollLeft -= 100;
@@ -340,7 +340,7 @@ const FleetManagerTable = ({
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
               const container = document.getElementById(
-                "fleet-table-container"
+                "invoice-table-container"
               );
               if (container) {
                 container.scrollLeft += 100;
@@ -355,4 +355,4 @@ const FleetManagerTable = ({
   );
 };
 
-export default FleetManagerTable;
+export default InvoiceControllerTable;

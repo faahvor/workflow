@@ -253,7 +253,7 @@ const isAnyItemInStock = React.useMemo(() => {
                   {index + 1}
                 </td>
 
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-900">
+                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                   {item.name || "N/A"}
                 </td>
 

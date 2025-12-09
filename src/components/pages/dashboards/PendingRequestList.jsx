@@ -28,17 +28,16 @@ const PendingRequestsList = ({
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [vessels, setVessels] = useState([]);
-
+  const [error, setError] = useState(null);
   // Fetch pending requests (only if not provided externally)
   const fetchPendingRequests = async () => {
-    if (requests !== null) return; // Use external requests
-
     try {
       setLoading(true);
       const token = getToken();
 
       if (!token) {
         console.error("No token found");
+        navigate("/login");
         return;
       }
 
@@ -46,9 +45,29 @@ const PendingRequestsList = ({
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      setPendingRequests(response.data.data || []);
+      const requests = response.data.data || [];
+
+      // Fetch flow for each request to check procurement officer approval
+      const requestsWithFlow = await Promise.all(
+        requests.map(async (request) => {
+          try {
+            const flowResponse = await axios.get(
+              `${API_BASE_URL}/requests/${request.requestId}/flow`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            return { ...request, flow: flowResponse.data };
+          } catch (err) {
+            console.warn(`Failed to fetch flow for ${request.requestId}:`, err);
+            return { ...request, flow: null };
+          }
+        })
+      );
+
+      setPendingRequests(requestsWithFlow);
+      setError(null);
     } catch (err) {
       console.error("❌ Error fetching pending requests:", err);
+      setError(err.response?.data?.message || "Failed to fetch requests");
     } finally {
       setLoading(false);
     }
@@ -174,6 +193,13 @@ const PendingRequestsList = ({
       </div>
     );
   }
+  const hasProcurementOfficerApproved = (request) => {
+    const path = request?.flow?.path || [];
+    const procurementStep = path.find(
+      (step) => step.state === "PENDING_PROCUREMENT_OFFICER_APPROVAL"
+    );
+    return procurementStep?.status === "completed";
+  };
 
   if (filteredRequests.length === 0) {
     return (
@@ -235,14 +261,22 @@ const PendingRequestsList = ({
                     </span>
                   )}
 
-                <span
-                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
-                    request.requestType
-                  )}`}
-                >
-                  {getTypeIcon(request.requestType)}
-                  <span>{getTypeLabel(request.requestType)}</span>
-                </span>
+                {hasProcurementOfficerApproved(request) && (
+                  <span
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+                      request.requestType
+                    )}`}
+                  >
+                    {getTypeIcon(request.requestType)}
+                    <span>{getTypeLabel(request.requestType)}</span>
+                  </span>
+                )}
+                {request.offshoreReqNumber && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                    <MdDirectionsBoat className="text-sm" />
+                    <span>{request.offshoreReqNumber}</span>
+                  </span>
+                )}
 
                 {request.priority === "high" && (
                   <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">

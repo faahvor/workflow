@@ -182,7 +182,7 @@ const Overview = ({
               value={totalUsersDisplay}
               subtitle={
                 suspendedDisplay != null
-                  ? `Active ${activeDisplay} • Suspended ${suspendedDisplay}`
+                  ? `Active ${suspendedDisplay} `
                   : "Active • Suspended"
               }
               icon={<MdPeople />}

@@ -103,7 +103,7 @@ const MovedTable = ({ items = [], requestType = "" }) => {
                   <td className="border border-slate-300 px-4 py-3 text-center text-sm font-medium">
                     {index + 1}
                   </td>
-                  <td className="border border-slate-300 px-4 py-3 text-sm">
+                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                     {item.name || item.description || "N/A"}
                   </td>
                   <td className="border border-slate-300 px-4 py-3 text-sm">

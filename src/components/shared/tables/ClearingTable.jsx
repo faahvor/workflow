@@ -306,7 +306,7 @@ const ClearingTable = ({
                       <td className="border p-3 border-slate-200 text-center">
                         {idx + 1}
                       </td>
-                      <td className="border p-3 border-slate-200">
+                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                         {it.name || "N/A"}
                       </td>
                       <td className="border p-3 border-slate-200">

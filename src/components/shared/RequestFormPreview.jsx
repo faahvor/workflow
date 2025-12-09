@@ -430,7 +430,7 @@ const RequestFormPreview = forwardRef(
                       className="border-b last:border-b-0 border-slate-200"
                     >
                       <td className="px-3 py-2 align-top">{i + 1}</td>
-                      <td className="px-3 py-2 align-top text-slate-900">
+                      <td className="px-3 py-2 align-top text-slate-900  max-w-[180px] md:max-w-[180px] break-words whitespace-normal">
                         {it.name}
                       </td>
                       <td className="px-3 py-2 align-top">{it.quantity}</td>
@@ -486,6 +486,16 @@ const RequestFormPreview = forwardRef(
                     </tr>
                   ))}
                 </tbody>
+                   {!showFeeColumns && (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={6} className="pt-4 text-right font-bold">Grand Total</td>
+                      <td className="pt-4 text-right text-xl font-bold">
+                        {formatCurrency(grandTotal, req.currency)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>

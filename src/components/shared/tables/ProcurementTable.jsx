@@ -38,6 +38,7 @@ const ProcurementTable = ({
   allowInStockChange = true,
   allowLogisticsChange = true,
   onFilesChanged = () => {},
+  doVendorSplit = true,
 }) => {
   const [editedRequests, setEditedRequests] = useState(
     requests.map((request) => ({
@@ -418,8 +419,6 @@ const ProcurementTable = ({
     return changes;
   };
 
-  
-
   const handleSaveAll = async () => {
     console.log("handleSaveAll called", {
       selectedRequest,
@@ -672,11 +671,22 @@ const ProcurementTable = ({
   };
 
   const groupAndSortRequests = (requests) => {
+    if (!doVendorSplit) {
+      // Single table, group by vendor for sorting only
+      const sorted = [...requests].sort((a, b) => {
+        const va = getVendorDisplayName(a.vendor || a.vendorId || "");
+        const vb = getVendorDisplayName(b.vendor || b.vendorId || "");
+        if (va < vb) return -1;
+        if (va > vb) return 1;
+        return 0;
+      });
+      return [{ items: sorted }];
+    }
+    // Default: split by vendor
     const vendorGroups = {};
     requests.forEach((req, index) => {
       const key =
         getVendorDisplayName(
-          // prefer shippingVendor when used, else vendor or vendorId
           req.shippingVendor || req.vendor || req.vendorId || "No Vendor"
         ) || "No Vendor";
       if (!vendorGroups[key]) {
@@ -976,7 +986,7 @@ const ProcurementTable = ({
                         Switch to Petty Cash
                       </th>
                     )}
-                 
+
                     {showItemTypeAndDept && (
                       <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                         In Stock
@@ -1000,6 +1010,11 @@ const ProcurementTable = ({
                     {showItemTypeAndDept && (
                       <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                         Shipping Quantity
+                      </th>
+                    )}
+                    {showItemTypeAndDept && (
+                      <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
+                        Shipping Fee
                       </th>
                     )}
                     {showUnitPrice && (
@@ -1047,10 +1062,7 @@ const ProcurementTable = ({
                         <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                           {index + 1}
                         </td>
-                        <td
-                          className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900"
-                          style={{ minWidth: "150px" }}
-                        >
+                        <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                           {request.name}
                         </td>
                         <td
@@ -1275,7 +1287,7 @@ const ProcurementTable = ({
                             />
                           </td>
                         )}
-                       
+
                         {showItemTypeAndDept && (
                           <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                             <input
@@ -1427,13 +1439,17 @@ const ProcurementTable = ({
                                 request.itemType === "pettyCash"
                               }
                               className={`border px-2 py-1 rounded-md w-32 text-black ${
-                                isPreview || request.inStock || request.itemType === "pettyCash"
+                                isPreview ||
+                                request.inStock ||
+                                request.itemType === "pettyCash"
                                   ? "bg-gray-200 cursor-not-allowed"
                                   : ""
                               }`}
                             >
                               <option value="local">Local</option>
-                              <option value="international">International</option>
+                              <option value="international">
+                                International
+                              </option>
                             </select>
                           </td>
                         )}
@@ -1461,6 +1477,50 @@ const ProcurementTable = ({
                               }`}
                               disabled={request.logisticsType === "local"}
                               placeholder="0"
+                            />
+                          </td>
+                        )}
+                        {showItemTypeAndDept && (
+                          <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={request.shippingFee || ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // If international and other items share vendor, update all
+                                if (
+                                  request.logisticsType === "international" &&
+                                  request.vendor
+                                ) {
+                                  setEditedRequests((prev) =>
+                                    prev.map((item) =>
+                                      item.vendor === request.vendor &&
+                                      item.logisticsType === "international"
+                                        ? {
+                                            ...item,
+                                            shippingFee: value,
+                                            _dirty: true,
+                                          }
+                                        : item
+                                    )
+                                  );
+                                } else {
+                                  handleChange(
+                                    request.itemId,
+                                    "shippingFee",
+                                    value
+                                  );
+                                }
+                              }}
+                              className={`border px-2 py-1 rounded-md w-24 text-black ${
+                                request.logisticsType === "local"
+                                  ? "bg-gray-200 cursor-not-allowed"
+                                  : ""
+                              }`}
+                              disabled={request.logisticsType === "local"}
+                              placeholder="0.00"
                             />
                           </td>
                         )}
@@ -1613,7 +1673,7 @@ const ProcurementTable = ({
 
                         {showUnitPrice && showVat && (
                           <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
-                             <input
+                            <input
                               type="checkbox"
                               checked={
                                 editedRequests.find(
@@ -1635,7 +1695,9 @@ const ProcurementTable = ({
                                 request.itemType === "pettyCash"
                               }
                               className={
-                                isPreview || request.inStock || request.itemType === "pettyCash"
+                                isPreview ||
+                                request.inStock ||
+                                request.itemType === "pettyCash"
                                   ? "cursor-not-allowed"
                                   : ""
                               }
@@ -1715,12 +1777,8 @@ const ProcurementTable = ({
                             </span>
                           </td>
                         )}
-                        {hasPRNVisible && getVendorInfo(request).isFirstRow && (
-                          <td
-                            className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900"
-                            rowSpan={getVendorInfo(request).rowspan}
-                            style={{ verticalAlign: "middle" }}
-                          >
+                        {hasPRNVisible && (
+                          <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                             <span>
                               {request.purchaseRequisitionNumber ||
                                 request.purchaseReqNumber ||
@@ -1761,91 +1819,6 @@ const ProcurementTable = ({
                     );
                   })}
                 </tbody>
-                {shouldShowShippingFeeForVendor(vendorGroup.items) && (
-                  <tbody>
-                    <tr className="">
-                      <td
-                        colSpan={
-                          (showItemTypeAndDept ? 7 : 4) +
-                          (showUnitPrice ? 4 : 0) +
-                          (showUnitPrice && showVat ? 2 : 0) +
-                          (showPRN ? 1 : 0) +
-                          (showPON ? 1 : 0) +
-                          (allowEditing ? 1 : 0) -
-                          1
-                        }
-                        className="border border-slate-200 p-3 text-center font-bold"
-                      >
-                        Shipping Fee -{" "}
-                        {getVendorDisplayName(
-                          vendorGroup.items[0]?.vendor ||
-                            vendorGroup.items[0]?.vendorId ||
-                            "No Vendor"
-                        ) || "No Vendor"}
-                      </td>
-                      <td className="border border-slate-200 p-3 text-center">
-                        <input
-                          type="number"
-                          value={
-                            shippingFees[
-                              vendorGroup.items[0]?.vendor || "No Vendor"
-                            ] || ""
-                          }
-                          onChange={(e) => {
-                            const vendor =
-                              vendorGroup.items[0]?.vendor || "No Vendor";
-                            const value =
-                              e.target.value === ""
-                                ? 0
-                                : parseFloat(e.target.value) || 0;
-
-                            // Update local UI state immediately
-                            setShippingFees((prev) => ({
-                              ...prev,
-                              [vendor]: value,
-                            }));
-
-                            // Update editedRequests locally and mark as dirty.
-                            // Do NOT call handleUnifiedEdit here; saving happens on Save Changes.
-                            setEditedRequests((prev) =>
-                              prev.map((item) =>
-                                (item.vendor || "No Vendor") === vendor
-                                  ? {
-                                      ...item,
-                                      shippingFee: value,
-                                      _dirty: true,
-                                    }
-                                  : item
-                              )
-                            );
-                          }}
-                          onFocus={(e) => {
-                            if (
-                              e.target.value === "0" ||
-                              e.target.value === "0.00"
-                            ) {
-                              e.target.value = "";
-                            }
-                          }}
-                          onBlur={(e) => {
-                            if (e.target.value === "") {
-                              const vendor =
-                                vendorGroup.items[0]?.vendor || "No Vendor";
-                              setShippingFees((prev) => ({
-                                ...prev,
-                                [vendor]: 0,
-                              }));
-                            }
-                          }}
-                          className="border px-2 py-1 rounded-md w-24 border-slate-200 text-center"
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
-                        />
-                      </td>
-                    </tr>
-                  </tbody>
-                )}
               </table>
             </div>
           );

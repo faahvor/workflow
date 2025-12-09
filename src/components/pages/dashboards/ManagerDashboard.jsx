@@ -395,6 +395,13 @@ const ManagerDashboard = () => {
     const vessel = vessels.find((v) => v.vesselId === vesselId);
     return vessel?.name || vesselId;
   };
+  const hasProcurementOfficerApproved = (request) => {
+    const path = request?.flow?.path || [];
+    const procurementStep = path.find(
+      (step) => step.state === "PENDING_PROCUREMENT_OFFICER_APPROVAL"
+    );
+    return procurementStep?.status === "completed";
+  };
 
   const filteredRequests = pendingRequests.filter((req) => {
     const matchesSearch =
@@ -568,7 +575,7 @@ const ManagerDashboard = () => {
                   <ProcurementMyRequests onOpenDetail={handleOpenDetail} />
                 )}
 
-                  {activeView === "overview" && (
+                {activeView === "overview" && (
                   <OverviewDashboard
                     user={user}
                     pendingRequests={pendingRequests}
@@ -580,7 +587,7 @@ const ManagerDashboard = () => {
                   />
                 )}
 
-              {activeView !== "signature" &&
+                {activeView !== "signature" &&
                   activeView !== "vendorManagement" &&
                   activeView !== "inventoryManagement" &&
                   activeView !== "merged" &&
@@ -648,7 +655,7 @@ const ManagerDashboard = () => {
                     API_BASE_URL={API_BASE_URL}
                     onOpenDetail={handleOpenDetail}
                   />
-                 ) : activeView !== "signature" &&
+                ) : activeView !== "signature" &&
                   activeView !== "vendorManagement" &&
                   activeView !== "createNew" &&
                   activeView !== "myRequests" &&
@@ -700,14 +707,24 @@ const ManagerDashboard = () => {
                                   </span>
                                 )}
 
-                              <span
-                                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
-                                  request.requestType
-                                )}`}
-                              >
-                                {getTypeIcon(request.requestType)}
-                                <span>{getTypeLabel(request.requestType)}</span>
-                              </span>
+                              {hasProcurementOfficerApproved(request) && (
+                                <span
+                                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+                                    request.requestType
+                                  )}`}
+                                >
+                                  {getTypeIcon(request.requestType)}
+                                  <span>
+                                    {getTypeLabel(request.requestType)}
+                                  </span>
+                                </span>
+                              )}
+                              {request.offshoreReqNumber && (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                                  <MdDirectionsBoat className="text-sm" />
+                                  <span>{request.offshoreReqNumber}</span>
+                                </span>
+                              )}
 
                               {request.priority === "high" && (
                                 <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">

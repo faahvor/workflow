@@ -190,6 +190,12 @@ const RequesterPending = ({
                           <span>Clearing</span>
                         </span>
                       )}
+                       {request.offshoreReqNumber && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                    <MdDirectionsBoat className="text-sm" />
+                    <span>{request.offshoreReqNumber}</span>
+                  </span>
+                )}
                       {request.items &&
                         request.items.some((it) => it && it.inStock) && (
                           <span

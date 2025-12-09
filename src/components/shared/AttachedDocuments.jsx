@@ -538,7 +538,7 @@ const AttachedDocuments = ({
       const paymentAdviceFiles = Array.isArray(requestData.paymentAdviceFiles)
         ? requestData.paymentAdviceFiles
         : [];
-           const requestImages = Array.isArray(requestData.requestImages)
+      const requestImages = Array.isArray(requestData.requestImages)
         ? requestData.requestImages
         : [];
 
@@ -561,8 +561,7 @@ const AttachedDocuments = ({
       const rawQuotations = buildMeta(quotationFiles, "quotation");
       const rawPaymentAdvice = buildMeta(paymentAdviceFiles, "paymentAdvice");
       const rawInvoices = buildMeta(invoiceFiles, "invoice");
-            const rawRequestImages = buildMeta(requestImages, "requestImage");
-
+      const rawRequestImages = buildMeta(requestImages, "requestImage");
 
       const dedupeByVendor = (list) => {
         const map = new Map();
@@ -587,7 +586,7 @@ const AttachedDocuments = ({
         ...rawQuotations,
         ...rawPaymentAdvice,
         ...rawInvoices,
-        ...rawRequestImages, 
+        ...rawRequestImages,
       ];
 
       if (!mounted) return;
@@ -658,7 +657,7 @@ const AttachedDocuments = ({
         display = "Payment Advice";
       } else if (m.type === "invoice") {
         display = "Invoice";
-  } else if (m.type === "requestImage") {
+      } else if (m.type === "requestImage") {
         // ✅ ADD: Display name for request images
         // Count how many requestImages we've seen so far
         const imageIndex = fileMeta
@@ -985,69 +984,126 @@ const AttachedDocuments = ({
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 grid-flow-row-dense">
-            {requestFormGroups &&
-              requestFormGroups.length > 0 &&
-              requestFormGroups.map((g, idx) => (
-                <div
-                  key={String(g.vendorId ?? `no-vendor-${idx}`)}
-                  className="relative"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openPreview({
-                        type: "requestForm",
-                        name: g.vendorName
-                          ? `${g.vendorName} RequestForm`
-                          : " RequestForm",
-                        displayName: g.vendorName
-                          ? `${g.vendorName} RequestForm`
-                          : " RequestForm",
-                        vendorId: g.vendorId,
-                        vendorName: g.vendorName,
-                        items: g.items,
-                      })
-                    }
-                    className="bg-white/90 border-2 border-slate-200 rounded-lg p-3 text-left hover:border-slate-300 transition-colors text-sm w-full"
-                  >
-                    <div className="truncate font-semibold text-slate-900">
-                      {g.vendorName
-                        ? `${g.vendorName} RequestForm`
-                        : " RequestForm"}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Request Form (items: {g.items.length})
-                    </div>
-                  </button>
-                </div>
-              ))}
-            {vendorGroups &&
-              vendorGroups.length > 0 &&
-              vendorGroups.map((g) => (
-                <div key={String(g.vendorId)} className="relative">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openPreview({
-                        type: "requisition",
-                        name: `${g.vendorName} Requisition Preview`,
-                        displayName: `${g.vendorName} Requisition Preview`,
-                        vendorId: g.vendorId,
-                        vendorName: g.vendorName,
-                        items: g.items,
-                      })
-                    }
-                    className="bg-white/90 border-2 border-slate-200 rounded-lg p-3 text-left hover:border-slate-300 transition-colors text-sm w-full"
-                  >
-                    <div className="truncate font-semibold text-slate-900">
-                      {g.vendorName}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Requisition Preview (items: {g.items.length})
-                    </div>
-                  </button>
-                </div>
-              ))}
+         {requestData?.doVendorSplit
+  ? (
+    requestFormGroups &&
+    requestFormGroups.length > 0 &&
+    requestFormGroups.map((g, idx) => (
+      <div
+        key={String(g.vendorId ?? `no-vendor-${idx}`)}
+        className="relative"
+      >
+        <button
+          type="button"
+          onClick={() =>
+            openPreview({
+              type: "requestForm",
+              name: g.vendorName
+                ? `${g.vendorName} RequestForm`
+                : " RequestForm",
+              displayName: g.vendorName
+                ? `${g.vendorName} RequestForm`
+                : " RequestForm",
+              vendorId: g.vendorId,
+              vendorName: g.vendorName,
+              items: g.items,
+            })
+          }
+          className="bg-white/90 border-2 border-slate-200 rounded-lg p-3 text-left hover:border-slate-300 transition-colors text-sm w-full"
+        >
+          <div className="truncate font-semibold text-slate-900">
+            {g.vendorName
+              ? `${g.vendorName} RequestForm`
+              : " RequestForm"}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">
+            Request Form (items: {g.items.length})
+          </div>
+        </button>
+      </div>
+    ))
+  )
+  : (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() =>
+          openPreview({
+            type: "requestForm",
+            name: "Multiple Vendors Request Form",
+            displayName: "Multiple Vendors Request Form",
+            vendorId: null,
+            vendorName: "Multiple Vendors",
+            items: (requestData?.items || requestItems || []),
+          })
+        }
+        className="bg-white/90 border-2 border-slate-200 rounded-lg p-3 text-left hover:border-slate-300 transition-colors text-sm w-full"
+      >
+        <div className="truncate font-semibold text-slate-900">
+          Multiple Vendors Request Form
+        </div>
+        <div className="text-xs text-slate-500 mt-1">
+          Request Form (items: {(requestData?.items || requestItems || []).length})
+        </div>
+      </button>
+    </div>
+  )
+}
+            {requestData?.doVendorSplit
+              ? vendorGroups &&
+                vendorGroups.length > 0 &&
+                vendorGroups.map((g) => (
+                  <div key={String(g.vendorId)} className="relative">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openPreview({
+                          type: "requisition",
+                          name: `${g.vendorName} Requisition Preview`,
+                          displayName: `${g.vendorName} Requisition Preview`,
+                          vendorId: g.vendorId,
+                          vendorName: g.vendorName,
+                          items: g.items,
+                        })
+                      }
+                      className="bg-white/90 border-2 border-slate-200 rounded-lg p-3 text-left hover:border-slate-300 transition-colors text-sm w-full"
+                    >
+                      <div className="truncate font-semibold text-slate-900">
+                        {g.vendorName}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        Requisition Preview (items: {g.items.length})
+                      </div>
+                    </button>
+                  </div>
+                ))
+              : vendorGroups &&
+                vendorGroups.length > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openPreview({
+                          type: "requisition",
+                          name: "Multiple Vendors Requisition File",
+                          displayName: "Multiple Vendors Requisition File",
+                          vendorId: null,
+                          vendorName: "Multiple Vendors",
+                          items: vendorGroups.flatMap((g) => g.items),
+                        })
+                      }
+                      className="bg-white/90 border-2 border-slate-200 rounded-lg p-3 text-left hover:border-slate-300 transition-colors text-sm w-full"
+                    >
+                      <div className="truncate font-semibold text-slate-900">
+                        Multiple Vendors Requisition File
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        Requisition Preview (items:{" "}
+                        {vendorGroups.flatMap((g) => g.items).length})
+                      </div>
+                    </button>
+                  </div>
+                )}
             {showPurchaseOrder &&
               vendorGroups &&
               vendorGroups.length > 0 &&
@@ -1137,9 +1193,11 @@ const AttachedDocuments = ({
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <div className="flex items-center gap-3">
-                 {active.vendorId === null &&
-                    ((user?.role || "").toLowerCase() === "procurement officer" ||
-                      (user?.role || "").toLowerCase() === "procurementofficer") && (
+                  {active.vendorId === null &&
+                    ((user?.role || "").toLowerCase() ===
+                      "procurement officer" ||
+                      (user?.role || "").toLowerCase() ===
+                        "procurementofficer") && (
                       <button
                         onClick={handleSendAsMailFromRequestForm}
                         disabled={preparingEmailPdf}
@@ -1149,7 +1207,8 @@ const AttachedDocuments = ({
                             : "bg-emerald-500 text-white hover:bg-emerald-600"
                         }`}
                       >
-                        ✉️ {preparingEmailPdf ? "Preparing PDF…" : "Send as Mail"}
+                        ✉️{" "}
+                        {preparingEmailPdf ? "Preparing PDF…" : "Send as Mail"}
                       </button>
                     )}
                   <div className="text-sm font-semibold text-slate-900 truncate max-w-[360px]">
@@ -1272,6 +1331,7 @@ const AttachedDocuments = ({
                   }}
                 >
                   <RequisitionPreview
+                  doVendorSplit={requestData?.doVendorSplit}
                     request={requestData || {}}
                     // if we opened a vendor tile we pass only that vendor's items; else fall back to full request items
                     items={

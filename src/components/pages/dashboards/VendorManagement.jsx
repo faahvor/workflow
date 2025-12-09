@@ -49,6 +49,7 @@ const VendorManagement = () => {
   const [editingVendor, setEditingVendor] = useState(null);
   const [form, setForm] = useState({
     name: "",
+    email: "",
     department: "",
     type: "registered",
     phone: "",
@@ -232,11 +233,18 @@ const VendorManagement = () => {
   };
 
   // ...existing code...
-  // fetch registered when page changes (already exists)
-  useEffect(() => {
-    fetchRegistered(page, filterQuery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+useEffect(() => {
+  // fetch both registered and unregistered on mount
+  fetchRegistered(page, filterQuery);
+  fetchUnregistered(1, ""); // fetch unregistered count on initial load
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+useEffect(() => {
+  // fetch registered when page changes
+  fetchRegistered(page, filterQuery);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [page])
 
   // fetch unregistered when sundryPage changes (run only when on sundry tab)
   useEffect(() => {
@@ -290,8 +298,6 @@ const VendorManagement = () => {
     activeContracts: registered.filter((r) => r.serviceType).length,
   };
 
-
-
   const filteredRegistered = registered.filter((v) =>
     `${v.name} ${addressToString(v.address)} ${v.phone || ""}`
       .toLowerCase()
@@ -319,11 +325,23 @@ const VendorManagement = () => {
       alert("Vendor ID missing; cannot update via API.");
       return;
     }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!editingVendor.email || !editingVendor.email.trim()) {
+      alert("Email is required.");
+      return;
+    }
+    if (!emailRegex.test(editingVendor.email.trim())) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+
     setLoading(true);
     try {
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
       const payload = {
         name: editingVendor.name,
+        email: editingVendor.email.trim(),
+
         phone: editingVendor.phone,
         address: editingVendor.address,
         type: editingVendor.type,
@@ -397,6 +415,21 @@ const VendorManagement = () => {
 
   // ...existing code...
   const addVendor = async () => {
+    if (!form.name || !form.name.trim()) {
+      alert("Vendor name is required.");
+      return;
+    }
+
+    // Validate email is required and has valid format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!form.email || !form.email.trim()) {
+      alert("Email is required.");
+      return;
+    }
+    if (!emailRegex.test(form.email.trim())) {
+      alert("Please enter a valid email address.");
+      return;
+    }
     setLoading(true);
     try {
       // use available token (admin or normal user)
@@ -409,6 +442,8 @@ const VendorManagement = () => {
       // build multipart payload per docs
       const formData = new FormData();
       formData.append("name", form.name || "");
+      formData.append("email", form.email.trim());
+
       formData.append("department", form.department || "");
       formData.append("type", form.type || "registered");
       if (form.phone) formData.append("phone", form.phone);
@@ -545,6 +580,7 @@ const VendorManagement = () => {
   const resetForm = () =>
     setForm({
       name: "",
+      email: "",
       department: "",
       type: "registered",
       phone: "",
@@ -602,8 +638,6 @@ const VendorManagement = () => {
   const onDragLeave = (e) => {
     e.preventDefault();
     setDragOver(false);
-
-
   };
 
   const daysRemaining = (iso) => {
@@ -631,8 +665,6 @@ const VendorManagement = () => {
       return "N/A";
     }
   };
-
-  
 
   return (
     <div className="w-full">
@@ -778,6 +810,11 @@ const VendorManagement = () => {
                             <div className="font-semibold text-slate-900">
                               {v.name}
                             </div>
+                            {v.email && (
+                              <div className="text-xs text-gray-400">
+                                {v.email}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -787,14 +824,15 @@ const VendorManagement = () => {
                         {" "}
                         {addressToString(v.address) || "N/A"}
                       </td>
-                     <td className="px-4 py-3">
+                      <td className="px-4 py-3">
                         {v.expiryDate || v.contractEnd ? (
                           <div>
                             <div className="text-sm font-medium text-slate-900">
                               {formatDate(v.expiryDate ?? v.contractEnd)}
                             </div>
                             <div className="text-xs text-slate-500">
-                              {daysRemaining(v.expiryDate ?? v.contractEnd)} days left
+                              {daysRemaining(v.expiryDate ?? v.contractEnd)}{" "}
+                              days left
                             </div>
                           </div>
                         ) : (
@@ -861,7 +899,6 @@ const VendorManagement = () => {
             <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
               <MdListAlt /> Un-Registered Vendors
             </h3>
-            
           </div>
 
           <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg overflow-x-auto">
@@ -1058,6 +1095,18 @@ const VendorManagement = () => {
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="vendor@example.com"
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
@@ -1295,7 +1344,9 @@ const VendorManagement = () => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-slate-500">Name</label>
+                <label className="text-xs text-slate-500">
+                  Name <span className="text-red-500">*</span>
+                </label>
                 <input
                   value={editingVendor.name}
                   onChange={(e) =>
@@ -1304,6 +1355,23 @@ const VendorManagement = () => {
                       name: e.target.value,
                     })
                   }
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={editingVendor.email || ""}
+                  onChange={(e) =>
+                    setEditingVendor({
+                      ...editingVendor,
+                      email: e.target.value,
+                    })
+                  }
+                  placeholder="vendor@example.com"
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>

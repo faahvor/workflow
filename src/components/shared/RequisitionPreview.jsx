@@ -23,15 +23,23 @@ const getVendorDisplayName = (vendorOrName) => {
 };
 
 const RequisitionPreview = forwardRef(
-  ({ request = {}, items = [], requestId = null, token = null, apiBase = "https://hdp-backend-1vcl.onrender.com/api" }, ref) => {
+  (
+    {
+      request = {},
+      items = [],
+      requestId = null,
+      token = null,
+      apiBase = "https://hdp-backend-1vcl.onrender.com/api",
+      doVendorSplit = true,
+    },
+    ref
+  ) => {
     // live state that will replace the static props when requestId provided
     const [liveRequest, setLiveRequest] = useState(request || {});
     const [liveItems, setLiveItems] = useState(items || []);
     const [signaturesPrepared, setSignaturesPrepared] = useState([]);
     const [vendorInfo, setVendorInfo] = useState(null);
     const [loading, setLoading] = useState(false);
-
-    
 
     // helper: convert ArrayBuffer -> base64 for browser
     const arrayBufferToBase64 = (buffer) => {
@@ -42,12 +50,18 @@ const RequisitionPreview = forwardRef(
       return btoa(binary);
     };
 
-   const fetchImageAsDataUrl = async (url) => {
+    const fetchImageAsDataUrl = async (url) => {
       if (!url) return null;
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const resp = await axios.get(url, { responseType: "arraybuffer", headers });
-        const contentType = resp.headers && resp.headers["content-type"] ? resp.headers["content-type"] : "image/png";
+        const resp = await axios.get(url, {
+          responseType: "arraybuffer",
+          headers,
+        });
+        const contentType =
+          resp.headers && resp.headers["content-type"]
+            ? resp.headers["content-type"]
+            : "image/png";
         const base64 = arrayBufferToBase64(resp.data);
         return `data:${contentType};base64,${base64}`;
       } catch (err) {
@@ -67,9 +81,14 @@ const RequisitionPreview = forwardRef(
           // if a requestId is provided, re-fetch latest request from API (old behaviour)
           if (requestId) {
             const headers = token ? { Authorization: `Bearer ${token}` } : {};
-            const resp = await axios.get(`${apiBase}/requests/${encodeURIComponent(requestId)}`, { headers });
+            const resp = await axios.get(
+              `${apiBase}/requests/${encodeURIComponent(requestId)}`,
+              { headers }
+            );
             sourceRequest = resp.data?.data ?? resp.data ?? {};
-            sourceItems = Array.isArray(sourceRequest.items) ? sourceRequest.items : items || [];
+            sourceItems = Array.isArray(sourceRequest.items)
+              ? sourceRequest.items
+              : items || [];
           }
 
           if (!mounted) return;
@@ -77,7 +96,10 @@ const RequisitionPreview = forwardRef(
           setLiveItems(sourceItems || []);
 
           // vendor info: prefer vendorId found in first item of the provided items list
-           const firstItem = Array.isArray(sourceItems) && sourceItems.length ? sourceItems[0] : null;
+          const firstItem =
+            Array.isArray(sourceItems) && sourceItems.length
+              ? sourceItems[0]
+              : null;
           if (firstItem && firstItem.vendor) {
             // vendor may already be an object on the item
             if (typeof firstItem.vendor === "object") {
@@ -85,8 +107,13 @@ const RequisitionPreview = forwardRef(
             } else {
               // vendor is an id string -> fetch vendor
               try {
-                const headers = token ? { Authorization: `Bearer ${token}` } : {};
-                const vResp = await axios.get(`${apiBase}/vendors/${encodeURIComponent(firstItem.vendor)}`, { headers });
+                const headers = token
+                  ? { Authorization: `Bearer ${token}` }
+                  : {};
+                const vResp = await axios.get(
+                  `${apiBase}/vendors/${encodeURIComponent(firstItem.vendor)}`,
+                  { headers }
+                );
                 if (!mounted) return;
                 setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
               } catch (verr) {
@@ -96,7 +123,10 @@ const RequisitionPreview = forwardRef(
           } else if (firstItem && firstItem.vendorId) {
             try {
               const headers = token ? { Authorization: `Bearer ${token}` } : {};
-              const vResp = await axios.get(`${apiBase}/vendors/${encodeURIComponent(firstItem.vendorId)}`, { headers });
+              const vResp = await axios.get(
+                `${apiBase}/vendors/${encodeURIComponent(firstItem.vendorId)}`,
+                { headers }
+              );
               if (!mounted) return;
               setVendorInfo(vResp.data?.data ?? vResp.data ?? null);
             } catch (verr) {
@@ -107,19 +137,28 @@ const RequisitionPreview = forwardRef(
           }
 
           // prepare signatures — use signatures from the source request (works whether we fetched or were passed request)
-          const rawSignatures = Array.isArray(sourceRequest.signatures) ? sourceRequest.signatures.slice() : [];
+          const rawSignatures = Array.isArray(sourceRequest.signatures)
+            ? sourceRequest.signatures.slice()
+            : [];
           rawSignatures.sort((a, b) => {
             const ta = a.timestamp || a.time || a.createdAt || 0;
             const tb = b.timestamp || b.time || b.createdAt || 0;
             return new Date(ta).getTime() - new Date(tb).getTime();
           });
 
-           const prepared = await Promise.all(
+          const prepared = await Promise.all(
             rawSignatures.map(async (s) => {
-              const img = s.signatureUrl ? await fetchImageAsDataUrl(s.signatureUrl) : null;
+              const img = s.signatureUrl
+                ? await fetchImageAsDataUrl(s.signatureUrl)
+                : null;
               return {
                 userId: s.userId,
-                name: s.name || s.userName || s.displayName || s.requesterName || "",
+                name:
+                  s.name ||
+                  s.userName ||
+                  s.displayName ||
+                  s.requesterName ||
+                  "",
                 role: s.role || s.position || "",
                 timestamp: s.timestamp || s.time || s.createdAt || null,
                 signatureUrl: s.signatureUrl || null,
@@ -148,8 +187,11 @@ const RequisitionPreview = forwardRef(
     }, [requestId, request, items, token, apiBase]); // react to provided request/items or a requestId
 
     const req = liveRequest || {};
-    const usedItems = Array.isArray(liveItems) && liveItems.length > 0 ? liveItems : items || [];
-   const getPrFromItems = () => {
+    const usedItems =
+      Array.isArray(liveItems) && liveItems.length > 0
+        ? liveItems
+        : items || [];
+    const getPrFromItems = () => {
       if (!Array.isArray(usedItems)) return null;
       for (const it of usedItems) {
         const candidate =
@@ -173,19 +215,22 @@ const RequisitionPreview = forwardRef(
       req.requestId ||
       req.id ||
       requestId ||
-      "N/A"; 
-       const createdAt = req.createdAt ? new Date(req.createdAt) : new Date();
+      "N/A";
+    const createdAt = req.createdAt ? new Date(req.createdAt) : new Date();
     const dateStr = createdAt.toLocaleDateString();
-    const requiredDate = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString();
+    const requiredDate = new Date(
+      createdAt.getTime() + 24 * 60 * 60 * 1000
+    ).toLocaleDateString();
     const reference = req.reference || "N/A";
     const paymentType = req.paymentType || "N/A";
     const grandTotal = usedItems.reduce((s, it) => {
       const qty = Number(it.quantity || 0);
-      const total = it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
+      const total =
+        it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
       return s + (isNaN(total) ? 0 : total);
     }, 0);
 
-   const getVendorAddressLines = (v) => {
+    const getVendorAddressLines = (v) => {
       if (!v) return null;
       const address = v.address;
       if (!address) return null;
@@ -200,7 +245,7 @@ const RequisitionPreview = forwardRef(
       return parts.length ? parts.join("\n") : null;
     };
 
-       const vendorNameLine = vendorInfo
+    const vendorNameLine = vendorInfo
       ? getVendorDisplayName(vendorInfo)
       : usedItems[0]
       ? getVendorDisplayName(usedItems[0].vendor || usedItems[0].vendorName)
@@ -209,17 +254,24 @@ const RequisitionPreview = forwardRef(
     const addressPart =
       vendorInfo && vendorInfo.address
         ? getVendorAddressLines(vendorInfo)
-        : usedItems[0] && usedItems[0].vendor && typeof usedItems[0].vendor === "object"
+        : usedItems[0] &&
+          usedItems[0].vendor &&
+          typeof usedItems[0].vendor === "object"
         ? getVendorAddressLines(usedItems[0].vendor)
         : null;
-        const tagLower = String(req.tag || "").toLowerCase();
+    const tagLower = String(req.tag || "").toLowerCase();
     const isShippingTag = tagLower === "shipping";
     const isClearingTag = tagLower === "clearing";
     const showFeeColumns = isShippingTag || isClearingTag;
 
-    const issuedToLines = [vendorNameLine, addressPart].filter(Boolean).join("\n");
+    const issuedToLines = [vendorNameLine, addressPart]
+      .filter(Boolean)
+      .join("\n");
     return (
-      <div ref={ref} className="bg-white px-12 md:px-16 lg:px-20 print:px-8 py-6 text-slate-900 max-w-5xl mx-auto">
+      <div
+        ref={ref}
+        className="bg-white px-12 md:px-16 lg:px-20 print:px-8 py-6 text-slate-900 max-w-5xl mx-auto"
+      >
         <div className="px-4 py-4 border-b bg-gradient-to-r from-white to-slate-50">
           <h2 className="text-2xl font-extrabold">Requisition Form</h2>
         </div>
@@ -227,11 +279,17 @@ const RequisitionPreview = forwardRef(
         <div className="px-6 py-5 border-b">
           <div className="grid gap-2 md:grid-cols-[1fr_250px] grid-cols-1 md:gap-4">
             <div className="flex flex-col items-start gap-4 min-w-0">
-               <div className="w-32 h-16 flex-shrink-0 rounded-md overflow-hidden  flex items-center justify-center">
-                <img src="/logo.png" alt="Hydrodive Nigeria Ltd logo" className="w-full h-full object-contain" />
+              <div className="w-32 h-16 flex-shrink-0 rounded-md overflow-hidden  flex items-center justify-center">
+                <img
+                  src="/logo.png"
+                  alt="Hydrodive Nigeria Ltd logo"
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div className="min-w-0">
-                <div className="text-lg font-bold leading-tight">Hydrodive Nigeria Ltd</div>
+                <div className="text-lg font-bold leading-tight">
+                  Hydrodive Nigeria Ltd
+                </div>
                 <div className="text-sm text-slate-500 mt-1 leading-relaxed">
                   17, Wharf Road, <br />
                   Apapa, Lagos <br />
@@ -265,25 +323,39 @@ const RequisitionPreview = forwardRef(
                 <div className="font-semibold">Timeline:</div>
                 <div className="text-sm text-slate-500">{paymentType}</div>
               </div>
-              
             </div>
           </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
-            <div className="text-sm font-semibold text-slate-800 mb-2">Issued To:</div>
- <div>
-           <div className="text-base font-semibold text-slate-800">{vendorNameLine}</div>
-           {addressPart ? (
-             <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
-               {addressPart}
-             </div>
-           ) : null}
-         </div>          </div>
+            <div className="text-sm font-semibold text-slate-800 mb-2">
+              Issued To:
+            </div>
+            <div>
+          {!doVendorSplit ? (
+  <div className="text-base font-semibold text-slate-800">
+    Multiple Vendors
+  </div>
+) : (
+  <>
+    <div className="text-base font-semibold text-slate-800">
+      {vendorNameLine}
+    </div>
+    {addressPart ? (
+      <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+        {addressPart}
+      </div>
+    ) : null}
+  </>
+)}
+            </div>{" "}
+          </div>
 
           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
-             <div className="text-sm font-semibold text-slate-800 mb-2">Ship To:</div>
+            <div className="text-sm font-semibold text-slate-800 mb-2">
+              Ship To:
+            </div>
             <div>
               <div className="text-base font-semibold text-slate-800">
                 {req.company?.name || "Hydrodive Nigeria Limited"}
@@ -311,7 +383,6 @@ const RequisitionPreview = forwardRef(
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
             <h4 className="text-sm font-semibold mb-3">Requisition Items</h4>
             <div className="overflow-x-auto">
-              
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-slate-500">
@@ -359,7 +430,9 @@ const RequisitionPreview = forwardRef(
                   {usedItems.map((it, i) => (
                     <tr key={it.itemId || i} className="py-2">
                       <td className="py-3 text-slate-700">{i + 1}</td>
-                      <td className="py-3 text-slate-900">{it.name}</td>
+                      <td className="px-3 py-2  text-slate-900 max-w-[180px] md:max-w-[180px] break-words whitespace-normal">
+                        {it.name}
+                      </td>
                       <td className="py-3 text-slate-700">{it.quantity}</td>
 
                       {/* ✅ Shipping Qty - only for shipping/clearing */}
@@ -372,28 +445,42 @@ const RequisitionPreview = forwardRef(
                       {/* ✅ Shipping Fee - only for shipping/clearing */}
                       {showFeeColumns && (
                         <td className="py-3 text-right text-slate-700">
-                          {formatCurrency(it.shippingFee || 0, it.currency || req.currency)}
+                          {formatCurrency(
+                            it.shippingFee || 0,
+                            it.currency || req.currency
+                          )}
                         </td>
                       )}
 
                       {/* ✅ Clearing Fee - only for clearing */}
                       {isClearingTag && (
                         <td className="py-3 text-right text-slate-700">
-                          {formatCurrency(it.clearingFee || 0, it.currency || req.currency)}
+                          {formatCurrency(
+                            it.clearingFee || 0,
+                            it.currency || req.currency
+                          )}
                         </td>
                       )}
 
                       {/* ✅ Unit Price - hide for shipping/clearing */}
                       {!showFeeColumns && (
                         <td className="py-3 text-right text-slate-700">
-                          {formatCurrency(it.unitPrice, it.currency || req.currency)}
+                          {formatCurrency(
+                            it.unitPrice,
+                            it.currency || req.currency
+                          )}
                         </td>
                       )}
 
                       {/* ✅ Discount - hide for shipping/clearing */}
                       {!showFeeColumns && (
                         <td className="py-3 text-right text-slate-700">
-                          {it.discount ? formatCurrency(it.discount, it.currency || req.currency) : "-"}
+                          {it.discount
+                            ? formatCurrency(
+                                it.discount,
+                                it.currency || req.currency
+                              )
+                            : "-"}
                         </td>
                       )}
 
@@ -407,7 +494,10 @@ const RequisitionPreview = forwardRef(
                       {/* ✅ Total - hide for shipping/clearing */}
                       {!showFeeColumns && (
                         <td className="py-3 text-right font-semibold text-slate-900">
-                          {formatCurrency(it.total || (it.unitPrice * it.quantity), it.currency || req.currency)}
+                          {formatCurrency(
+                            it.total || it.unitPrice * it.quantity,
+                            it.currency || req.currency
+                          )}
                         </td>
                       )}
                     </tr>
@@ -418,7 +508,9 @@ const RequisitionPreview = forwardRef(
                 {!showFeeColumns && (
                   <tfoot>
                     <tr>
-                      <td colSpan={6} className="pt-4 text-right font-bold">Grand Total</td>
+                      <td colSpan={6} className="pt-4 text-right font-bold">
+                        Grand Total
+                      </td>
                       <td className="pt-4 text-right text-xl font-bold">
                         {formatCurrency(grandTotal, req.currency)}
                       </td>
@@ -426,7 +518,6 @@ const RequisitionPreview = forwardRef(
                   </tfoot>
                 )}
               </table>
-
             </div>
           </div>
 
@@ -437,20 +528,45 @@ const RequisitionPreview = forwardRef(
               <p className="text-xs text-slate-500 mb-2">Approved by</p>
 
               {/* signatures grid (live) */}
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {loading ? (
-                  <div className="text-sm text-slate-500">Loading signatures…</div>
+                  <div className="text-sm text-slate-500">
+                    Loading signatures…
+                  </div>
                 ) : (
                   signaturesPrepared.map((s, idx) => {
-                    const ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : "";
+                    const ts = s.timestamp
+                      ? new Date(s.timestamp).toLocaleString()
+                      : "";
                     return (
-                      <div key={s.userId || idx} className="bg-white p-3 rounded-xl border border-slate-100">
+                      <div
+                        key={s.userId || idx}
+                        className="bg-white p-3 rounded-xl border border-slate-100"
+                      >
                         {s.imageData ? (
                           <div style={{ height: 40 }}>
-                            <img src={s.imageData} alt={s.name} style={{ maxWidth: 160, height: 36, objectFit: "contain" }} />
+                            <img
+                              src={s.imageData}
+                              alt={s.name}
+                              style={{
+                                maxWidth: 160,
+                                height: 36,
+                                objectFit: "contain",
+                              }}
+                            />
                           </div>
                         ) : (
-                          <div style={{ height: 36, fontFamily: "Brush Script MT, Lucida Handwriting, cursive", fontSize: 20, color: "#036173" }}>{s.name}</div>
+                          <div
+                            style={{
+                              height: 36,
+                              fontFamily:
+                                "Brush Script MT, Lucida Handwriting, cursive",
+                              fontSize: 20,
+                              color: "#036173",
+                            }}
+                          >
+                            {s.name}
+                          </div>
                         )}
                         <div className="mt-2">
                           <div className="text-sm font-semibold">{s.name}</div>
@@ -463,12 +579,12 @@ const RequisitionPreview = forwardRef(
                 )}
               </div>
             </div>
-
-           
           </div>
         </div>
 
-        {loading && <div className="text-xs text-slate-500 mt-2">Refreshing preview…</div>}
+        {loading && (
+          <div className="text-xs text-slate-500 mt-2">Refreshing preview…</div>
+        )}
       </div>
     );
   }

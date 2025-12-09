@@ -40,6 +40,7 @@ export const ROLES = {
   MARINE_OFFICER: "Marine Officer",
   COST_CONTROLLER: "Cost Controller",
   ADMIN_SUPERVISOR: "Admin Supervisor",
+  INVOICE_CONTROLLER:"Invoice Controller",
 };
 
 export const DEPARTMENTS = {

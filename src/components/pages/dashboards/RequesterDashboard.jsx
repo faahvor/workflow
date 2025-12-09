@@ -28,7 +28,7 @@ const RequesterDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
 
-   const [activeView, setActiveView] = useState("overview");
+  const [activeView, setActiveView] = useState("overview");
   const [overviewActiveCard, setOverviewActiveCard] = useState("pending");
   const [myRequests, setMyRequests] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -49,13 +49,15 @@ const RequesterDashboard = () => {
     company: "",
     vesselId: "",
     projectManager: "",
-    requestType: "purchaseOrder",
     priority: "normal",
     reference: "",
     purpose: "",
     jobNumber: "",
     additionalInformation: "",
+    deckOrEngine: "",
   });
+  const [offShoreNumber, setOffShoreNumber] = useState("");
+    const [loadingOffshoreNumber, setLoadingOffshoreNumber] = useState(false);
 
   const [selectedItems, setSelectedItems] = useState([]);
   const [inventoryItems, setInventoryItems] = useState([]);
@@ -75,8 +77,7 @@ const RequesterDashboard = () => {
   const [requestImages, setRequestImages] = useState([]); // items: { id, file, previewUrl }
   const imageInputRef = useRef(null);
   const [imageDragActive, setImageDragActive] = useState(false);
-  const [nextApproverAfterVesselManager, setNextApproverAfterVesselManager] =
-    useState("");
+ 
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
   const [invName, setInvName] = useState("");
   const [invMaker, setInvMaker] = useState("");
@@ -134,15 +135,6 @@ const RequesterDashboard = () => {
     setLoadingCurrencies(false);
   }, []);
 
-  const isPettyCashForIT =
-    formData.requestType === "pettyCash" && formData.destination === "IT";
-
-  // Use this to control how the items table is displayed:
-  // when pettyCash but destination !== IT, show it like purchaseOrder
-  const displayRequestType =
-    formData.requestType === "pettyCash" && formData.destination !== "IT"
-      ? "purchaseOrder"
-      : formData.requestType;
   // Priority options
   const priorities = [
     { value: "normal", label: "Normal" },
@@ -314,27 +306,50 @@ const RequesterDashboard = () => {
         // reset vessel and project manager when destination changes
         next.vesselId = "";
         next.projectManager = "";
+        // reset deckOrEngine and offShoreNumber when destination changes
+        next.deckOrEngine = "";
+        setOffShoreNumber("");
       }
 
       return next;
     });
 
-    // If user changed destination away from IT and there are invoice files, clear them
-    if (name === "destination" && value !== "IT" && invoiceFiles.length > 0) {
-      setInvoiceFiles([]);
+    // If deckOrEngine changes, fetch offShoreNumber (placeholder for now)
+     if (name === "deckOrEngine" && value) {
+      fetchOffshoreNumber(value);
     }
+  };
 
-    // If destination or requestType changed such that Approval Pick should hide, clear it
-    const newDestination =
-      name === "destination" ? value : formData.destination || "";
-    const newRequestType =
-      name === "requestType" ? value : formData.requestType || "";
+  // Fetch offshore request number from API
+  const fetchOffshoreNumber = async (department) => {
+    try {
+      setLoadingOffshoreNumber(true);
+      setOffShoreNumber("");
+      
+      const token = getToken();
+      if (!token) {
+        console.error("No token found for offshore number fetch");
+        return;
+      }
 
-    const shouldShowApprovalPick =
-      newDestination === "Marine" && newRequestType === "pettyCash";
+      const response = await axios.get(
+        `${API_BASE_URL}/requests/generate-offshore-id?department=${encodeURIComponent(department)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-    if (!shouldShowApprovalPick && nextApproverAfterVesselManager) {
-      setNextApproverAfterVesselManager("");
+      const offshoreId = response.data?.offshoreReqNumber || response.data?.data?.offshoreReqNumber || "";
+      setOffShoreNumber(offshoreId);
+      console.log("✅ Offshore Number Generated:", offshoreId);
+    } catch (err) {
+      console.error("❌ Error fetching offshore number:", err);
+      console.error("Error details:", {
+        message: err.message,
+        status: err.response?.status,
+        responseData: err.response?.data,
+      });
+      setOffShoreNumber("");
+    } finally {
+      setLoadingOffshoreNumber(false);
     }
   };
   const openAddInventoryModal = () => {
@@ -494,16 +509,6 @@ const RequesterDashboard = () => {
       alert("Please select a project manager");
       return;
     }
-    if (
-      formData.destination === "Marine" &&
-      formData.requestType === "pettyCash" &&
-      !nextApproverAfterVesselManager
-    ) {
-      alert(
-        "Please select Approval Pick (Technical Manager or Fleet Manager)."
-      );
-      return;
-    }
 
     if (selectedItems.length === 0) {
       alert("Please add at least one item from inventory");
@@ -516,19 +521,6 @@ const RequesterDashboard = () => {
     if (invalidItems.length > 0) {
       alert("All items must have a quantity of at least 1");
       return;
-    }
-
-    // Only enforce unitPrice > 0 when pettyCash AND destination === IT
-    if (isPettyCashForIT) {
-      const badPrice = selectedItems.find(
-        (it) => !it.unitPrice || Number(it.unitPrice) <= 0
-      );
-      if (badPrice) {
-        alert(
-          "For petty cash requests to IT each item must have a unit price greater than 0."
-        );
-        return;
-      }
     }
 
     try {
@@ -556,7 +548,6 @@ const RequesterDashboard = () => {
         const fd = new FormData();
         fd.append("department", formData.department);
         fd.append("destination", formData.destination);
-        fd.append("requestType", formData.requestType);
         fd.append("purpose", formData.purpose || "");
         if (formData.vesselId) fd.append("vesselId", formData.vesselId);
         if (formData.priority) fd.append("priority", formData.priority);
@@ -564,18 +555,21 @@ const RequesterDashboard = () => {
         if (formData.company) fd.append("companyId", formData.company);
         if (formData.projectManager)
           fd.append("projectManager", formData.projectManager);
-        if (nextApproverAfterVesselManager) {
-          fd.append(
-            "nextApproverAfterVesselManager",
-            nextApproverAfterVesselManager
-          );
-        }
-         if (formData.jobNumber) {
+
+        if (formData.jobNumber) {
           fd.append("jobNumber", formData.jobNumber);
         }
-        
+
         if (formData.additionalInformation) {
           fd.append("additionalInformation", formData.additionalInformation);
+        }
+        // Add offshore number for Marine destination
+        if (formData.destination === "Marine" && offShoreNumber) {
+          fd.append("offshoreReqNumber", offShoreNumber);
+        }
+
+        if (formData.destination === "Marine" && formData.deckOrEngine) {
+          fd.append("deckOrEngine", formData.deckOrEngine);
         }
 
         // items must be a JSON string when using multipart
@@ -608,7 +602,6 @@ const RequesterDashboard = () => {
         const payload = {
           department: formData.department,
           destination: formData.destination,
-          requestType: formData.requestType, // still send actual requestType (pettyCash when selected)
           purpose: formData.purpose,
           items: items,
         };
@@ -632,15 +625,21 @@ const RequesterDashboard = () => {
         if (formData.projectManager) {
           payload.projectManager = formData.projectManager;
         }
-        if (nextApproverAfterVesselManager) {
-          payload.nextApproverAfterVesselManager =
-            nextApproverAfterVesselManager;
-        }
+
         if (formData.additionalInformation) {
           payload.additionalInformation = formData.additionalInformation;
         }
-         if (formData.jobNumber) {
+        if (formData.jobNumber) {
           payload.jobNumber = formData.jobNumber;
+        }
+        
+        // Add offshore number for Marine destination
+        if (formData.destination === "Marine" && offShoreNumber) {
+          payload.offshoreReqNumber = offShoreNumber;
+        }
+
+        if (formData.destination === "Marine" && formData.deckOrEngine) {
+          payload.deckOrEngine = formData.deckOrEngine;
         }
 
         const response = await axios.post(`${API_BASE_URL}/requests`, payload, {
@@ -658,17 +657,18 @@ const RequesterDashboard = () => {
         company: "",
         vesselId: "",
         projectManager: "",
-        requestType: "purchaseOrder",
         priority: "normal",
         reference: "",
         purpose: "",
         additionalInformation: "",
-         jobNumber: "",
+        jobNumber: "",
+        deckOrEngine: "",
       });
       setSelectedItems([]);
       setInvoiceFiles([]);
       setRequestImages([]);
-      setNextApproverAfterVesselManager("");
+            setOffShoreNumber("");
+
       // Switch to My Requests view
       setActiveView("pending");
     } catch (err) {
@@ -1014,7 +1014,7 @@ const RequesterDashboard = () => {
         <div className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-[1200px] mx-auto">
             {/* Header */}
-          <div className="mb-6 md:mb-8">
+            <div className="mb-6 md:mb-8">
               <h1 className="text-3xl md:text-4xl font-bold text-[#0a0a0a] mb-2">
                 {activeView === "createNew"
                   ? "Create New Request"
@@ -1102,37 +1102,81 @@ const RequesterDashboard = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Job Number - Only show when destination is NOT Marine */}
+                  {formData.destination && formData.destination !== "Marine" && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                        Request Type *
-                      </label>
-                      <select
-                        name="requestType"
-                        value={formData.requestType}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
-                        required
-                      >
-                        <option value="purchaseOrder">Purchase Order</option>
-                        <option value="pettyCash">Petty Cash</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                        Job Number/Offshore Number
+                        Job Number
                       </label>
                       <input
                         type="text"
                         name="jobNumber"
                         value={formData.jobNumber}
                         onChange={handleInputChange}
-                        placeholder="Enter job number/offshore number "
+                        placeholder="Enter job number"
                         className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
                       />
                     </div>
-                  </div>
+                  )}
+
+                  {/* Deck or Engine & OffShore Number - Only show when destination is Marine */}
+                  {formData.destination === "Marine" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Deck or Engine - Radio Buttons */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                          Deck or Engine
+                        </label>
+                        <div className="flex items-center gap-6 h-12">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="deckOrEngine"
+                              value="Deck"
+                              checked={formData.deckOrEngine === "Deck"}
+                              onChange={handleInputChange}
+                              className="w-5 h-5 text-emerald-500 border-2 border-slate-300 focus:ring-emerald-400"
+                            />
+                            <span className="text-sm font-medium text-slate-700">Deck</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="deckOrEngine"
+                              value="Engine"
+                              checked={formData.deckOrEngine === "Engine"}
+                              onChange={handleInputChange}
+                              className="w-5 h-5 text-emerald-500 border-2 border-slate-300 focus:ring-emerald-400"
+                            />
+                            <span className="text-sm font-medium text-slate-700">Engine</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* OffShore Number - Read-only, fetched from database */}
+                         <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                          OffShore Number
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={loadingOffshoreNumber ? "Loading..." : offShoreNumber}
+                            readOnly
+                            disabled
+                            placeholder={formData.deckOrEngine ? "Fetching..." : "Select Deck or Engine first"}
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-600 cursor-not-allowed text-sm"
+                          />
+                          {loadingOffshoreNumber && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                              <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
 
                   {/* Row 2: Company & Vessel */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1164,29 +1208,7 @@ const RequesterDashboard = () => {
                       </select>
                     </div>
 
-                    {formData.destination === "Marine" &&
-                      formData.requestType === "pettyCash" && (
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                            Approval Pick *
-                          </label>
-                          <select
-                            name="nextApproverAfterVesselManager"
-                            value={nextApproverAfterVesselManager}
-                            onChange={(e) =>
-                              setNextApproverAfterVesselManager(e.target.value)
-                            }
-                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
-                            required
-                          >
-                            <option value="">Select Approver</option>
-                            <option value="Technical Manager">
-                              Technical Manager
-                            </option>
-                            <option value="Fleet Manager">Fleet Manager</option>
-                          </select>
-                        </div>
-                      )}
+                    
 
                     {/* Vessel Dropdown (show only for Marine or Project) */}
                     {(formData.destination === "Marine" ||
@@ -1315,8 +1337,8 @@ const RequesterDashboard = () => {
 
                       {/* Dropdown */}
                       {/* Dropdown */}
-                      {showInventoryDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col">
+                     {showInventoryDropdown && (
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col overflow-x-hidden">
                           {/* Search */}
                           <div className="p-3 border-b border-slate-200">
                             <input
@@ -1339,24 +1361,39 @@ const RequesterDashboard = () => {
                                 No items found
                               </div>
                             ) : (
-                              filteredInventory.map((item, index) => (
-                                <button
-                                  key={`${
-                                    item._id || item.inventoryId || index
-                                  }`}
-                                  type="button"
-                                  onClick={() => handleAddInventoryItem(item)}
-                                  className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0"
-                                >
-                                  <p className="font-medium text-slate-900 text-sm">
-                                    {item.name}
-                                  </p>
-                                  <p className="text-xs text-slate-500 mt-1">
-                                    {item.itemType || item.makersType} •{" "}
-                                    {item.maker} • {item.makersPartNo}
-                                  </p>
-                                </button>
-                              ))
+                              filteredInventory.map((item, index) => {
+                                // Helper to insert line breaks every 40 characters
+                                const wrapText = (text, maxChars = 40) => {
+                                  if (!text) return "";
+                                  const str = String(text);
+                                  const lines = [];
+                                  for (let i = 0; i < str.length; i += maxChars) {
+                                    lines.push(str.slice(i, i + maxChars));
+                                  }
+                                  return lines.join("\n");
+                                };
+
+                                return (
+                                  <button
+                                    key={`${
+                                      item._id || item.inventoryId || index
+                                    }`}
+                                    type="button"
+                                    onClick={() => handleAddInventoryItem(item)}
+                                    className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0 overflow-hidden"
+                                  >
+                                    <p className="font-medium text-slate-900 text-sm whitespace-pre-wrap">
+                                      {wrapText(item.name, 40)}
+                                    </p>
+                                    <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">
+                                      {wrapText(
+                                        `${item.itemType || item.makersType || ""} • ${item.maker || ""} • ${item.makersPartNo || ""}`,
+                                        40
+                                      )}
+                                    </p>
+                                  </button>
+                                );
+                              })
                             )}
                           </div>
 
@@ -1386,7 +1423,6 @@ const RequesterDashboard = () => {
                         onUnitPriceChange={handleUnitPriceChange}
                         onCurrencyChange={handleCurrencyChange}
                         currencies={currencies}
-                        requestType={displayRequestType}
                       />
                     )}
                   </div>
@@ -1404,7 +1440,7 @@ const RequesterDashboard = () => {
                       className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm resize-none"
                     />
                   </div>
-                      <div>
+                  <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
                       Additional Information
                     </label>
@@ -1418,120 +1454,9 @@ const RequesterDashboard = () => {
                     />
                   </div>
 
-                  {isPettyCashForIT && (
-                    <div className="mb-4">
-                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                        Upload Invoices
-                      </label>
-
-                      <div
-                        onDrop={handleDrop}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onClick={handleBrowseClick}
-                        role="button"
-                        tabIndex={0}
-                        className={`w-full cursor-pointer rounded-2xl p-4 flex items-center justify-between gap-4 transition-all duration-200 ${
-                          dragActive
-                            ? "border-2 border-emerald-400 bg-emerald-50"
-                            : "border-2 border-dashed border-slate-200 bg-white/50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
-                            📎
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              {invoiceFiles.length > 0
-                                ? `${invoiceFiles.length} file(s) selected`
-                                : "Drag & drop invoice(s) here, or click to browse"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleBrowseClick}
-                            className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
-                          >
-                            Add Files
-                          </button>
-
-                          {invoiceFiles.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setInvoiceFiles([])}
-                              className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 text-sm"
-                            >
-                              Clear All
-                            </button>
-                          )}
-                        </div>
-
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept=".pdf,.doc,.docx,image/*"
-                          multiple
-                          onChange={handleInvoiceInputChange}
-                          className="hidden"
-                        />
-                      </div>
-
-                      {invoiceFiles.length > 0 && (
-                        <div className="mt-3 grid gap-2">
-                          {invoiceFiles.map((f) => (
-                            <div
-                              key={f.id}
-                              className="flex items-center justify-between bg-white border border-slate-100 rounded-lg p-3"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden">
-                                  {f.previewUrl ? (
-                                    <img
-                                      src={f.previewUrl}
-                                      alt={f.file.name}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  ) : (
-                                    <div className="text-slate-600 text-sm px-2 text-center">
-                                      {f.file.type === "application/pdf"
-                                        ? "PDF"
-                                        : "FILE"}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900 truncate w-56">
-                                    {f.file.name}
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    {Math.round(f.file.size / 1024)} KB
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => removeInvoiceFile(f.id)}
-                                  className="px-3 py-1 bg-red-50 text-red-600 rounded-md text-sm"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  
                   {/* Request Images Upload (for purchaseOrder & pettyCash) */}
-                  {(formData.requestType === "purchaseOrder" ||
-                    formData.requestType === "pettyCash") && (
+                 {formData.destination && (
                     <div className="mb-4">
                       <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
                         Upload Image
@@ -1668,7 +1593,7 @@ const RequesterDashboard = () => {
                 </div>
               </form>
             )}
-           {activeView === "detail" && selectedRequest && (
+            {activeView === "detail" && selectedRequest && (
               <RequestDetailView
                 request={selectedRequest}
                 onBack={() => {
@@ -1718,25 +1643,32 @@ const RequesterDashboard = () => {
                   searchQuery={searchQuery}
                   filterType={filterType}
                   onOpenDetail={(req) =>
-                    handleOpenDetail(req, { readOnly: true, origin: "completed" })
+                    handleOpenDetail(req, {
+                      readOnly: true,
+                      origin: "completed",
+                    })
                   }
                 />
               </>
             )}
             {activeView === "myrequests" && (
-               <RequesterHistory
+              <RequesterHistory
                 searchQuery={searchQuery}
                 filterType={filterType}
                 onOpenDetail={(req, opts = {}) => {
                   // ensure history opens detail read-only with correct origin
-                  handleOpenDetail(req, { ...opts, readOnly: true, origin: "myrequests" });
+                  handleOpenDetail(req, {
+                    ...opts,
+                    readOnly: true,
+                    origin: "myrequests",
+                  });
                 }}
               />
             )}
 
             {/* My Requests View - Placeholder */}
             {activeView === "pending" && (
-          <RequesterPending
+              <RequesterPending
                 searchQuery={searchQuery}
                 filterType={filterType}
                 onOpenDetail={(req, opts = {}) => {
@@ -1858,7 +1790,9 @@ const RequesterDashboard = () => {
                   <button
                     onClick={() =>
                       setActiveView(
-                        overviewActiveCard === "pending" ? "pending" : "myrequests"
+                        overviewActiveCard === "pending"
+                          ? "pending"
+                          : "myrequests"
                       )
                     }
                     className="text-sm text-emerald-600 hover:text-emerald-700 font-semibold"
@@ -1868,7 +1802,7 @@ const RequesterDashboard = () => {
                 </div>
 
                 {/* Dynamic Content based on active card */}
-                 {overviewActiveCard === "pending" && (
+                {overviewActiveCard === "pending" && (
                   <RequesterPending
                     searchQuery=""
                     filterType="all"
@@ -1893,12 +1827,11 @@ const RequesterDashboard = () => {
                 )}
               </div>
             )}
-
           </div>
         </div>
       </div>
 
-            {/* Add Inventory Modal (Requester Dashboard) */}
+      {/* Add Inventory Modal (Requester Dashboard) */}
       {showAddInventoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
@@ -1940,7 +1873,9 @@ const RequesterDashboard = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-500">Maker (optional)</label>
+                <label className="text-xs text-slate-500">
+                  Maker (optional)
+                </label>
                 <input
                   value={invMaker}
                   onChange={(e) => setInvMaker(e.target.value)}
@@ -1950,7 +1885,9 @@ const RequesterDashboard = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-500">Maker Part No (optional)</label>
+                <label className="text-xs text-slate-500">
+                  Maker Part No (optional)
+                </label>
                 <input
                   value={invMakerPartNo}
                   onChange={(e) => setInvMakerPartNo(e.target.value)}
@@ -1979,7 +1916,6 @@ const RequesterDashboard = () => {
         </div>
       )}
     </div>
-    
   );
 };
 
