@@ -10,6 +10,7 @@ const InvoiceControllerTable = ({
   vendors = [],
   requestType = "",
   tag = "",
+  clearingFee,
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
@@ -22,10 +23,14 @@ const InvoiceControllerTable = ({
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
 
   const getFeeValue = (item) => {
-    if (!item) return 0;
-    const v = item[feeFieldName];
-    return typeof v === "number" ? v : Number(v || 0);
-  };
+  if (!item) return 0;
+  const v = item[feeFieldName];
+  // If clearingFee is not on item, fallback to request.clearingFee
+  if (feeFieldName === "clearingFee" && (v === undefined || v === null)) {
+    return typeof clearingFee === "number" ? clearingFee : Number(clearingFee || 0);
+  }
+  return typeof v === "number" ? v : Number(v || 0);
+};
 
   const vendorsById = React.useMemo(() => {
     const map = new Map();

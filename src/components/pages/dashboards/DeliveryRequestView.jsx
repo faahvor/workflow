@@ -1,15 +1,12 @@
 // src/components/pages/dashboards/DeliveryRequestView.jsx
 
 import React, { useEffect, useState, useCallback } from "react";
-import {
-  MdArrowBack,
-  MdCheckCircle,
-  MdShoppingCart,
-} from "react-icons/md";
+import { MdArrowBack, MdCheckCircle, MdShoppingCart } from "react-icons/md";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import RequestWorkflow from "../../shared/RequestWorkflow";
 import AttachedDocuments from "../../shared/AttachedDocuments";
+import WaybillUpload from "./WaybillUpload";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -41,6 +38,54 @@ const DeliveryRequestView = ({
   const [postingComment, setPostingComment] = useState(false);
   const COMMENTS_PER_PAGE = 3;
   const [commentsPage, setCommentsPage] = useState(1);
+
+   function getShipToBlock(req) {
+      if (String(req.logisticsType).toLowerCase() !== "local") return null;
+      const location = String(req.deliveryLocation || "").toLowerCase();
+
+      if (location === "delivery jetty") {
+        return (
+          <>
+            <div className="text-base font-semibold text-slate-800">
+              Delivery Jetty
+            </div>
+            <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+              Inside NPA, Kiri Kiri Lighter Terminal
+              <br />
+              Phase 1, By Sunrise Bustop
+              <br />
+              Oshodi Apapa Expressway Apapa
+              <br />
+              Lagos
+            </div>
+          </>
+        );
+      }
+      if (location === "delivery base") {
+        return (
+          <>
+            <div className="text-base font-semibold text-slate-800">
+              Delivery Base
+            </div>
+            <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+              17, Wharf Road,
+              <br />
+              Apapa, Lagos
+              <br />
+              Nigeria.
+            </div>
+          </>
+        );
+      }
+      if (location === "delivery vessel") {
+        return (
+          <div className="text-base font-semibold text-slate-800">
+            Delivery Vessel
+          </div>
+        );
+      }
+      return null;
+    }
 
   const currentRequest = selectedRequest || request;
 
@@ -116,7 +161,11 @@ const DeliveryRequestView = ({
   // Normalize comment from server
   const normalizeServerComment = (item) => {
     return {
-      id: item._id || item.id || item.timestamp || `${Math.random()}-${Date.now()}`,
+      id:
+        item._id ||
+        item.id ||
+        item.timestamp ||
+        `${Math.random()}-${Date.now()}`,
       author:
         (item.userId && (item.userId.displayName || item.userId.name)) ||
         item.author ||
@@ -242,7 +291,7 @@ const DeliveryRequestView = ({
       const updatedItem = newItems.find(
         (it) => (it.itemId || it._id) === itemId
       );
-      
+
       // Use shippingQuantity for shipping/clearing tags, otherwise use quantity
       const qtyVal = showFeeColumns
         ? Number(updatedItem?.shippingQuantity || 0)
@@ -263,7 +312,9 @@ const DeliveryRequestView = ({
       );
     } catch (err) {
       console.error("Error saving delivered quantity:", err);
-      alert(err?.response?.data?.message || "Failed to save delivered quantity");
+      alert(
+        err?.response?.data?.message || "Failed to save delivered quantity"
+      );
     }
   };
 
@@ -338,9 +389,12 @@ const DeliveryRequestView = ({
     return String(vendorOrName);
   };
 
-  const usedItems = editedItems.length > 0 ? editedItems : currentRequest?.items || [];
+  const usedItems =
+    editedItems.length > 0 ? editedItems : currentRequest?.items || [];
   const firstItem = usedItems[0] || {};
-  const vendorNameLine = getVendorDisplayName(firstItem.vendor || firstItem.vendorName);
+  const vendorNameLine = getVendorDisplayName(
+    firstItem.vendor || firstItem.vendorName
+  );
 
   // Calculate grand total
   const grandTotal = usedItems.reduce((s, it) => {
@@ -448,20 +502,50 @@ const DeliveryRequestView = ({
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
+           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
             <div className="text-sm font-semibold text-slate-800 mb-2">
               Ship To:
             </div>
             <div>
-              <div className="text-base font-semibold text-slate-800">
-                {currentRequest?.company?.name || "Hydrodive Nigeria Limited"}
-              </div>
-              <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
-                {"17, Wharf Road\nApapa\nLagos\nNigeria"}
-              </div>
+            {getShipToBlock(currentRequest) ? (
+  getShipToBlock(currentRequest)
+) : (
+  <>
+    <div className="text-base font-semibold text-slate-800">
+      {currentRequest.company?.name || "Hydrodive Nigeria Limited"}
+    </div>
+    {currentRequest.company && currentRequest.company.address ? (
+      <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+        {[
+          currentRequest.company.address.street || "",
+          currentRequest.company.address.city || "",
+          currentRequest.company.address.state || "",
+        ]
+          .filter(Boolean)
+          .join("\n")}
+      </div>
+    ) : (
+      <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+        {"17, Wharf Road\nApapa\nLagos\nNigeria"}
+      </div>
+    )}
+  </>
+)}
             </div>
           </div>
         </div>
+
+        {["delivery base", "delivery jetty", "delivery vessel"].includes(userRole) && !isReadOnly && (
+  <WaybillUpload
+    requestId={request.requestId}
+    apiBase={API_BASE_URL}
+    getToken={getToken}
+    onFilesChanged={handleFilesChanged}
+    isReadOnly={isReadOnly}
+    waybillFiles={currentRequest?.jobCompletionCertificateFiles || []}
+    items={currentRequest?.items || []}
+  />
+)}
 
         {/* Items Table */}
         <div className="p-6 space-y-4">
@@ -481,36 +565,6 @@ const DeliveryRequestView = ({
                     {/* Shipping Qty - only for shipping/clearing */}
                     {showFeeColumns && (
                       <th className="pb-2 px-2 text-center">Shipping Qty</th>
-                    )}
-
-                    {/* Shipping Fee - only for shipping/clearing */}
-                    {showFeeColumns && (
-                      <th className="pb-2 px-2 text-right">Shipping Fee</th>
-                    )}
-
-                    {/* Clearing Fee - only for clearing */}
-                    {isClearingTag && (
-                      <th className="pb-2 px-2 text-right">Clearing Fee</th>
-                    )}
-
-                    {/* Unit Price - hide for shipping/clearing */}
-                    {!showFeeColumns && (
-                      <th className="pb-2 px-2 text-right">Unit Price</th>
-                    )}
-
-                    {/* Discount - hide for shipping/clearing */}
-                    {!showFeeColumns && (
-                      <th className="pb-2 px-2 text-right">Discount</th>
-                    )}
-
-                    {/* VAT - hide for shipping/clearing */}
-                    {!showFeeColumns && (
-                      <th className="pb-2 px-2 text-right">VAT</th>
-                    )}
-
-                    {/* Total - hide for shipping/clearing */}
-                    {!showFeeColumns && (
-                      <th className="pb-2 px-2 text-right">Total</th>
                     )}
 
                     {/* Delivered Quantity */}
@@ -533,12 +587,13 @@ const DeliveryRequestView = ({
                       ? Number(it.shippingQuantity || 0)
                       : Number(it.quantity || 0);
                     const outstanding = Math.max(0, totalQty - delivered);
-                    const isFullyDelivered = delivered === totalQty && totalQty > 0;
+                    const isFullyDelivered =
+                      delivered === totalQty && totalQty > 0;
 
                     return (
                       <tr key={itemId} className="py-2">
                         <td className="py-3 px-2 text-slate-700">{i + 1}</td>
-                        <td className="py-3 px-2 text-slate-900">
+                        <td className="py-3 px-2 text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                           {it.name || it.description || "N/A"}
                         </td>
                         <td className="py-3 px-2 text-center text-slate-700">
@@ -549,65 +604,6 @@ const DeliveryRequestView = ({
                         {showFeeColumns && (
                           <td className="py-3 px-2 text-center text-slate-700">
                             {it.shippingQuantity ?? 0}
-                          </td>
-                        )}
-
-                        {/* Shipping Fee */}
-                        {showFeeColumns && (
-                          <td className="py-3 px-2 text-right text-slate-700">
-                            {formatCurrency(
-                              it.shippingFee || 0,
-                              it.currency || currentRequest?.currency
-                            )}
-                          </td>
-                        )}
-
-                        {/* Clearing Fee */}
-                        {isClearingTag && (
-                          <td className="py-3 px-2 text-right text-slate-700">
-                            {formatCurrency(
-                              it.clearingFee || 0,
-                              it.currency || currentRequest?.currency
-                            )}
-                          </td>
-                        )}
-
-                        {/* Unit Price */}
-                        {!showFeeColumns && (
-                          <td className="py-3 px-2 text-right text-slate-700">
-                            {formatCurrency(
-                              it.unitPrice,
-                              it.currency || currentRequest?.currency
-                            )}
-                          </td>
-                        )}
-
-                        {/* Discount */}
-                        {!showFeeColumns && (
-                          <td className="py-3 px-2 text-right text-slate-700">
-                            {it.discount
-                              ? formatCurrency(
-                                  it.discount,
-                                  it.currency || currentRequest?.currency
-                                )
-                              : "-"}
-                          </td>
-                        )}
-
-                        {/* VAT */}
-                        {!showFeeColumns && (
-                          <td className="py-3 px-2 text-right text-slate-700">
-                            {it.vat ? `${it.vat}%` : "-"}
-                          </td>
-                        )}
-
-                        {/* Total */}
-                        {!showFeeColumns && (
-                          <td className="py-3 px-2 text-right font-semibold text-slate-900">
-                            {formatCurrency(
-                              it.total || it.unitPrice * it.quantity,
-                              it.currency || currentRequest?.currency
-                            )}
                           </td>
                         )}
 
@@ -653,24 +649,6 @@ const DeliveryRequestView = ({
                     );
                   })}
                 </tbody>
-
-                {/* Grand Total - only for non-shipping/clearing */}
-                {!showFeeColumns && (
-                  <tfoot>
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="pt-4 text-right font-bold px-2"
-                      >
-                        Grand Total
-                      </td>
-                      <td className="pt-4 text-right text-xl font-bold px-2">
-                        {formatCurrency(grandTotal, currentRequest?.currency)}
-                      </td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
           </div>

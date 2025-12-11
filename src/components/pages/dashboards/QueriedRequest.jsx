@@ -19,6 +19,11 @@ const QueriedRequest = ({ searchQuery = "", filterType = "all", onOpenDetail = (
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [localFilter, setLocalFilter] = useState(filterType);
 
+    const getVesselName = (vesselId) => {
+    const vessel = vessels.find((v) => v.vesselId === vesselId);
+    return vessel?.name || vesselId;
+  };
+
   useEffect(() => setLocalSearch(searchQuery), [searchQuery]);
   useEffect(() => setLocalFilter(filterType), [filterType]);
 
@@ -113,13 +118,13 @@ const QueriedRequest = ({ searchQuery = "", filterType = "all", onOpenDetail = (
                       </div>
 
                       {request.vesselId && (
-                        <div className="flex items-center gap-1.5 text-slate-600">
-                          <MdDirectionsBoat className="text-base" />
-                          <span className="text-xs md:text-sm font-medium">
-                            {request.vesselId}
-                          </span>
-                        </div>
-                      )}
+                                <div className="flex items-center gap-1.5 text-slate-600">
+                                  <MdDirectionsBoat className="text-base" />
+                                  <span className="text-xs md:text-sm font-medium">
+                                    {getVesselName(request.vesselId)}
+                                  </span>
+                                </div>
+                              )}
 
                       <div className="flex items-center gap-1.5 text-slate-600">
                         <span className="text-xs md:text-sm font-medium">

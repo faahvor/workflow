@@ -57,7 +57,7 @@ const RequesterDashboard = () => {
     deckOrEngine: "",
   });
   const [offShoreNumber, setOffShoreNumber] = useState("");
-    const [loadingOffshoreNumber, setLoadingOffshoreNumber] = useState(false);
+  const [loadingOffshoreNumber, setLoadingOffshoreNumber] = useState(false);
 
   const [selectedItems, setSelectedItems] = useState([]);
   const [inventoryItems, setInventoryItems] = useState([]);
@@ -77,12 +77,15 @@ const RequesterDashboard = () => {
   const [requestImages, setRequestImages] = useState([]); // items: { id, file, previewUrl }
   const imageInputRef = useRef(null);
   const [imageDragActive, setImageDragActive] = useState(false);
- 
+
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
   const [invName, setInvName] = useState("");
   const [invMaker, setInvMaker] = useState("");
   const [invMakerPartNo, setInvMakerPartNo] = useState("");
   const [creatingInventory, setCreatingInventory] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [mySubmittedRequests, setMySubmittedRequests] = useState([]);
+
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   // Destinations list
@@ -99,6 +102,29 @@ const RequesterDashboard = () => {
     { name: "HR" },
     { name: "Admin" },
   ];
+
+  const fetchMySubmittedRequests = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const response = await axios.get(
+        `${API_BASE_URL}/requests/submitted?limit=1`, // get total count only
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMySubmittedRequests(response.data.data || []);
+      setMySubmittedRequestsTotal(response.data.total || 0);
+    } catch (err) {
+      setMySubmittedRequests([]);
+      setMySubmittedRequestsTotal(0);
+    }
+  };
+
+  useEffect(() => {
+    if (user && (activeView === "overview" || activeView === "myrequests")) {
+      fetchMySubmittedRequests();
+    }
+  }, [user, activeView]);
+  const [mySubmittedRequestsTotal, setMySubmittedRequestsTotal] = useState(0);
 
   const fetchRequestFlow = async (requestId) => {
     try {
@@ -315,7 +341,7 @@ const RequesterDashboard = () => {
     });
 
     // If deckOrEngine changes, fetch offShoreNumber (placeholder for now)
-     if (name === "deckOrEngine" && value) {
+    if (name === "deckOrEngine" && value) {
       fetchOffshoreNumber(value);
     }
   };
@@ -325,7 +351,7 @@ const RequesterDashboard = () => {
     try {
       setLoadingOffshoreNumber(true);
       setOffShoreNumber("");
-      
+
       const token = getToken();
       if (!token) {
         console.error("No token found for offshore number fetch");
@@ -333,11 +359,16 @@ const RequesterDashboard = () => {
       }
 
       const response = await axios.get(
-        `${API_BASE_URL}/requests/generate-offshore-id?department=${encodeURIComponent(department)}`,
+        `${API_BASE_URL}/requests/generate-offshore-id?department=${encodeURIComponent(
+          department
+        )}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const offshoreId = response.data?.offshoreReqNumber || response.data?.data?.offshoreReqNumber || "";
+      const offshoreId =
+        response.data?.offshoreReqNumber ||
+        response.data?.data?.offshoreReqNumber ||
+        "";
       setOffShoreNumber(offshoreId);
       console.log("✅ Offshore Number Generated:", offshoreId);
     } catch (err) {
@@ -632,7 +663,7 @@ const RequesterDashboard = () => {
         if (formData.jobNumber) {
           payload.jobNumber = formData.jobNumber;
         }
-        
+
         // Add offshore number for Marine destination
         if (formData.destination === "Marine" && offShoreNumber) {
           payload.offshoreReqNumber = offShoreNumber;
@@ -667,7 +698,7 @@ const RequesterDashboard = () => {
       setSelectedItems([]);
       setInvoiceFiles([]);
       setRequestImages([]);
-            setOffShoreNumber("");
+      setOffShoreNumber("");
 
       // Switch to My Requests view
       setActiveView("pending");
@@ -718,14 +749,8 @@ const RequesterDashboard = () => {
     if (!ok) return;
 
     try {
-      setLoading(true);
+      setActionLoading(true);
       const token = getToken();
-      console.debug(
-        "handleApprove: token present?",
-        !!token,
-        "requestId:",
-        requestId
-      );
       if (!token) {
         navigate("/login");
         return;
@@ -734,41 +759,30 @@ const RequesterDashboard = () => {
       const url = `${API_BASE_URL}/requests/${encodeURIComponent(
         requestId
       )}/approve`;
-      console.debug("handleApprove: POST ->", url);
-
       const resp = await axios.post(
         url,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      console.debug("handleApprove: response:", resp?.status, resp?.data);
       if (resp?.status === 200 || resp?.status === 201) {
-        // success: refresh lists and navigate back
         await fetchMyRequests();
         alert(resp.data?.message || "Request approved successfully");
         setActiveView("pending");
         return;
       }
-
-      // non-2xx status
-      console.warn("handleApprove: unexpected response", resp);
       alert(resp.data?.message || "Unexpected response from server");
     } catch (err) {
-      console.error("Error approving request:", {
-        message: err.message,
-        status: err.response?.status,
-        responseData: err.response?.data,
-      });
+      console.error("Error approving request:", err);
       alert(err?.response?.data?.message || "Failed to approve request");
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
   const handleReject = async (requestId) => {
     try {
-      setLoading(true);
+      setActionLoading(true);
       const token = getToken();
       if (!token) {
         navigate("/login");
@@ -785,13 +799,13 @@ const RequesterDashboard = () => {
       console.error("Error rejecting request:", err);
       alert(err?.response?.data?.message || "Failed to reject request");
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
   const handleQuery = async (requestId) => {
     try {
-      setLoading(true);
+      setActionLoading(true);
       const token = getToken();
       if (!token) {
         navigate("/login");
@@ -808,14 +822,14 @@ const RequesterDashboard = () => {
       console.error("Error querying request:", err);
       alert(err?.response?.data?.message || "Failed to send query");
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
   const pendingCount = myRequests.filter(
     (r) => String(r.status).toLowerCase() === "pending"
   ).length;
-  const totalRequestsCount = myRequests.length;
+  const totalRequestsCount = mySubmittedRequestsTotal;
   const approvedCount = myRequests.filter(
     (r) => String(r.status).toLowerCase() === "approved"
   ).length;
@@ -1103,21 +1117,22 @@ const RequesterDashboard = () => {
                   </div>
 
                   {/* Job Number - Only show when destination is NOT Marine */}
-                  {formData.destination && formData.destination !== "Marine" && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                        Job Number
-                      </label>
-                      <input
-                        type="text"
-                        name="jobNumber"
-                        value={formData.jobNumber}
-                        onChange={handleInputChange}
-                        placeholder="Enter job number"
-                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
-                      />
-                    </div>
-                  )}
+                  {formData.destination &&
+                    formData.destination !== "Marine" && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                          Job Number
+                        </label>
+                        <input
+                          type="text"
+                          name="jobNumber"
+                          value={formData.jobNumber}
+                          onChange={handleInputChange}
+                          placeholder="Enter job number"
+                          className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
+                        />
+                      </div>
+                    )}
 
                   {/* Deck or Engine & OffShore Number - Only show when destination is Marine */}
                   {formData.destination === "Marine" && (
@@ -1137,7 +1152,9 @@ const RequesterDashboard = () => {
                               onChange={handleInputChange}
                               className="w-5 h-5 text-emerald-500 border-2 border-slate-300 focus:ring-emerald-400"
                             />
-                            <span className="text-sm font-medium text-slate-700">Deck</span>
+                            <span className="text-sm font-medium text-slate-700">
+                              Deck
+                            </span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -1148,23 +1165,33 @@ const RequesterDashboard = () => {
                               onChange={handleInputChange}
                               className="w-5 h-5 text-emerald-500 border-2 border-slate-300 focus:ring-emerald-400"
                             />
-                            <span className="text-sm font-medium text-slate-700">Engine</span>
+                            <span className="text-sm font-medium text-slate-700">
+                              Engine
+                            </span>
                           </label>
                         </div>
                       </div>
 
                       {/* OffShore Number - Read-only, fetched from database */}
-                         <div>
+                      <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
                           OffShore Number
                         </label>
                         <div className="relative">
                           <input
                             type="text"
-                            value={loadingOffshoreNumber ? "Loading..." : offShoreNumber}
+                            value={
+                              loadingOffshoreNumber
+                                ? "Loading..."
+                                : offShoreNumber
+                            }
                             readOnly
                             disabled
-                            placeholder={formData.deckOrEngine ? "Fetching..." : "Select Deck or Engine first"}
+                            placeholder={
+                              formData.deckOrEngine
+                                ? "Fetching..."
+                                : "Select Deck or Engine first"
+                            }
                             className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-600 cursor-not-allowed text-sm"
                           />
                           {loadingOffshoreNumber && (
@@ -1176,7 +1203,6 @@ const RequesterDashboard = () => {
                       </div>
                     </div>
                   )}
-
 
                   {/* Row 2: Company & Vessel */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1207,8 +1233,6 @@ const RequesterDashboard = () => {
                         ))}
                       </select>
                     </div>
-
-                    
 
                     {/* Vessel Dropdown (show only for Marine or Project) */}
                     {(formData.destination === "Marine" ||
@@ -1337,7 +1361,7 @@ const RequesterDashboard = () => {
 
                       {/* Dropdown */}
                       {/* Dropdown */}
-                     {showInventoryDropdown && (
+                      {showInventoryDropdown && (
                         <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col overflow-x-hidden">
                           {/* Search */}
                           <div className="p-3 border-b border-slate-200">
@@ -1367,7 +1391,11 @@ const RequesterDashboard = () => {
                                   if (!text) return "";
                                   const str = String(text);
                                   const lines = [];
-                                  for (let i = 0; i < str.length; i += maxChars) {
+                                  for (
+                                    let i = 0;
+                                    i < str.length;
+                                    i += maxChars
+                                  ) {
                                     lines.push(str.slice(i, i + maxChars));
                                   }
                                   return lines.join("\n");
@@ -1387,7 +1415,11 @@ const RequesterDashboard = () => {
                                     </p>
                                     <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">
                                       {wrapText(
-                                        `${item.itemType || item.makersType || ""} • ${item.maker || ""} • ${item.makersPartNo || ""}`,
+                                        `${
+                                          item.itemType || item.makersType || ""
+                                        } • ${item.maker || ""} • ${
+                                          item.makersPartNo || ""
+                                        }`,
                                         40
                                       )}
                                     </p>
@@ -1454,9 +1486,8 @@ const RequesterDashboard = () => {
                     />
                   </div>
 
-                  
                   {/* Request Images Upload (for purchaseOrder & pettyCash) */}
-                 {formData.destination && (
+                  {formData.destination && (
                     <div className="mb-4">
                       <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
                         Upload Image
@@ -1607,6 +1638,7 @@ const RequesterDashboard = () => {
                 onReject={handleReject}
                 onQuery={handleQuery}
                 vendors={vendors}
+                actionLoading={actionLoading}
               />
             )}
             {activeView === "completed" && (
@@ -1721,7 +1753,7 @@ const RequesterDashboard = () => {
                       Pending Requests
                     </p>
                     <p className="text-slate-900 text-3xl font-bold">
-                      {totalRequestsCount}
+                      {pendingCount}
                     </p>
                   </button>
 
@@ -1754,7 +1786,7 @@ const RequesterDashboard = () => {
                       My Requests
                     </p>
                     <p className="text-slate-900 text-3xl font-bold">
-                      {pendingCount}
+                      {totalRequestsCount}
                     </p>
                   </button>
 

@@ -51,12 +51,13 @@ const OverviewDashboard = ({
     userRole === "delivery vessel";
 
   // Handle card click for delivery roles
-   const handleCardClick = (cardId) => {
-    // Only allow clicking on "pending" and "approved" cards
-    if (cardId !== "pending" && cardId !== "approved") return;
-    setSelectedCard(cardId);
-    // Don't navigate sidebar here - just update the displayed list
-  };
+const handleCardClick = (cardId) => {
+  // Allow "pending", "approved", and "delivered" for delivery roles
+  if (cardId !== "pending" && cardId !== "approved" && cardId !== "delivered") return;
+  // Treat "delivered" as "approved" for the selectedCard state
+  setSelectedCard(cardId === "delivered" ? "approved" : cardId);
+  // Don't navigate sidebar here - just update the displayed list
+};
 
   // Handle view details - navigate sidebar AND open detail
   const handleViewDetailsWithNavigation = (request) => {
@@ -141,8 +142,10 @@ const OverviewDashboard = ({
           const IconComponent = card.icon;
 
           const isClickable = card.clickable || isDeliveryRole;
-          const isSelected = selectedCard === card.id || 
-            (selectedCard === "delivered" && card.id === "approved");
+       const isSelected =
+  selectedCard === card.id ||
+  // For delivery roles, highlight "delivered" card when selectedCard is "approved"
+  (isDeliveryRole && card.id === "delivered" && selectedCard === "approved");
 
           return (
             <div
@@ -207,22 +210,22 @@ const OverviewDashboard = ({
           </div>
 
           {/* Request List based on selected card */}
-          {selectedCard === "pending" && (
-            <PendingRequestsList
-              searchQuery={searchQuery}
-              filterType={filterType}
-              requests={pendingRequests}
-              onViewDetails={handleViewDetailsWithNavigation}
-            />
-          )}
+         {selectedCard === "pending" && (
+  <PendingRequestsList
+    searchQuery={searchQuery}
+    filterType={filterType}
+    requests={pendingRequests}
+    onViewDetails={handleViewDetailsWithNavigation}
+  />
+)}
 
-          {(selectedCard === "delivered" || selectedCard === "approved") && (
-            <Approved
-              searchQuery={searchQuery}
-              filterType={filterType}
-              onOpenDetail={handleViewDetailsWithNavigation}
-            />
-          )}
+{(selectedCard === "delivered" || selectedCard === "approved") && (
+  <Approved
+    searchQuery={searchQuery}
+    filterType={filterType}
+    onOpenDetail={handleViewDetailsWithNavigation}
+  />
+)}
         </>
      
     </div>

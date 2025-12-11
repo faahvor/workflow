@@ -203,7 +203,7 @@ const ProcurementTable = ({
           delete payload.inStockQuantity;
         }
         try {
-          const unitPrice = Number(
+       const unitPrice = Number(
             changes.unitPrice !== undefined
               ? changes.unitPrice
               : localItem?.unitPrice || 0
@@ -222,15 +222,22 @@ const ProcurementTable = ({
             changes.vatted !== undefined
               ? !!changes.vatted
               : !!localItem?.vatted;
+          const shippingFee =
+            changes.shippingFee !== undefined
+              ? Number(changes.shippingFee)
+              : Number(localItem?.shippingFee || 0);
 
           const baseTotal = unitPrice * quantity;
           const discountFactor =
             discount >= 0 && discount <= 100 ? (100 - discount) / 100 : 1;
           const discountedTotal = baseTotal * discountFactor;
           const vatAmount = vatted ? discountedTotal * calculatedVat : 0;
-          const computedTotalPrice = vatted
-            ? discountedTotal + vatAmount
-            : discountedTotal;
+          const computedTotalPrice =
+            shippingFee > 0
+              ? (vatted ? discountedTotal + vatAmount : discountedTotal) + shippingFee
+              : vatted
+              ? discountedTotal + vatAmount
+              : discountedTotal;
 
           if (!Number.isNaN(computedTotalPrice))
             payload.totalPrice = computedTotalPrice;
@@ -597,14 +604,14 @@ const ProcurementTable = ({
             }
           }
 
-          // Recalculate total
-          const currentUnitPrice = parseFloat(updatedItem.unitPrice) || 0;
+     const currentUnitPrice = parseFloat(updatedItem.unitPrice) || 0;
           const currentQuantity = parseFloat(updatedItem.quantity) || 0;
           const currentDiscount =
             updatedItem.discount !== ""
               ? parseFloat(updatedItem.discount) || 0
               : 0;
           const isVatted = !!updatedItem.vatted;
+          const shippingFee = parseFloat(updatedItem.shippingFee) || 0;
 
           const baseTotal = currentUnitPrice * currentQuantity;
           const discountFactor =
@@ -623,9 +630,12 @@ const ProcurementTable = ({
 
           // canonical DB fields to be persisted
           updatedItem.vatAmount = vatAmount;
-          updatedItem.totalPrice = isVatted
-            ? discountedTotal + vatAmount
-            : discountedTotal;
+          updatedItem.totalPrice =
+            shippingFee > 0
+              ? (isVatted ? discountedTotal + vatAmount : discountedTotal) + shippingFee
+              : isVatted
+              ? discountedTotal + vatAmount
+              : discountedTotal;
 
           // mark item as changed locally
           updatedItem._dirty = true;

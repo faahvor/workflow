@@ -223,12 +223,15 @@ const RequisitionPreview = forwardRef(
     ).toLocaleDateString();
     const reference = req.reference || "N/A";
     const paymentType = req.paymentType || "N/A";
-    const grandTotal = usedItems.reduce((s, it) => {
-      const qty = Number(it.quantity || 0);
-      const total =
-        it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
-      return s + (isNaN(total) ? 0 : total);
-    }, 0);
+   const grandTotal = usedItems.reduce((s, it) => {
+  const total =
+    it.totalPrice !== undefined
+      ? Number(it.totalPrice)
+      : it.total !== undefined
+      ? Number(it.total)
+      : Number(it.unitPrice || 0) * Number(it.quantity || 0);
+  return s + (isNaN(total) ? 0 : total);
+}, 0);
 
     const getVendorAddressLines = (v) => {
       if (!v) return null;
@@ -494,10 +497,14 @@ const RequisitionPreview = forwardRef(
                       {/* ✅ Total - hide for shipping/clearing */}
                       {!showFeeColumns && (
                         <td className="py-3 text-right font-semibold text-slate-900">
-                          {formatCurrency(
-                            it.total || it.unitPrice * it.quantity,
-                            it.currency || req.currency
-                          )}
+                         {formatCurrency(
+  it.totalPrice !== undefined
+    ? it.totalPrice
+    : it.total !== undefined
+    ? it.total
+    : Number(it.unitPrice || 0) * Number(it.quantity || 0),
+  it.currency || req.currency
+)}
                         </td>
                       )}
                     </tr>

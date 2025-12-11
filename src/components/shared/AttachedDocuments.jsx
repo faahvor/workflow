@@ -35,6 +35,7 @@ const fetchHeadSize = async (url) => {
     return null;
   }
 };
+// ...existing code...
 
 const AttachedDocuments = ({
   requestId,
@@ -59,6 +60,236 @@ const AttachedDocuments = ({
   const [showEmailComposer, setShowEmailComposer] = useState(false);
   const [emailInitialAttachments, setEmailInitialAttachments] = useState([]);
   const [preparingEmailPdf, setPreparingEmailPdf] = useState(false);
+  function isAtOrPastProcurementManager(request) {
+    const states = [
+      "PENDING_PROCUREMENT_MANAGER_APPROVAL",
+      "PENDING_INVOICE_CONTROLLER_APPROVAL",
+      "PENDING_ACCOUNTING_OFFICER_APPROVAL",
+      "PENDING_DELIVERY_BASE_APPROVAL",
+      "COMPLETED",
+      "APPROVED",
+      "REJECTED",
+    ];
+    const currentState =
+      request.currentState ||
+      (request.flow && request.flow.currentState) ||
+      request.status ||
+      "";
+    return states.includes(currentState);
+  }
+
+  const getVendorDisplayName = (vendorOrName) => {
+    if (!vendorOrName) return "";
+    if (typeof vendorOrName === "string") return vendorOrName;
+    if (typeof vendorOrName === "object") {
+      return (
+        vendorOrName.name ||
+        vendorOrName.vendorName ||
+        vendorOrName.label ||
+        vendorOrName.vendor ||
+        vendorOrName.vendorId ||
+        vendorOrName.id ||
+        ""
+      );
+    }
+    return String(vendorOrName);
+  };
+
+  const vendorGroups = React.useMemo(() => {
+    const items =
+      (requestData && Array.isArray(requestData.items)
+        ? requestData.items
+        : requestItems) || [];
+    const map = new Map();
+    items.forEach((it) => {
+      // vendor id may be in vendorId or inside vendor object
+      const vid =
+        it.vendorId ||
+        (it.vendor && (it.vendor.vendorId || it.vendor.id)) ||
+        null;
+      if (!vid) return; // skip items with no vendor id
+      const name =
+        it.vendorName ||
+        getVendorDisplayName(it.vendor) ||
+        getVendorDisplayName(it.vendorName) ||
+        String(vid);
+      if (!map.has(vid))
+        map.set(vid, { vendorId: vid, vendorName: name, items: [] });
+      map.get(vid).items.push(it);
+    });
+    return Array.from(map.values());
+  }, [requestData, requestItems]);
+
+  const requestFormGroups = React.useMemo(() => {
+    const items =
+      (requestData && Array.isArray(requestData.items)
+        ? requestData.items
+        : requestItems) || [];
+    const map = new Map();
+
+    items.forEach((it) => {
+      const vid =
+        it.vendorId ||
+        (it.vendor && (it.vendor.vendorId || it.vendor.id)) ||
+        null;
+
+      if (vid) {
+        const name =
+          it.vendorName ||
+          getVendorDisplayName(it.vendor) ||
+          getVendorDisplayName(it.vendorName) ||
+          String(vid);
+        if (!map.has(vid))
+          map.set(vid, { vendorId: vid, vendorName: name, items: [] });
+        map.get(vid).items.push(it);
+        return;
+      }
+
+      // no-vendor group (single key)
+      const noKey = "NO_VENDOR";
+      if (!map.has(noKey))
+        map.set(noKey, { vendorId: null, vendorName: null, items: [] });
+      map.get(noKey).items.push(it);
+    });
+
+    // return array of groups; vendor groups and optional no-vendor group
+    return Array.from(map.values());
+  }, [requestData, requestItems]);
+
+  // Build a unified list of all previewable documents for the folder
+  const folderDocs = React.useMemo(() => {
+    const docs = [];
+
+    // Request Form(s)
+    if (requestData?.doVendorSplit) {
+      if (requestFormGroups && requestFormGroups.length > 0) {
+        requestFormGroups.forEach((g, idx) => {
+          docs.push({
+            type: "requestForm",
+            name: g.vendorName ? `${g.vendorName} RequestForm` : "Request Form",
+            displayName: g.vendorName
+              ? `${g.vendorName} RequestForm`
+              : "Request Form",
+            vendorId: g.vendorId,
+            vendorName: g.vendorName,
+            items:
+              requestData &&
+              Array.isArray(requestData.originalItemsSnapshot) &&
+              requestData.originalItemsSnapshot.length > 0 &&
+              isAtOrPastProcurementManager(requestData)
+                ? requestData.originalItemsSnapshot
+                : g.items,
+          });
+        });
+      }
+    } else {
+      docs.push({
+        type: "requestForm",
+        name: " Request Form",
+        displayName: " Request Form",
+        vendorId: null,
+        vendorName: "Multiple Vendors",
+        items:
+          requestData &&
+          Array.isArray(requestData.originalItemsSnapshot) &&
+          requestData.originalItemsSnapshot.length > 0 &&
+          isAtOrPastProcurementManager(requestData)
+            ? requestData.originalItemsSnapshot
+            : requestData?.items || requestItems || [],
+      });
+    }
+
+    // Requisition(s)
+    if (requestData?.doVendorSplit) {
+      if (vendorGroups && vendorGroups.length > 0) {
+        vendorGroups.forEach((g) => {
+          docs.push({
+            type: "requisition",
+            name: `${g.vendorName} Requisition Preview`,
+            displayName: `${g.vendorName} Requisition Preview`,
+            vendorId: g.vendorId,
+            vendorName: g.vendorName,
+            items:
+              requestData &&
+              Array.isArray(requestData.originalItemsSnapshot) &&
+              requestData.originalItemsSnapshot.length > 0 &&
+              isAtOrPastProcurementManager(requestData)
+                ? requestData.originalItemsSnapshot
+                : g.items,
+          });
+        });
+      }
+    } else if (vendorGroups && vendorGroups.length > 0) {
+      docs.push({
+        type: "requisition",
+        name: " Requisition File",
+        displayName: " Requisition File",
+        vendorId: null,
+        vendorName: "Multiple Vendors",
+        items:
+          requestData &&
+          Array.isArray(requestData.originalItemsSnapshot) &&
+          requestData.originalItemsSnapshot.length > 0 &&
+          isAtOrPastProcurementManager(requestData)
+            ? requestData.originalItemsSnapshot
+            : vendorGroups.flatMap((g) => g.items),
+      });
+    }
+
+    // Purchase Order(s)
+    if (showPurchaseOrder && vendorGroups && vendorGroups.length > 0) {
+      vendorGroups.forEach((g) => {
+        docs.push({
+          type: "purchaseOrder",
+          name: `${g.vendorName} Purchase Order`,
+          displayName: `${g.vendorName} Purchase Order`,
+          vendorId: g.vendorId,
+          vendorName: g.vendorName,
+          items: g.items,
+        });
+      });
+    }
+
+    // Other files (quotations, payment advice, invoices, images, etc.)
+    fileMeta.forEach((f) => {
+      docs.push({ ...f });
+    });
+
+    return docs;
+  }, [
+    requestData,
+    requestItems,
+    requestFormGroups,
+    vendorGroups,
+    showPurchaseOrder,
+    fileMeta,
+  ]);
+
+  // Keyboard navigation for folder modal
+  useEffect(() => {
+    if (!active || !active.folder) return;
+    const onKeyDown = (e) => {
+      if (e.key === "ArrowLeft") {
+        setActive((prev) =>
+          prev && prev.folder && prev.index > 0
+            ? { ...prev, index: prev.index - 1 }
+            : prev
+        );
+      }
+      if (e.key === "ArrowRight") {
+        setActive((prev) =>
+          prev && prev.folder && prev.index < folderDocs.length - 1
+            ? { ...prev, index: prev.index + 1 }
+            : prev
+        );
+      }
+      if (e.key === "Escape") {
+        setActive(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, folderDocs.length]);
 
   const generatePdfFromElement = async (element, filename) => {
     const rect = element.getBoundingClientRect();
@@ -538,6 +769,9 @@ const AttachedDocuments = ({
       const paymentAdviceFiles = Array.isArray(requestData.paymentAdviceFiles)
         ? requestData.paymentAdviceFiles
         : [];
+        const jobCompletionFiles = Array.isArray(requestData.jobCompletionCertificateFiles)
+  ? requestData.jobCompletionCertificateFiles
+  : [];
       const requestImages = Array.isArray(requestData.requestImages)
         ? requestData.requestImages
         : [];
@@ -562,6 +796,7 @@ const AttachedDocuments = ({
       const rawPaymentAdvice = buildMeta(paymentAdviceFiles, "paymentAdvice");
       const rawInvoices = buildMeta(invoiceFiles, "invoice");
       const rawRequestImages = buildMeta(requestImages, "requestImage");
+      const rawJobCompletion = buildMeta(jobCompletionFiles, "jobCompletion");
 
       const dedupeByVendor = (list) => {
         const map = new Map();
@@ -587,6 +822,7 @@ const AttachedDocuments = ({
         ...rawPaymentAdvice,
         ...rawInvoices,
         ...rawRequestImages,
+        ...rawJobCompletion, 
       ];
 
       if (!mounted) return;
@@ -657,7 +893,10 @@ const AttachedDocuments = ({
         display = "Payment Advice";
       } else if (m.type === "invoice") {
         display = "Invoice";
-      } else if (m.type === "requestImage") {
+      } else if (m.type === "jobCompletion") {
+  display = "Waybill ";
+}
+      else if (m.type === "requestImage") {
         // ✅ ADD: Display name for request images
         // Count how many requestImages we've seen so far
         const imageIndex = fileMeta
@@ -870,84 +1109,6 @@ const AttachedDocuments = ({
     }
   };
 
-  const getVendorDisplayName = (vendorOrName) => {
-    if (!vendorOrName) return "";
-    if (typeof vendorOrName === "string") return vendorOrName;
-    if (typeof vendorOrName === "object") {
-      return (
-        vendorOrName.name ||
-        vendorOrName.vendorName ||
-        vendorOrName.label ||
-        vendorOrName.vendor ||
-        vendorOrName.vendorId ||
-        vendorOrName.id ||
-        ""
-      );
-    }
-    return String(vendorOrName);
-  };
-
-  const vendorGroups = React.useMemo(() => {
-    const items =
-      (requestData && Array.isArray(requestData.items)
-        ? requestData.items
-        : requestItems) || [];
-    const map = new Map();
-    items.forEach((it) => {
-      // vendor id may be in vendorId or inside vendor object
-      const vid =
-        it.vendorId ||
-        (it.vendor && (it.vendor.vendorId || it.vendor.id)) ||
-        null;
-      if (!vid) return; // skip items with no vendor id
-      const name =
-        it.vendorName ||
-        getVendorDisplayName(it.vendor) ||
-        getVendorDisplayName(it.vendorName) ||
-        String(vid);
-      if (!map.has(vid))
-        map.set(vid, { vendorId: vid, vendorName: name, items: [] });
-      map.get(vid).items.push(it);
-    });
-    return Array.from(map.values());
-  }, [requestData, requestItems]);
-
-  const requestFormGroups = React.useMemo(() => {
-    const items =
-      (requestData && Array.isArray(requestData.items)
-        ? requestData.items
-        : requestItems) || [];
-    const map = new Map();
-
-    items.forEach((it) => {
-      const vid =
-        it.vendorId ||
-        (it.vendor && (it.vendor.vendorId || it.vendor.id)) ||
-        null;
-
-      if (vid) {
-        const name =
-          it.vendorName ||
-          getVendorDisplayName(it.vendor) ||
-          getVendorDisplayName(it.vendorName) ||
-          String(vid);
-        if (!map.has(vid))
-          map.set(vid, { vendorId: vid, vendorName: name, items: [] });
-        map.get(vid).items.push(it);
-        return;
-      }
-
-      // no-vendor group (single key)
-      const noKey = "NO_VENDOR";
-      if (!map.has(noKey))
-        map.set(noKey, { vendorId: null, vendorName: null, items: [] });
-      map.get(noKey).items.push(it);
-    });
-
-    // return array of groups; vendor groups and optional no-vendor group
-    return Array.from(map.values());
-  }, [requestData, requestItems]);
-
   return (
     <>
       <div className="mb-8">
@@ -983,7 +1144,29 @@ const AttachedDocuments = ({
             </span>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 grid-flow-row-dense">
+          <>
+            <div className="mb-6">
+              <button
+                type="button"
+                onClick={() => setActive({ folder: true, index: 0 })}
+                className="flex items-center gap-4 px-6 py-5 rounded-2xl border-2 border-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 shadow hover:shadow-lg transition-all w-full sm:w-auto"
+                style={{ minWidth: 260 }}
+                title="Open all attached documents"
+              >
+                <span className="text-3xl">📁</span>
+                <div className="flex flex-col items-start">
+                  <span className="font-bold text-slate-900 text-base">
+                    All Documents
+                  </span>
+                  <span className="text-xs text-slate-600 mt-1">
+                    {folderDocs.length} document
+                    {folderDocs.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <span className="ml-auto text-slate-400 text-lg">&#9654;</span>
+              </button>
+            </div>
+            {/* <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 grid-flow-row-dense">
          {requestData?.doVendorSplit
   ? (
     requestFormGroups &&
@@ -1179,7 +1362,8 @@ const AttachedDocuments = ({
                 </button>
               </div>
             ))}
-          </div>
+          </div> */}
+          </>
         )}
       </div>
 
@@ -1261,9 +1445,12 @@ const AttachedDocuments = ({
                   <RequestFormPreview
                     request={requestData || {}}
                     items={
-                      active?.items && active.items.length
-                        ? active.items
-                        : requestItems || []
+                      requestData &&
+                      Array.isArray(requestData.originalItemsSnapshot) &&
+                      requestData.originalItemsSnapshot.length > 0 &&
+                      isAtOrPastProcurementManager(requestData)
+                        ? requestData.originalItemsSnapshot
+                        : doc.items
                     }
                     requestId={
                       active?.items && active.items.length ? null : requestId
@@ -1331,15 +1518,18 @@ const AttachedDocuments = ({
                   }}
                 >
                   <RequisitionPreview
-                  doVendorSplit={requestData?.doVendorSplit}
+                    doVendorSplit={requestData?.doVendorSplit}
                     request={requestData || {}}
-                    // if we opened a vendor tile we pass only that vendor's items; else fall back to full request items
                     items={
-                      active?.items && active.items.length
+                      requestData &&
+                      Array.isArray(requestData.originalItemsSnapshot) &&
+                      requestData.originalItemsSnapshot.length > 0 &&
+                      isAtOrPastProcurementManager(requestData)
+                        ? requestData.originalItemsSnapshot
+                        : active?.items && active.items.length
                         ? active.items
                         : requestItems || []
                     }
-                    // when vendor-specific preview is used, avoid requestId so RequisitionPreview doesn't re-fetch the request
                     requestId={
                       active?.items && active.items.length ? null : requestId
                     }
@@ -1486,6 +1676,147 @@ const AttachedDocuments = ({
             </div>
           </>
         )}
+      {active && active.folder && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={closePreview}
+            tabIndex={-1}
+          />
+          <div className="fixed left-1/2 transform -translate-x-1/2 top-12 z-50 w-[95%] md:w-[90%] lg:w-[80%] max-h-[85vh] overflow-auto">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📁</span>
+                  <span className="font-semibold text-slate-900">
+                    {folderDocs[active.index]?.displayName ||
+                      folderDocs[active.index]?.name}
+                  </span>
+                  <span className="text-xs text-slate-500 ml-2">
+                    ({active.index + 1} of {folderDocs.length})
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={closePreview}
+                    className="px-3 py-2 bg-red-50 text-red-600 rounded-md text-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b">
+                <button
+                  onClick={() =>
+                    setActive((prev) => ({
+                      ...prev,
+                      index: prev.index > 0 ? prev.index - 1 : prev.index,
+                    }))
+                  }
+                  disabled={active.index === 0}
+                  className="px-3 py-2 rounded bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-50"
+                  title="Previous"
+                >
+                  &#8592;
+                </button>
+                <button
+                  onClick={() =>
+                    setActive((prev) => ({
+                      ...prev,
+                      index:
+                        prev.index < folderDocs.length - 1
+                          ? prev.index + 1
+                          : prev.index,
+                    }))
+                  }
+                  disabled={active.index === folderDocs.length - 1}
+                  className="px-3 py-2 rounded bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-50"
+                  title="Next"
+                >
+                  &#8594;
+                </button>
+              </div>
+              <div className="p-4">
+                {(() => {
+                  const doc = folderDocs[active.index];
+                  if (!doc)
+                    return (
+                      <div className="text-center text-slate-500">
+                        No document
+                      </div>
+                    );
+                  if (doc.type === "requestForm") {
+                    return (
+                      <RequestFormPreview
+                        request={requestData || {}}
+                        items={doc.items}
+                        requestId={null}
+                        token={getToken ? getToken() : null}
+                        apiBase={API_BASE_URL}
+                      />
+                    );
+                  }
+                  if (doc.type === "requisition") {
+                    return (
+                      <RequisitionPreview
+                        doVendorSplit={requestData?.doVendorSplit}
+                        request={requestData || {}}
+                        items={doc.items}
+                        requestId={null}
+                        token={getToken ? getToken() : null}
+                        apiBase={API_BASE_URL}
+                      />
+                    );
+                  }
+                  if (doc.type === "purchaseOrder") {
+                    return (
+                      <PurchaseOrderPreview
+                        request={requestData || {}}
+                        items={doc.items}
+                        requestId={null}
+                        token={getToken ? getToken() : null}
+                        apiBase={API_BASE_URL}
+                      />
+                    );
+                  }
+                  // For files (pdf, images, etc.)
+                  if (doc.ext === "pdf") {
+                    return (
+                      <iframe
+                        title={doc.name}
+                        src={doc.url}
+                        style={{
+                          width: "100%",
+                          height: "70vh",
+                          border: "none",
+                        }}
+                      />
+                    );
+                  }
+                  if (
+                    ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(
+                      doc.ext
+                    )
+                  ) {
+                    return (
+                      <img
+                        src={doc.url}
+                        alt={doc.name}
+                        className="w-full max-h-[70vh] object-contain"
+                      />
+                    );
+                  }
+                  return (
+                    <div className="text-center text-slate-500">
+                      Cannot preview this file type.
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* NEW: Email Composer modal */}
       {showEmailComposer && (

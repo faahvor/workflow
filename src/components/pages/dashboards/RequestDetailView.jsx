@@ -11,7 +11,7 @@ import {
   MdArrowBack,
   MdAttachFile,
   MdDirectionsBoat,
-    MdInfo,
+  MdInfo,
 } from "react-icons/md";
 import RequestWorkflow from "../../shared/RequestWorkflow";
 import FleetManagerTable from "../../shared/tables/FleetManagerTable";
@@ -43,6 +43,8 @@ import MovedTable from "../../shared/tables/MovedTable";
 import SnapShotTable from "../../shared/tables/SnapShotTable";
 import DeliveryRequestView from "./DeliveryRequestView";
 import InvoiceControllerTable from "../../shared/tables/InvoiceControllerTable";
+import ReadOnlyTable from "../../shared/tables/ReadOnlyTable";
+import InvoiceFilesUpload from "./InvoiceFilesUpload";
 
 const RequestDetailView = ({
   request,
@@ -59,7 +61,7 @@ const RequestDetailView = ({
   const [vessels, setVessels] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [doVendorSplit, setDoVendorSplit] = useState(false);
-const [savingVendorSplit, setSavingVendorSplit] = useState(false);
+  const [savingVendorSplit, setSavingVendorSplit] = useState(false);
   const [vendors, setVendors] = useState([]);
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
   const { getToken } = useAuth();
@@ -134,6 +136,8 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
   const [freightRoute, setFreightRoute] = useState(null);
   const [isSavingFreightRoute, setIsSavingFreightRoute] = useState(false);
   
+
+ 
   const nextApprovalOptions = [
     { value: "None", label: "None" },
     { value: "Fleet Manager", label: "Fleet Manager" },
@@ -1136,25 +1140,25 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
   };
 
   const handleVendorSplitChange = async (value) => {
-  setSavingVendorSplit(true);
-  setDoVendorSplit(value);
-  try {
-    const token = getToken();
-    await axios.patch(
-      `${API_BASE_URL}/requests/${request.requestId}`,
-      { doVendorSplit: value },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    // Optionally refresh details
-    await fetchRequestDetails();
-        setFilesRefreshCounter((c) => c + 1);
-  } catch (err) {
-    console.error("Failed to update doVendorSplit:", err);
-    alert("Failed to update vendor split mode.");
-  } finally {
-    setSavingVendorSplit(false);
-  }
-};
+    setSavingVendorSplit(true);
+    setDoVendorSplit(value);
+    try {
+      const token = getToken();
+      await axios.patch(
+        `${API_BASE_URL}/requests/${request.requestId}`,
+        { doVendorSplit: value },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Optionally refresh details
+      await fetchRequestDetails();
+      setFilesRefreshCounter((c) => c + 1);
+    } catch (err) {
+      console.error("Failed to update doVendorSplit:", err);
+      alert("Failed to update vendor split mode.");
+    } finally {
+      setSavingVendorSplit(false);
+    }
+  };
 
   useEffect(() => {
     if (request?.requestId) {
@@ -1830,6 +1834,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
               selectedRequest?.requestType || request?.requestType || ""
             }
             tag={currentRequest?.tag || ""}
+             clearingFee={currentRequest?.clearingFee}
           />
         );
       // ...existing code (rest of switch cases)...
@@ -1847,7 +1852,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
             }
           />
         );
-        case "invoicecontroller":
+      case "invoicecontroller":
       case "invoice controller":
         return (
           <InvoiceControllerTable
@@ -1858,6 +1863,9 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
             requestType={
               selectedRequest?.requestType || request?.requestType || ""
             }
+             clearingFee={currentRequest?.clearingFee}
+                         tag={currentRequest?.tag || ""}
+
           />
         );
       case "technicalmanager":
@@ -1884,6 +1892,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
             isReadOnly={tableReadOnly}
             vendors={vendors}
             tag={currentRequest?.tag}
+             clearingFee={currentRequest?.clearingFee}
           />
         );
 
@@ -1899,6 +1908,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
             isIncompleteDelivery={currentRequest?.isIncompleteDelivery || false}
             requestId={request.requestId}
             onRefreshRequest={fetchRequestDetails}
+             clearingFee={currentRequest?.clearingFee}
           />
         );
       case "storebase":
@@ -1950,6 +1960,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
             }
             tag={currentRequest?.tag}
             request={currentRequest}
+             clearingFee={currentRequest?.clearingFee}
           />
         );
       case "accountinglead":
@@ -2074,6 +2085,14 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
 
       case "procurement":
       case "procurement officer":
+         if (isReadOnlyMode) {
+    return (
+      <ReadOnlyTable
+        items={items}
+        tag={currentRequest?.tag || ""}
+      />
+    );
+  }
         return (
           <ProcurementTable
             requests={items}
@@ -2100,7 +2119,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
             readOnly={tableReadOnly}
             onSwitchInitiated={(itemId) => {}}
             onFilesChanged={handleFilesChanged}
-                doVendorSplit={doVendorSplit}
+            doVendorSplit={doVendorSplit}
           />
         );
     }
@@ -2753,6 +2772,11 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
     };
   }, []); // run once on unmount
 
+   const isReadOnlyMode =
+  (userRole === "procurement officer" || userRole === "procurement") &&
+  currentRequest?.isIncompleteDelivery === true;
+
+
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
       {/* Back Button */}
@@ -2878,7 +2902,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
               {request.paymentType || "N/A"}
             </p>
           </div>
-            {request.destination === "Marine" ? (
+          {request.destination === "Marine" ? (
             <div className="px-4 py-3 border-b border-r border-slate-200">
               <p className="text-xs text-slate-500 font-medium mb-0.5">
                 OffShore Number
@@ -3539,6 +3563,18 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
         </div>
       )}
 
+  {userRole === "invoice controller" && !isReadOnly && (
+  <InvoiceFilesUpload
+    requestId={request.requestId}
+    apiBase={API_BASE_URL}
+    getToken={getToken}
+    onFilesChanged={handleFilesChanged}
+    isReadOnly={isReadOnly}
+    invoiceFiles={currentRequest?.invoiceFiles || []}
+  />
+)}
+
+
       {/* Quotation/Invoice Upload - Procurement Officer gets toggle, Requester (shipping/clearing) gets quotation only */}
       {(canUploadQuotation ||
         ((String(currentRequest?.tag || "")
@@ -3548,7 +3584,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
             .toLowerCase()
             .includes("clearing")) &&
           userRole === "requester")) &&
-        !isReadOnly && (
+        (!isReadOnly && !isReadOnlyMode) && (
           <div className="mb-8">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
               <MdAttachFile className="text-xl" />
@@ -3770,42 +3806,45 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
       {currentRequest?.items && currentRequest.items.length > 0 && (
         <div className="mb-8 ">
           <div className="flex items-center justify-between mb-4">
-  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-    <MdShoppingCart className="text-xl" />
-    Requested Items
-  </h3>
-  {user?.role?.toLowerCase() === "procurement officer" && !isReadOnly && (
-    <div className="flex items-center gap-4">
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="radio"
-          name="vendorSplit"
-          checked={doVendorSplit}
-          onChange={() => handleVendorSplitChange(true)}
-          disabled={savingVendorSplit}
-        />
-        <span className="text-sm font-medium text-slate-700">
-          Split by Vendor
-        </span>
-      </label>
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="radio"
-          name="vendorSplit"
-          checked={!doVendorSplit}
-          onChange={() => handleVendorSplitChange(false)}
-          disabled={savingVendorSplit}
-        />
-        <span className="text-sm font-medium text-slate-700">
-          Multiple Vendors
-        </span>
-      </label>
-      {savingVendorSplit && (
-        <span className="text-xs text-slate-500 ml-2">Saving...</span>
-      )}
-    </div>
-  )}
-</div>
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <MdShoppingCart className="text-xl" />
+              Requested Items
+            </h3>
+            {user?.role?.toLowerCase() === "procurement officer" &&
+              (!isReadOnly && !isReadOnlyMode) && (
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="vendorSplit"
+                      checked={doVendorSplit}
+                      onChange={() => handleVendorSplitChange(true)}
+                      disabled={savingVendorSplit}
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      Split by Vendor
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="vendorSplit"
+                      checked={!doVendorSplit}
+                      onChange={() => handleVendorSplitChange(false)}
+                      disabled={savingVendorSplit}
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      Multiple Vendors
+                    </span>
+                  </label>
+                  {savingVendorSplit && (
+                    <span className="text-xs text-slate-500 ml-2">
+                      Saving...
+                    </span>
+                  )}
+                </div>
+              )}
+          </div>
           <div
             className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg"
             style={{ position: "relative", zIndex: 1 }}
@@ -4074,7 +4113,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
       </div>
 
       {user?.role?.toLowerCase() === "procurement officer" &&
-        !isReadOnly &&
+        (!isReadOnly && !isReadOnlyMode) &&
         !hideAssignForProcurement && (
           <div className="mb-8">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -4559,7 +4598,7 @@ const [savingVendorSplit, setSavingVendorSplit] = useState(false);
       )}
 
       {/* Action Footer */}
-      {!isReadOnly && (
+      {(!isReadOnly && !isReadOnlyMode) && (
         <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl px-6 md:px-8 py-6 shadow-lg sticky bottom-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-slate-600 text-sm">

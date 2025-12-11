@@ -301,6 +301,22 @@ const Sidebar = ({
                 </div>
               </button>
             )}
+            {(isProcurement || isDeliveryRole) && (
+  <button
+    onClick={() => {
+      setActiveView("incompleteDelivery");
+      setIsSidebarOpen(false);
+    }}
+    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+      activeView === "incompleteDelivery"
+        ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+        : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+    }`}
+  >
+    <MdInventory className="text-xl shrink-0" />
+    <span className="font-medium text-sm">Incomplete Delivery</span>
+  </button>
+)}
 
             {/* Queried Requests */}
             <button

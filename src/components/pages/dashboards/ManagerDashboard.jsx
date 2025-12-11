@@ -30,6 +30,7 @@ import QueriedRequest from "./QueriedRequest";
 import ProcurementCreateRequest from "./ProcurementCreateRequest";
 import ProcurementMyRequests from "./ProcurementMyRequests";
 import OverviewDashboard from "./OverviewDashboard";
+import IncompleteDeliveryList from "./IncompleteDeliveryList";
 
 // ManagerDashboard component
 const ManagerDashboard = () => {
@@ -591,6 +592,7 @@ const ManagerDashboard = () => {
                   activeView !== "vendorManagement" &&
                   activeView !== "inventoryManagement" &&
                   activeView !== "merged" &&
+                  activeView !== "incompleteDelivery" &&
                   activeView !== "createNew" &&
                   activeView !== "myRequests" &&
                   activeView !== "overview" && (
@@ -629,6 +631,13 @@ const ManagerDashboard = () => {
                 {activeView === "inventoryManagement" && (
                   <InventoryManagement />
                 )}
+                {activeView === "incompleteDelivery" && (
+                  <IncompleteDeliveryList
+                    searchQuery={searchQuery}
+                    filterType={filterType}
+                    onViewDetails={handleOpenDetail}
+                  />
+                )}
 
                 {activeView === "completed" ? (
                   <CompletedRequests
@@ -659,6 +668,7 @@ const ManagerDashboard = () => {
                   activeView !== "vendorManagement" &&
                   activeView !== "createNew" &&
                   activeView !== "myRequests" &&
+                  activeView !== "incompleteDelivery" &&
                   activeView !== "inventoryManagement" &&
                   activeView !== "overview" ? (
                   <div className="space-y-4">

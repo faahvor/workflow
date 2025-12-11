@@ -206,12 +206,15 @@ const PurchaseOrderPreview = forwardRef(
       createdAt.getTime() + 24 * 60 * 60 * 1000
     ).toLocaleDateString();
     const reference = req.reference || "N/A";
-        const paymentType = req.paymentType || "N/A";
+    const paymentType = req.paymentType || "N/A";
 
     const grandTotal = usedItems.reduce((s, it) => {
-      const qty = Number(it.quantity || 0);
       const total =
-        it.total != null ? Number(it.total) : Number(it.unitPrice || 0) * qty;
+        it.totalPrice !== undefined
+          ? Number(it.totalPrice)
+          : it.total !== undefined
+          ? Number(it.total)
+          : Number(it.unitPrice || 0) * Number(it.quantity || 0);
       return s + (isNaN(total) ? 0 : total);
     }, 0);
 
@@ -244,18 +247,67 @@ const PurchaseOrderPreview = forwardRef(
         ? getVendorAddressLines(usedItems[0].vendor)
         : null;
 
-   
-
     const issuedToLines = [vendorNameLine, addressPart]
       .filter(Boolean)
       .join("\n");
-            const tagLower = String(req.tag || "").toLowerCase();
+    const tagLower = String(req.tag || "").toLowerCase();
     const isShippingTag = tagLower === "shipping";
     const isClearingTag = tagLower === "clearing";
     const showFeeColumns = isShippingTag || isClearingTag;
 
+    function getShipToBlock(req) {
+      if (String(req.logisticsType).toLowerCase() !== "local") return null;
+      const location = String(req.deliveryLocation || "").toLowerCase();
+
+      if (location === "delivery jetty") {
+        return (
+          <>
+            <div className="text-base font-semibold text-slate-800">
+              Delivery Jetty
+            </div>
+            <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+              Inside NPA, Kiri Kiri Lighter Terminal
+              <br />
+              Phase 1, By Sunrise Bustop
+              <br />
+              Oshodi Apapa Expressway Apapa
+              <br />
+              Lagos
+            </div>
+          </>
+        );
+      }
+      if (location === "delivery base") {
+        return (
+          <>
+            <div className="text-base font-semibold text-slate-800">
+              Delivery Base
+            </div>
+            <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+              17, Wharf Road,
+              <br />
+              Apapa, Lagos
+              <br />
+              Nigeria.
+            </div>
+          </>
+        );
+      }
+      if (location === "delivery vessel") {
+        return (
+          <div className="text-base font-semibold text-slate-800">
+            Delivery Vessel
+          </div>
+        );
+      }
+      return null;
+    }
+
     return (
-      <div ref={ref} className="bg-white px-12 md:px-16 lg:px-20 print:px-8 py-6 text-slate-900 max-w-5xl mx-auto">
+      <div
+        ref={ref}
+        className="bg-white px-12 md:px-16 lg:px-20 print:px-8 py-6 text-slate-900 max-w-5xl mx-auto"
+      >
         <div className="px-4 py-4 border-b bg-gradient-to-r from-white to-slate-50">
           <h2 className="text-2xl font-extrabold">Purchase Order</h2>
         </div>
@@ -333,23 +385,29 @@ const PurchaseOrderPreview = forwardRef(
               Ship To:
             </div>
             <div>
-              <div className="text-base font-semibold text-slate-800">
-                {req.company?.name || "Hydrodive Nigeria Limited"}
-              </div>
-              {req.company && req.company.address ? (
-                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
-                  {[
-                    req.company.address.street || "",
-                    req.company.address.city || "",
-                    req.company.address.state || "",
-                  ]
-                    .filter(Boolean)
-                    .join("\n")}
-                </div>
+              {getShipToBlock(req) ? (
+                getShipToBlock(req)
               ) : (
-                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
-                  {"17, Wharf Road\nApapa\nLagos\nNigeria"}
-                </div>
+                <>
+                  <div className="text-base font-semibold text-slate-800">
+                    {req.company?.name || "Hydrodive Nigeria Limited"}
+                  </div>
+                  {req.company && req.company.address ? (
+                    <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+                      {[
+                        req.company.address.street || "",
+                        req.company.address.city || "",
+                        req.company.address.state || "",
+                      ]
+                        .filter(Boolean)
+                        .join("\n")}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+                      {"17, Wharf Road\nApapa\nLagos\nNigeria"}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -408,7 +466,6 @@ const PurchaseOrderPreview = forwardRef(
                       <td className="py-3 text-slate-700">{i + 1}</td>
                       <td className="py-3 text-slate-900">{it.name}</td>
                       <td className="py-3 text-slate-700">{it.quantity}</td>
-                      
 
                       {/* ✅ Shipping Qty - only for shipping/clearing */}
                       {showFeeColumns && (
@@ -470,7 +527,12 @@ const PurchaseOrderPreview = forwardRef(
                       {!showFeeColumns && (
                         <td className="py-3 text-right font-semibold text-slate-900">
                           {formatCurrency(
-                            it.total || it.unitPrice * it.quantity,
+                            it.totalPrice !== undefined
+                              ? it.totalPrice
+                              : it.total !== undefined
+                              ? it.total
+                              : Number(it.unitPrice || 0) *
+                                Number(it.quantity || 0),
                             it.currency || req.currency
                           )}
                         </td>

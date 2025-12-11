@@ -14,6 +14,7 @@ const VesselManagerTable = ({
   requestType = "",
   vendors = [],
   tag = "", // ✅ ADD THIS PROP
+  clearingFee,
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
@@ -25,11 +26,15 @@ const VesselManagerTable = ({
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
 
-  const getFeeValue = (item) => {
-    if (!item) return 0;
-    const v = item[feeFieldName];
-    return typeof v === "number" ? v : Number(v || 0);
-  };
+const getFeeValue = (item) => {
+  if (!item) return 0;
+  const v = item[feeFieldName];
+  // If clearingFee is not on item, fallback to request.clearingFee
+  if (feeFieldName === "clearingFee" && (v === undefined || v === null)) {
+    return typeof clearingFee === "number" ? clearingFee : Number(clearingFee || 0);
+  }
+  return typeof v === "number" ? v : Number(v || 0);
+};
 
   // ✅ Hide actions when showing fee columns (first approval with shipping/clearing tag)
   const hideActionsForFee = showFeeColumns && !isSecondApproval;
