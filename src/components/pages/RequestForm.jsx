@@ -1,389 +1,165 @@
-import React, { useRef } from "react";
-import { MdShoppingCart } from "react-icons/md";
+import React from "react";
 
-/*
-  RequestForm - preview-only component
-  - Displays Request Details, Requested Items table and signature
-  - Props:
-     - request: object with request metadata (fallback to demo)
-     - items: array of items (fallback to demo requestItems)
-*/
-
-const formatDate = (d) => {
-  if (!d) return "N/A";
-  const dt = typeof d === "string" || typeof d === "number" ? new Date(d) : d;
-  if (Number.isNaN(dt.getTime())) return d;
-  return dt.toLocaleDateString();
+// Demo data matching the image
+const demo = {
+  vendor: "Rylako International Services",
+  poNo: "267601",
+  regNo: "827-01-23",
+  date: "4-12-2023",
+  items: [
+    { sn: 1, desc: "Kevlar gloves XL", qty: 4 },
+    { sn: 2, desc: "Kevlar gloves XXL", qty: 6 },
+  ],
+  approvedBy: "Udeme Saturday",
+  receivedBy: "Osi Ojo",
+  signed: "Osi Ojo",
+  signDate: "4-12-2023",
 };
 
-const RequestForm = ({ request: reqProp, items: itemsProp }) => {
-  // Demo fallback data (kept minimal)
-  const demoRequest = {
-    requestId: "REQ-2024-001",
-    id: "REQ-2024-001",
-    type: "purchase-order",
-    requestType: "purchaseOrder",
-    title: "Marine Engine Parts",
-    requester: "John Smith",
-    department: "Marine",
-    destination: "IT",
-    vessel: "MV Ocean Star",
-    amount: "$15,450",
-    priority: "urgent",
-    date: "2024-11-14",
-    createdAt: "2024-11-14T09:30:00Z",
-    time: "09:30 AM",
-    company: { name: "HWFP Marine Services" },
-    costCenter: "CC-2024-1105",
-    budgetCode: "BDG-MAR-Q4",
-    approvalLevel: "Level 2 (Manager)",
-    deliveryRequired: "Within 7 Days",
-    currency: "NGN (₦)",
-    jobNumber: "N/A",
-    assetId: "N/A",
-  };
-
-  const demoItems = [
-    {
-      id: 1,
-      name: "Marine Engine Oil SAE 40",
-      quantity: 50,
-      unit: "liters",
-      unitPrice: "$85.00",
-      total: "$4,250.00",
-    },
-    {
-      id: 2,
-      name: "Oil Filter - Premium Grade",
-      quantity: 24,
-      unit: "pieces",
-      unitPrice: "$45.00",
-      total: "$1,080.00",
-    },
-    {
-      id: 3,
-      name: "Fuel Filter Assembly",
-      quantity: 12,
-      unit: "sets",
-      unitPrice: "$120.00",
-      total: "$1,440.00",
-    },
-  ];
-
-  const request = { ...demoRequest, ...(reqProp || {}) };
-
-  // normalize request id field
-  const requestId = request.requestId || request.id || "N/A";
-  const submittedDate = formatDate(request.createdAt || request.date);
-  const submittedTime = request.time || "";
-
-  const items = itemsProp && itemsProp.length ? itemsProp : demoItems;
-
-  const requisitionRef = useRef(null);
-
-  return (
-    <div
-      // make the preview fill the modal container (no max-width / centering)
-      className="p-6 bg-white rounded-2xl shadow-lg w-full"
-      ref={requisitionRef}
-    >
-      {/* Company header: logo, name, address */}
-      <div className="text-center mb-8">
-        <div className="mx-auto w-28 h-28 flex items-center justify-center rounded-lg overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600">
-          {request.company?.logoUrl ? (
-            <img
-              src={request.company.logoUrl}
-              alt={request.company?.name || "Company Logo"}
-              className="w-full h-full object-contain"
-            />
-          ) : (
-            <div className="text-white text-3xl font-bold">G</div>
-          )}
+const RequestForm = () => (
+  <div
+    className="bg-white p-8 rounded-xl shadow max-w-2xl mx-auto border border-slate-300"
+    style={{ fontFamily: "Arial, sans-serif" }}
+  >
+    {/* Header */}
+    <div className="flex justify-between items-start mb-2">
+      <div>
+        <div
+          className="text-2xl font-bold text-sky-700"
+          style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
+        >
+          HydroDive
         </div>
-
-        <div className="mt-3">
-          <div className="text-lg font-bold text-slate-900">
-            {request.company?.name || "HWFP Marine Services"}
-          </div>
-          <div className="text-sm text-slate-500 mt-1">
-            {request.company?.address ||
-              "17, Wharf Road, Apapa, Lagos, Nigeria"}
-          </div>
+        <div className="text-xs mt-1 text-slate-700">
+          17, WHARF ROAD, APAPA, LAGOS-NIGERIA
+          <br />
+          TEL: +234-1-5450946, +234-1-5870946
+          <br />
+          0700HYDRODIVE FAX: 4611443
         </div>
       </div>
-
-      {/* Request Information - Compact Table Layout (copied from RequestDetailDemo) */}
-      <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg mb-6">
-        <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-3 border-b border-slate-200">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-            Request Details
-          </h3>
+      <div className="text-right">
+        <div className="text-xs font-semibold text-slate-700">
+          GOODS RECEIVED NOTE
         </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {/* Row 1 */}
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Request ID
-            </p>
-            <p className="text-sm text-slate-900 font-semibold font-mono">
-              {requestId}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Requester
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {typeof request.requester === "object"
-                ? request.requester.displayName || request.requester.name
-                : request.requester || "N/A"}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Department
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.department || "N/A"}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Destination
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.destination || request.destinationPort || "N/A"}
-            </p>
-          </div>
-
-          {/* Row 2 */}
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Vessel</p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.vessel ||
-                request.vesselName ||
-                request.vesselId ||
-                "N/A"}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Submitted Date
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {submittedDate}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Submitted Time
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {submittedTime || ""}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Status</p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.status || request.state || "Pending Review"}
-            </p>
-          </div>
-
-          {/* Row 3 */}
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Priority
-            </p>
-            <p className="text-sm font-semibold">
-              <span
-                className={`inline-block px-2 py-0.5 rounded text-xs ${
-                  String(request.priority || "").toLowerCase() === "urgent"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                {String(request.priority || "").toLowerCase() === "urgent"
-                  ? "URGENT"
-                  : request.priority
-                  ? request.priority
-                  : "Normal"}
-              </span>
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Request Type
-            </p>
-            <p className="text-sm font-semibold">
-              <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                {request.requestType === "purchaseOrder" ||
-                request.type === "purchase-order"
-                  ? "Purchase Order"
-                  : "Petty Cash"}
-              </span>
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Company</p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {(request.company && request.company.name) ||
-                request.companyName ||
-                "HWFP Marine Services"}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-b border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Cost Center
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.costCenter || request.cost_center || "CC-2024-1105"}
-            </p>
-          </div>
-
-          {/* Row 4 */}
-          <div className="px-4 py-3 border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Budget Code
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.budgetCode || request.budget_code || "BDG-MAR-Q4"}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Approval Level
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.approvalLevel || "Level 2 (Manager)"}
-            </p>
-          </div>
-
-          <div className="px-4 py-3 border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Delivery Required
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.deliveryRequired || "Within 7 Days"}
-            </p>
-          </div>
-
-          <div className="px-4 py-3">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Currency
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.currency || "NGN (₦)"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Requested Items table (copied from demo) */}
-      <div className="mb-6">
-        <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-          <MdShoppingCart /> Requested Items
-        </h3>
-
-        <div className="bg-white border rounded-xl p-3">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500">
-                  <th className="px-3 py-2">#</th>
-                  <th className="px-3 py-2">Description</th>
-                  <th className="px-3 py-2">Qty</th>
-                  <th className="px-3 py-2">Unit</th>
-                  <th className="px-3 py-2 text-right">Unit Price</th>
-                  <th className="px-3 py-2 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {items.map((it, i) => (
-                  <tr key={it.id || i}>
-                    <td className="px-3 py-2 align-top">{i + 1}</td>
-                    <td className="px-3 py-2 align-top text-slate-900">
-                      {it.name}
-                    </td>
-                    <td className="px-3 py-2 align-top">{it.quantity}</td>
-                    <td className="px-3 py-2 align-top">{it.unit || "N/A"}</td>
-                    <td className="px-3 py-2 align-top text-right text-slate-700">
-                      {it.unitPrice || "-"}
-                    </td>
-                    <td className="px-3 py-2 align-top text-right font-semibold text-slate-900">
-                      {it.total || "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={5} className="pt-4 text-right font-bold">
-                    Grand Total
-                  </td>
-                  <td className="pt-4 text-right text-lg font-bold">
-                    {request.amount || ""}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Signature block */}
-      <div className="pt-6 border-t">
-        <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
-          <div className="flex-1">
-            <div className="text-xs text-slate-500 mb-2">Approved by</div>
-            <div className="bg-white p-4 rounded-xl border border-slate-100 w-full max-w-md">
-              <svg
-                width="240"
-                height="70"
-                viewBox="0 0 240 70"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M10 40 C40 10, 80 10, 110 40 S180 70, 230 40"
-                  stroke="#036173"
-                  strokeWidth="2.5"
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <div className="mt-2">
-                <div className="text-sm font-semibold text-slate-900">
-                  Procurement Officer
-                </div>
-                <div className="text-xs text-slate-500">
-                  e-signature • {new Date().toLocaleDateString()}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-right md:text-left">
-            <div className="text-xs text-slate-500">Contact</div>
-            <div className="font-semibold text-slate-900">
-              procurement@gemz.com
-            </div>
-          </div>
+        <div className="text-xs text-slate-500 mt-1">
+          NO:{" "}
+          <span
+            className="inline-block min-w-[60px] border-b border-slate-400 align-middle"
+            style={{ letterSpacing: 2 }}
+          >
+            3021359
+          </span>
         </div>
       </div>
     </div>
-  );
-};
+    {/* Vendor and PO info */}
+    <div className="flex justify-between items-center mt-4 mb-2">
+      <div className="text-xs">
+        Vendor Name: <span className="font-semibold">{demo.vendor}</span>
+      </div>
+      <div className="flex gap-6 text-xs">
+        <div>
+          P.O No.: <span className="font-semibold">{demo.poNo}</span>
+        </div>
+        <div>
+          Reg No.: <span className="font-semibold">{demo.regNo}</span>
+        </div>
+        <div>
+          Date: <span className="font-semibold">{demo.date}</span>
+        </div>
+      </div>
+    </div>
+    {/* Table */}
+    <table
+      className="w-full border border-slate-400 text-xs mt-2 mb-8"
+      cellPadding={0}
+      cellSpacing={0}
+    >
+      <thead>
+        <tr className="bg-slate-100">
+          <th className="border border-slate-400 px-2 py-1 w-8">S/N</th>
+          <th className="border border-slate-400 px-2 py-1">Description</th>
+          <th className="border border-slate-400 px-2 py-1 w-12">Qty</th>
+          <th className="border border-slate-400 px-2 py-1 w-16"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {demo.items.map((item, idx) => (
+          <tr key={idx}>
+            <td className="border border-slate-400 px-2 py-1 text-center">
+              {item.sn}
+            </td>
+            <td className="border border-slate-400 px-2 py-1">{item.desc}</td>
+            <td className="border border-slate-400 px-2 py-1 text-center">
+              {item.qty}
+            </td>
+            <td className="border border-slate-400 px-2 py-1"></td>
+          </tr>
+        ))}
+        {/* Add 20 empty rows */}
+        {Array.from({ length: 20 }).map((_, idx) => (
+          <tr key={`empty-${idx}`}>
+            <td className="border border-slate-400 px-2 py-4 text-center">
+              {idx + 3}
+            </td>
+            <td className="border border-slate-400 px-2 py-4"></td>
+            <td className="border border-slate-400 px-2 py-4 text-center"></td>
+            <td className="border border-slate-400 px-2 py-4"></td>
+          </tr>
+        ))}
+        {/* Diagonal line */}
+        <tr>
+          <td colSpan={4} className="relative p-0" style={{ height: 80 }}>
+            <svg
+              width="100%"
+              height="80"
+              style={{ position: "absolute", left: 0, top: 0 }}
+            >
+              <line
+                x1="0"
+                y1="80"
+                x2="100%"
+                y2="0"
+                stroke="#888"
+                strokeWidth="1"
+              />
+            </svg>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    {/* Footer */}
+    <div className="flex flex-wrap justify-between items-end gap-4 mt-8 text-xs">
+      <div>
+        <div>
+          Approved by: <span className="font-semibold">{demo.approvedBy}</span>
+        </div>
+      </div>
+      <div>
+        <div>
+          Received by: <span className="font-semibold">{demo.receivedBy}</span>
+        </div>
+        <div className="mt-2">
+          Signed:
+          <span
+            className="inline-block align-middle ml-2"
+            style={{
+              fontFamily: "cursive",
+              fontSize: 18,
+              color: "#036173",
+            }}
+          >
+            {/* Simulated signature */}
+            Osi Ojo
+          </span>
+        </div>
+        <div>
+          Date: <span className="font-semibold">{demo.signDate}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 export default RequestForm;
