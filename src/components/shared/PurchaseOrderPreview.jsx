@@ -369,11 +369,11 @@ const PurchaseOrderPreview = forwardRef(
               Issued To:
             </div>
             <div>
-              <div className="text-base font-semibold text-slate-800">
+              <div className="text-base font-semibold text-slate-800 ml-[3rem]">
                 {vendorNameLine}
               </div>
               {addressPart ? (
-                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1 ml-[3rem]">
                   {addressPart}
                 </div>
               ) : null}
@@ -389,11 +389,11 @@ const PurchaseOrderPreview = forwardRef(
                 getShipToBlock(req)
               ) : (
                 <>
-                  <div className="text-base font-semibold text-slate-800">
+                  <div className="text-base font-semibold text-slate-800 ml-[3rem]">
                     {req.company?.name || "Hydrodive Nigeria Limited"}
                   </div>
                   {req.company && req.company.address ? (
-                    <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+                    <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1 ml-[3rem]">
                       {[
                         req.company.address.street || "",
                         req.company.address.city || "",
@@ -478,7 +478,9 @@ const PurchaseOrderPreview = forwardRef(
                       {showFeeColumns && (
                         <td className="py-3 text-right text-slate-700">
                           {formatCurrency(
-                            it.shippingFee || 0,
+                            isClearingTag
+                              ? req.shippingFee || 0
+                              : it.shippingFee || 0,
                             it.currency || req.currency
                           )}
                         </td>
@@ -577,10 +579,17 @@ const PurchaseOrderPreview = forwardRef(
                     return (
                       <div
                         key={s.userId || idx}
-                        className="bg-white p-3 rounded-xl border border-slate-100"
+                        className="bg-white p-2 rounded-xl border w-full text-center border-slate-100"
                       >
                         {s.imageData ? (
-                          <div style={{ height: 40 }}>
+                          <div
+                            style={{
+                              height: 40,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
                             <img
                               src={s.imageData}
                               alt={s.name}
@@ -594,11 +603,12 @@ const PurchaseOrderPreview = forwardRef(
                         ) : (
                           <div
                             style={{
-                              height: 36,
+                              height: 25,
                               fontFamily:
                                 "Brush Script MT, Lucida Handwriting, cursive",
-                              fontSize: 20,
+                              fontSize: 15,
                               color: "#036173",
+                              marginBottom: "1rem",
                             }}
                           >
                             {s.name}

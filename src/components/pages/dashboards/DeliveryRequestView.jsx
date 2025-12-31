@@ -1,13 +1,14 @@
 // src/components/pages/dashboards/DeliveryRequestView.jsx
 
 import React, { useEffect, useState, useCallback } from "react";
-import { MdArrowBack, MdCheckCircle, MdShoppingCart } from "react-icons/md";
+import { MdArrowBack, MdCheckCircle, MdDirectionsBoat, MdShoppingCart } from "react-icons/md";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import RequestWorkflow from "../../shared/RequestWorkflow";
 import AttachedDocuments from "../../shared/AttachedDocuments";
 import WaybillUpload from "./WaybillUpload";
-
+import Select from "react-select";
+import CommentThread from "../../shared/CommentThread";
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
 const formatCurrency = (v, currency = "NGN") => {
@@ -31,18 +32,41 @@ const DeliveryRequestView = ({
   const [vessels, setVessels] = useState([]);
   const [filesRefreshCounter, setFilesRefreshCounter] = useState(0);
 
-  // Comments state
-  const [comments, setComments] = useState([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [newComment, setNewComment] = useState("");
-  const [postingComment, setPostingComment] = useState(false);
-  const COMMENTS_PER_PAGE = 3;
-  const [commentsPage, setCommentsPage] = useState(1);
+
+  const [nextDeliveryStations, setNextDeliveryStations] = useState([]);
+const [isSavingNextStations, setIsSavingNextStations] = useState(false);
+
+
+const allDeliveryStations = [
+  { value: "Delivery Base", label: "Delivery Base" },
+  { value: "Delivery Jetty", label: "Delivery Jetty" },
+  { value: "Delivery Vessel", label: "Delivery Vessel" },
+];
+
+const deliveryStationOptions = allDeliveryStations.filter(
+  (opt) => opt.value.toLowerCase() !== userRole
+);
+
+const handleNextStationsChange = (options) => {
+  setNextDeliveryStations(options || []);
+};
+
 
    function getShipToBlock(req) {
-      if (String(req.logisticsType).toLowerCase() !== "local") return null;
-      const location = String(req.deliveryLocation || "").toLowerCase();
+  // 1. Check pendingDeliveryStations first
+  const pendingStations = Array.isArray(req.pendingDeliveryStations)
+    ? req.pendingDeliveryStations.filter(Boolean)
+    : [];
 
+  // If there are pending stations, try to match the current user's role
+  if (pendingStations.length > 0) {
+    // Try to match the current role (case-insensitive)
+    const match = pendingStations.find(
+      (station) => station.toLowerCase() === userRole
+    );
+    const stationToShow = match || pendingStations[0];
+    if (stationToShow) {
+      const location = stationToShow.toLowerCase();
       if (location === "delivery jetty") {
         return (
           <>
@@ -84,8 +108,62 @@ const DeliveryRequestView = ({
           </div>
         );
       }
-      return null;
+      // fallback for unknown station
+      return (
+        <div className="text-base font-semibold text-slate-800">
+          {stationToShow}
+        </div>
+      );
     }
+  }
+
+  // 2. Fallback to original logic if no pending stations
+  if (String(req.logisticsType).toLowerCase() !== "local") return null;
+  const location = String(req.deliveryLocation || "").toLowerCase();
+
+  if (location === "delivery jetty") {
+    return (
+      <>
+        <div className="text-base font-semibold text-slate-800">
+          Delivery Jetty
+        </div>
+        <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+          Inside NPA, Kiri Kiri Lighter Terminal
+          <br />
+          Phase 1, By Sunrise Bustop
+          <br />
+          Oshodi Apapa Expressway Apapa
+          <br />
+          Lagos
+        </div>
+      </>
+    );
+  }
+  if (location === "delivery base") {
+    return (
+      <>
+        <div className="text-base font-semibold text-slate-800">
+          Delivery Base
+        </div>
+        <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+          17, Wharf Road,
+          <br />
+          Apapa, Lagos
+          <br />
+          Nigeria.
+        </div>
+      </>
+    );
+  }
+  if (location === "delivery vessel") {
+    return (
+      <div className="text-base font-semibold text-slate-800">
+        Delivery Vessel
+      </div>
+    );
+  }
+  return null;
+}
 
   const currentRequest = selectedRequest || request;
 
@@ -111,12 +189,13 @@ const DeliveryRequestView = ({
 
       // Initialize edited items with current delivered quantities
       if (Array.isArray(data?.items)) {
-        setEditedItems(
-          data.items.map((item) => ({
-            ...item,
-            deliveredQuantity: item.deliveredQuantity || 0,
-          }))
-        );
+       setEditedItems(
+  data.items.map((item) => ({
+    ...item,
+    deliveredQuantity: item.deliveredQuantity || 0,
+    shippingDeliveredQuantity: item.shippingDeliveredQuantity || 0,
+  }))
+);
       }
 
       return data;
@@ -158,144 +237,52 @@ const DeliveryRequestView = ({
     return vessel?.name || vesselId;
   };
 
-  // Normalize comment from server
-  const normalizeServerComment = (item) => {
-    return {
-      id:
-        item._id ||
-        item.id ||
-        item.timestamp ||
-        `${Math.random()}-${Date.now()}`,
-      author:
-        (item.userId && (item.userId.displayName || item.userId.name)) ||
-        item.author ||
-        "Unknown",
-      role:
-        (item.userId && (item.userId.role || "").toString().toLowerCase()) ||
-        (item.role || "").toString().toLowerCase(),
-      text: item.content || item.comment || item.body || item.text || "",
-      createdAt: item.timestamp || item.createdAt || new Date().toISOString(),
-      raw: item,
-    };
-  };
-
-  const getCommentAuthorId = (c) => {
-    const raw = c && c.raw ? c.raw : c || {};
-    const candidate = raw.userId ?? raw.user_id ?? raw.authorId ?? raw.author;
-    if (!candidate) return null;
-    if (typeof candidate === "object") {
-      return candidate._id || candidate.id || candidate.userId || null;
-    }
-    return candidate;
-  };
-
-  const hasCommentByUser = (userIdToCheck) => {
-    if (!userIdToCheck) return false;
-    const uidStr = String(userIdToCheck).trim();
-    return (comments || []).some((c) => {
-      const aid = getCommentAuthorId(c);
-      return aid && String(aid).trim() === uidStr;
-    });
-  };
-
-  // Fetch comments
-  const fetchComments = async () => {
-    setCommentsLoading(true);
-    try {
-      const token = getToken();
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const reqId = request?.requestId || request?.id;
-      if (!reqId) {
-        setComments([]);
-        return;
-      }
-      const resp = await axios.get(
-        `${API_BASE_URL}/requests/${encodeURIComponent(reqId)}/comments`,
-        { headers }
-      );
-      const data = Array.isArray(resp?.data?.data)
-        ? resp.data.data
-        : Array.isArray(resp?.data)
-        ? resp.data
-        : [];
-      const list = (data || []).map(normalizeServerComment);
-      setComments(list);
-    } catch (err) {
-      console.error("Failed to fetch comments:", err);
-      setComments([]);
-    } finally {
-      setCommentsLoading(false);
-    }
-  };
-
-  // Post comment
-  const postComment = async () => {
-    const content = (newComment || "").trim();
-    if (!content) return;
-    setPostingComment(true);
-
-    const temp = {
-      id: `temp-${Date.now()}`,
-      author: user?.displayName || user?.name || "You",
-      role: (user?.role || "").toString().toLowerCase(),
-      text: content,
-      createdAt: new Date().toISOString(),
-      _temp: true,
-    };
-    setComments((c) => [temp, ...c]);
-    setNewComment("");
-
-    try {
-      const token = getToken();
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const reqId = request?.requestId || request?.id;
-      const resp = await axios.post(
-        `${API_BASE_URL}/requests/${encodeURIComponent(reqId)}/comments`,
-        { content },
-        { headers }
-      );
-      const createdRaw = resp?.data?.data ?? resp?.data ?? null;
-      const created = createdRaw ? normalizeServerComment(createdRaw) : null;
-      if (created) {
-        setComments((prev) => [created, ...prev.filter((p) => !p._temp)]);
-      } else {
-        setComments((prev) =>
-          prev.map((c) => (c.id === temp.id ? { ...c, _temp: false } : c))
-        );
-      }
-    } catch (err) {
-      console.error("Failed to post comment:", err);
-      alert(err?.response?.data?.message || "Failed to submit comment");
-    } finally {
-      setPostingComment(false);
-    }
-  };
+  
 
   // Handle delivery quantity change
-  const handleDeliveryQuantityChange = async (itemId, value) => {
-    const numeric = Number(value) || 0;
+ const handleDeliveryQuantityChange = async (itemId, value) => {
+  const numeric = Number(value) || 0;
 
-    // Update local state
-    const newItems = editedItems.map((item) =>
-      (item.itemId || item._id) === itemId
-        ? { ...item, deliveredQuantity: numeric }
-        : item
+  // Update local state
+  const newItems = editedItems.map((item) => {
+    if ((item.itemId || item._id) === itemId) {
+      if (showFeeColumns) {
+        return { ...item, shippingDeliveredQuantity: numeric };
+      } else {
+        return { ...item, deliveredQuantity: numeric };
+      }
+    }
+    return item;
+  });
+  setEditedItems(newItems);
+
+  // Save to server
+  try {
+    const token = getToken();
+    if (!token) throw new Error("Not authenticated");
+
+    const updatedItem = newItems.find(
+      (it) => (it.itemId || it._id) === itemId
     );
-    setEditedItems(newItems);
 
-    // Save to server
-    try {
-      const token = getToken();
-      if (!token) throw new Error("Not authenticated");
+    if (showFeeColumns) {
+      const qtyVal = Number(updatedItem?.shippingQuantity || 0);
+      const outstandingVal = Math.max(0, qtyVal - numeric);
 
-      const updatedItem = newItems.find(
-        (it) => (it.itemId || it._id) === itemId
+      const payload = {
+        shippingDeliveredQuantity: numeric,
+        shippingOutstandingQuantity: outstandingVal,
+      };
+
+      await axios.patch(
+        `${API_BASE_URL}/requests/${encodeURIComponent(
+          request.requestId
+        )}/items/${encodeURIComponent(itemId)}`,
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      // Use shippingQuantity for shipping/clearing tags, otherwise use quantity
-      const qtyVal = showFeeColumns
-        ? Number(updatedItem?.shippingQuantity || 0)
-        : Number(updatedItem?.quantity || 0);
+    } else {
+      const qtyVal = Number(updatedItem?.quantity || 0);
       const outstandingVal = Math.max(0, qtyVal - numeric);
 
       const payload = {
@@ -310,38 +297,62 @@ const DeliveryRequestView = ({
         payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-    } catch (err) {
-      console.error("Error saving delivered quantity:", err);
-      alert(
-        err?.response?.data?.message || "Failed to save delivered quantity"
-      );
     }
-  };
+  } catch (err) {
+    console.error("Error saving delivered quantity:", err);
+    alert(
+      err?.response?.data?.message || "Failed to save delivered quantity"
+    );
+  }
+};
 
   // Handle approve click with validation
-  const handleApproveClick = () => {
-    const items = editedItems || [];
+const handleApproveClick = async () => {
+  const items = editedItems || [];
 
-    // Check for incomplete delivery
-    const incompleteDelivery = items.some((it) => {
-      const delivered = Number(it.deliveredQuantity || 0);
-      // Use shippingQuantity for shipping/clearing tags, otherwise use quantity
-      const qty = showFeeColumns
-        ? Number(it.shippingQuantity || 0)
-        : Number(it.quantity || 0);
-      return qty > 0 && delivered !== qty;
-    });
+  // Check for incomplete delivery
+  const incompleteDelivery = items.some((it) => {
+    const delivered = showFeeColumns
+      ? Number(it.shippingDeliveredQuantity || 0)
+      : Number(it.deliveredQuantity || 0);
+    const qty = showFeeColumns
+      ? Number(it.shippingQuantity || 0)
+      : Number(it.quantity || 0);
+    return qty > 0 && delivered !== qty;
+  });
 
-    if (incompleteDelivery) {
-      const currentUserId = user?.userId || user?.id || user?._id || null;
-      if (!hasCommentByUser(currentUserId)) {
-        alert("Please state a reason for approving delivery not completed");
-        return;
-      }
+  if (incompleteDelivery) {
+    const currentUserId = user?.userId || user?.id || user?._id || null;
+    if (!hasCommentByUser(currentUserId)) {
+      alert("Please state a reason for approving delivery not completed");
+      return;
     }
+  }
 
-    onApprove(request.requestId);
-  };
+  try {
+    const token = getToken();
+    if (!token) throw new Error("Not authenticated");
+
+    const reqId = request.requestId;
+    const body =
+      nextDeliveryStations && nextDeliveryStations.length > 0
+        ? { nextDeliveryStations: nextDeliveryStations.map((o) => o.value) }
+        : {};
+
+    await axios.post(
+      `${API_BASE_URL}/requests/${reqId}/approve`,
+      body,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (typeof onApprove === "function") onApprove(reqId);
+  } catch (err) {
+    alert(
+      err?.response?.data?.message ||
+        "Failed to approve delivery request"
+    );
+  }
+};
 
   // Files changed handler
   const handleFilesChanged = useCallback(async () => {
@@ -357,25 +368,12 @@ const DeliveryRequestView = ({
   useEffect(() => {
     if (request?.requestId) {
       fetchRequestDetails();
-      fetchComments();
       fetchVendors();
       fetchVessels();
     }
   }, [request?.requestId]);
 
-  // Pagination for comments
-  const totalCommentPages = Math.max(
-    1,
-    Math.ceil((comments?.length || 0) / COMMENTS_PER_PAGE)
-  );
-  const paginatedComments = (comments || []).slice(
-    (commentsPage - 1) * COMMENTS_PER_PAGE,
-    commentsPage * COMMENTS_PER_PAGE
-  );
 
-  useEffect(() => {
-    setCommentsPage(1);
-  }, [comments]);
 
   if (!request) return null;
 
@@ -416,6 +414,24 @@ const DeliveryRequestView = ({
   const reference = currentRequest?.reference || "N/A";
   const paymentType = currentRequest?.paymentType || "N/A";
 
+  const hasWaybill =
+  Array.isArray(currentRequest?.jobCompletionCertificateFiles) &&
+  currentRequest.jobCompletionCertificateFiles.length > 0;
+
+
+  const allNextStations = [
+  ...(nextDeliveryStations || []).map((s) =>
+    typeof s === "string" ? s.toLowerCase() : (s.value || "").toLowerCase()
+  ),
+  ...(currentRequest?.pendingDeliveryStations || []).map((s) =>
+    (s || "").toLowerCase()
+  ),
+];
+
+const shouldShowWaybillUpload =
+  ["delivery base", "delivery jetty", "delivery vessel"].includes(userRole) &&
+  !isReadOnly &&
+  !allNextStations.includes(userRole);
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto">
       {/* Back Button */}
@@ -535,7 +551,7 @@ const DeliveryRequestView = ({
           </div>
         </div>
 
-        {["delivery base", "delivery jetty", "delivery vessel"].includes(userRole) && !isReadOnly && (
+ {shouldShowWaybillUpload && (
   <WaybillUpload
     requestId={request.requestId}
     apiBase={API_BASE_URL}
@@ -581,14 +597,19 @@ const DeliveryRequestView = ({
                 <tbody className="divide-y">
                   {usedItems.map((it, i) => {
                     const itemId = it.itemId || it._id || `item-${i}`;
-                    const delivered = Number(it.deliveredQuantity || 0);
-                    // Use shippingQuantity for shipping/clearing, otherwise quantity
-                    const totalQty = showFeeColumns
-                      ? Number(it.shippingQuantity || 0)
-                      : Number(it.quantity || 0);
-                    const outstanding = Math.max(0, totalQty - delivered);
-                    const isFullyDelivered =
-                      delivered === totalQty && totalQty > 0;
+              const delivered = showFeeColumns
+  ? Number(it.shippingDeliveredQuantity || 0)
+  : Number(it.deliveredQuantity || 0);
+
+const totalQty = showFeeColumns
+  ? Number(it.shippingQuantity || 0)
+  : Number(it.quantity || 0);
+
+const outstanding = showFeeColumns
+  ? Number(it.shippingOutstandingQuantity ?? Math.max(0, totalQty - delivered))
+  : Math.max(0, totalQty - delivered);
+
+const isFullyDelivered = delivered === totalQty && totalQty > 0;
 
                     return (
                       <tr key={itemId} className="py-2">
@@ -656,144 +677,59 @@ const DeliveryRequestView = ({
       </div>
 
       {/* Comments Section */}
-      <div className="mb-8">
-        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-          💬 Comments
-        </h3>
-        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg space-y-4">
-          {/* Add Comment */}
-          {!isReadOnly && (
-            <div className="space-y-3">
-              <textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add a comment... (required if delivery is incomplete)"
-                rows={4}
-                maxLength={1000}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-              />
-              <div className="flex items-center justify-between">
-                <div className="text-xs text-slate-500">
-                  {newComment.length}/1000
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setNewComment("")}
-                    className="px-4 py-2 bg-gray-100 text-slate-700 rounded-md hover:bg-gray-200 text-sm"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    onClick={postComment}
-                    disabled={postingComment || !newComment.trim()}
-                    className={`px-4 py-2 rounded-md text-sm font-semibold ${
-                      postingComment
-                        ? "bg-gray-300 text-slate-600 cursor-not-allowed"
-                        : "bg-[#036173] text-white hover:bg-[#024f57]"
-                    }`}
-                  >
-                    {postingComment ? "Posting..." : "Post Comment"}
-                  </button>
-                </div>
-              </div>
-            </div>
+    <CommentThread
+  requestId={request.requestId}
+  user={user}
+  getToken={getToken}
+/>
+
+
+{!isReadOnly && (
+  <div className="mb-8">
+    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+      <MdDirectionsBoat className="text-xl" />
+      Next Delivery Station(s)
+    </h3>
+    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+      <div className="flex flex-col md:flex-row gap-6">
+        <div className="flex-1 max-w-md">
+          <label className="text-sm font-semibold text-slate-700 mb-2 block">
+            Next Delivery Station(s)
+          </label>
+          <Select
+            isMulti
+            options={deliveryStationOptions}
+            value={nextDeliveryStations}
+            onChange={handleNextStationsChange}
+            isClearable
+            placeholder="Select next delivery station(s)..."
+            isDisabled={isSavingNextStations}
+            styles={{
+              control: (provided) => ({
+                ...provided,
+                minHeight: "48px",
+                borderRadius: 12,
+                boxShadow: "none",
+              }),
+              menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+            }}
+            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+          />
+          {isSavingNextStations && (
+            <div className="text-xs text-slate-500 mt-2">Saving...</div>
           )}
-
-          {/* Comments List */}
-          <div className="pt-2 border-t border-slate-100">
-            {commentsLoading ? (
-              <div className="py-6 text-center text-slate-500">
-                Loading comments...
-              </div>
-            ) : comments && comments.length > 0 ? (
-              <>
-                <ul className="space-y-3">
-                  {paginatedComments.map((c) => (
-                    <li
-                      key={c.id}
-                      className="flex items-start gap-3 bg-white rounded-lg p-3 border border-slate-100"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-                        {(c.author || "U")
-                          .toString()
-                          .split(" ")
-                          .map((s) => s[0])
-                          .slice(0, 2)
-                          .join("")
-                          .toUpperCase()}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">
-                              {c.author || "Unknown"}{" "}
-                              {c.role && (
-                                <span className="text-xs text-slate-400 ml-2">
-                                  • {c.role}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-slate-400">
-                              {new Date(
-                                c.createdAt || Date.now()
-                              ).toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-2 text-sm text-slate-700 whitespace-pre-line">
-                          {c.text}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Pagination controls */}
-                <div className="mt-4 flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => setCommentsPage((p) => Math.max(1, p - 1))}
-                    disabled={commentsPage === 1}
-                    className="px-3 py-1 rounded-md bg-slate-100 text-slate-700 disabled:opacity-50"
-                  >
-                    Prev
-                  </button>
-
-                  {Array.from({ length: totalCommentPages }).map((_, i) => {
-                    const pageIndex = i + 1;
-                    return (
-                      <button
-                        key={pageIndex}
-                        onClick={() => setCommentsPage(pageIndex)}
-                        className={`px-3 py-1 rounded-md text-sm ${
-                          commentsPage === pageIndex
-                            ? "bg-[#036173] text-white"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {pageIndex}
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    onClick={() =>
-                      setCommentsPage((p) => Math.min(totalCommentPages, p + 1))
-                    }
-                    disabled={commentsPage === totalCommentPages}
-                    className="px-3 py-1 rounded-md bg-slate-100 text-slate-700 disabled:opacity-50"
-                  >
-                    Next
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="py-6 text-center text-slate-500">
-                No comments yet. Be the first to comment.
+          {Array.isArray(currentRequest?.pendingDeliveryStations) &&
+            currentRequest.pendingDeliveryStations.length > 0 && (
+              <div className="mt-2 text-xs text-slate-600">
+                <strong>Pending Delivery Stations:</strong>{" "}
+                {currentRequest.pendingDeliveryStations.join(", ")}
               </div>
             )}
-          </div>
         </div>
       </div>
+    </div>
+  </div>
+)}
 
       {/* Attached Documents */}
       <AttachedDocuments
@@ -818,13 +754,19 @@ const DeliveryRequestView = ({
             </p>
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
               <button
-                onClick={handleApproveClick}
-                disabled={actionLoading}
-                className="w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
-              >
-                <MdCheckCircle className="text-lg" />
-                {actionLoading ? "Processing..." : "Confirm Delivery"}
-              </button>
+  onClick={() => {
+    if (!hasWaybill) {
+      alert("You must upload a waybill before confirming delivery.");
+      return;
+    }
+    handleApproveClick();
+  }}
+  disabled={actionLoading || !hasWaybill}
+  className="w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
+>
+  <MdCheckCircle className="text-lg" />
+  {actionLoading ? "Processing..." : "Confirm Delivery"}
+</button>
             </div>
           </div>
         </div>

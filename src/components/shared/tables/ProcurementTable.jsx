@@ -203,7 +203,7 @@ const ProcurementTable = ({
           delete payload.inStockQuantity;
         }
         try {
-       const unitPrice = Number(
+          const unitPrice = Number(
             changes.unitPrice !== undefined
               ? changes.unitPrice
               : localItem?.unitPrice || 0
@@ -234,7 +234,8 @@ const ProcurementTable = ({
           const vatAmount = vatted ? discountedTotal * calculatedVat : 0;
           const computedTotalPrice =
             shippingFee > 0
-              ? (vatted ? discountedTotal + vatAmount : discountedTotal) + shippingFee
+              ? (vatted ? discountedTotal + vatAmount : discountedTotal) +
+                shippingFee
               : vatted
               ? discountedTotal + vatAmount
               : discountedTotal;
@@ -273,38 +274,37 @@ const ProcurementTable = ({
         }
       });
 
-      const results = await Promise.all(promises);
+    const results = await Promise.all(promises);
 
-      // Try to use returned updated request(s) to refresh UI immediately
-      // onEditItem (RequestDetailView.handleEditItem) returns the full updated request object
-      const updatedRequest =
-        results.find((r) => r && (r.items || r.data)) || results[0] || null;
+// ✅ If parent returns the full updated request, use its items to refresh UI
+const updatedRequest =
+  results.find((r) => r && (r.items || r.data?.items)) || results[0] || null;
 
-      const itemsFromServer =
-        updatedRequest?.items ||
-        updatedRequest?.data?.items ||
-        selectedRequest?.items ||
-        [];
+const itemsFromServer =
+  updatedRequest?.items ||
+  updatedRequest?.data?.items ||
+  selectedRequest?.items ||
+  [];
 
-      if (itemsFromServer && itemsFromServer.length > 0) {
-        setEditedRequests(
-          itemsFromServer.map((it) => ({
-            ...it,
-            itemId: it.itemId || it._id,
-            total: it.totalPrice ?? it.total ?? 0,
-            totalPrice: it.totalPrice ?? it.total ?? 0,
-          }))
-        );
-      } else {
-        // Server didn't return items — keep local edits but clear dirty flags (they were saved)
-        setEditedRequests((prev) =>
-          prev.map((it) => ({
-            ...it,
-            _dirty: false,
-            _pendingVendor: undefined,
-          }))
-        );
-      }
+if (itemsFromServer && itemsFromServer.length > 0) {
+  setEditedRequests(
+    itemsFromServer.map((it) => ({
+      ...it,
+      itemId: it.itemId || it._id,
+      total: it.totalPrice ?? it.total ?? 0,
+      totalPrice: it.totalPrice ?? it.total ?? 0,
+    }))
+  );
+} else {
+  // Server didn't return items — keep local edits but clear dirty flags (they were saved)
+  setEditedRequests((prev) =>
+    prev.map((it) => ({
+      ...it,
+      _dirty: false,
+      _pendingVendor: undefined,
+    }))
+  );
+}
 
       console.log("✅ Autosave completed");
     } catch (error) {
@@ -602,9 +602,12 @@ const ProcurementTable = ({
                 updatedItem,
               });
             }
+             if (field === "logisticsType" && value === "local") {
+    updatedItem.shippingFee = 0;
+  }
           }
 
-     const currentUnitPrice = parseFloat(updatedItem.unitPrice) || 0;
+          const currentUnitPrice = parseFloat(updatedItem.unitPrice) || 0;
           const currentQuantity = parseFloat(updatedItem.quantity) || 0;
           const currentDiscount =
             updatedItem.discount !== ""
@@ -632,7 +635,8 @@ const ProcurementTable = ({
           updatedItem.vatAmount = vatAmount;
           updatedItem.totalPrice =
             shippingFee > 0
-              ? (isVatted ? discountedTotal + vatAmount : discountedTotal) + shippingFee
+              ? (isVatted ? discountedTotal + vatAmount : discountedTotal) +
+                shippingFee
               : isVatted
               ? discountedTotal + vatAmount
               : discountedTotal;
@@ -937,6 +941,24 @@ const ProcurementTable = ({
     const isFirstRow = itemIndexInGroup === 0;
     return { rowspan, isFirstRow, vendorKey, itemIndexInGroup };
   };
+  function isProcurementOfficerApproved(request) {
+    return (
+      Array.isArray(request.history) &&
+      (request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+        request.history.some(
+          (h) =>
+            h.action === "SPLIT" &&
+            h.role === "SYSTEM" &&
+            typeof h.info === "string" &&
+            h.info.includes("Petty Cash items moved to Petty Cash flow")
+        ))
+    );
+  }
 
   return (
     <div className="p-4 w-full mx-auto overflow-x-auto">
@@ -1079,7 +1101,11 @@ const ProcurementTable = ({
                           className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900"
                           style={{ minWidth: "100px" }}
                         >
-                          {request.makersType}
+                          {isProcurementOfficerApproved(
+                            selectedRequest || request
+                          )
+                            ? request.makersType || request.itemType || "N/A"
+                            : "N/A"}
                         </td>
                         <td
                           className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900"
@@ -1553,7 +1579,6 @@ const ProcurementTable = ({
                                   }
                                   onChange={(selectedOption) => {
                                     // ignore changes when item is inStock
-                                    if (request.inStock) return;
                                     const newCurrency =
                                       selectedOption?.value || "";
 
@@ -1571,23 +1596,13 @@ const ProcurementTable = ({
                                       newCurrency
                                     );
                                   }}
-                                  className={`w-32 ${
-                                    request.inStock
-                                      ? "bg-gray-200 cursor-not-allowed"
-                                      : ""
-                                  }`}
+                                  className={`w-32 `}
                                   styles={{
                                     control: (provided) => ({
                                       ...provided,
                                       minWidth: "80px",
                                       fontSize: "14px",
                                       zIndex: 500,
-                                      backgroundColor: request.inStock
-                                        ? "#e5e7eb"
-                                        : provided.backgroundColor,
-                                      cursor: request.inStock
-                                        ? "not-allowed"
-                                        : provided.cursor,
                                     }),
                                     menuPortal: (base) => ({
                                       ...base,
@@ -1597,7 +1612,7 @@ const ProcurementTable = ({
                                   menuPortalTarget={document.body}
                                   menuPlacement="auto"
                                   isClearable
-                                  isDisabled={request.inStock}
+                                  isDisabled={false}
                                   placeholder="Select"
                                 />
                                 <input
@@ -1611,7 +1626,6 @@ const ProcurementTable = ({
                                     )?.unitPrice || ""
                                   }
                                   onChange={(e) => {
-                                    if (request.inStock) return;
                                     const value = e.target.value;
                                     if (
                                       value === "" ||
@@ -1625,7 +1639,7 @@ const ProcurementTable = ({
                                     }
                                   }}
                                   step="any"
-                                  disabled={request.inStock}
+                                  disabled={false}
                                 />
                               </div>
                             ) : (
@@ -1656,7 +1670,6 @@ const ProcurementTable = ({
                                     )?.discount || ""
                                   }
                                   onChange={(e) => {
-                                    if (request.inStock) return;
                                     const value = e.target.value;
                                     if (
                                       value === "" ||
@@ -1667,7 +1680,7 @@ const ProcurementTable = ({
                                     }
                                   }}
                                   className={`border px-2 py-1 rounded-md w-16 text-black`}
-                                  disabled={request.inStock}
+                                  disabled={false}
                                 />
                                 <span>%</span>
                               </div>
@@ -1691,7 +1704,6 @@ const ProcurementTable = ({
                                 )?.vatted || false
                               }
                               onChange={(e) => {
-                                if (request.inStock) return;
                                 handleChange(
                                   itemId,
                                   "vatted",
@@ -1701,7 +1713,6 @@ const ProcurementTable = ({
                               disabled={
                                 isPreview ||
                                 readOnly ||
-                                request.inStock ||
                                 request.itemType === "pettyCash"
                               }
                               className={

@@ -17,31 +17,45 @@ const RequestWorkflow = ({ workflowPath }) => {
 
   const shouldCenter = visibleStages.length <= 8;
 
-  const getStageColor = (status) => {
-    switch (status) {
-      case "completed":
-        return "text-emerald-500 bg-emerald-500/10 border-emerald-500/30";
-      case "current":
-        return "text-teal-500 bg-teal-500/10 border-teal-500/30";
-      case "future":
-        return "text-gray-400 bg-gray-500/10 border-gray-500/20";
-      default:
-        return "text-gray-400 bg-gray-500/10 border-gray-500/20";
-    }
-  };
+const getStageColor = (status, mode) => {
+  if (mode === "queried" && status === "current") {
+    // Queried Target (active, needs to respond)
+    return "text-indigo-600 bg-indigo-100 border-indigo-300 ring-2 ring-indigo-200";
+  }
+  if (mode === "querying" && status === "waiting") {
+    // Querier (waiting for reply)
+    return "text-gray-400 bg-gray-100 border-gray-300 border-dashed animate-pulse";
+  }
+  switch (status) {
+    case "completed":
+      return "text-emerald-500 bg-emerald-500/10 border-emerald-500/30";
+    case "current":
+      return "text-yellow-600 bg-yellow-100 border-yellow-300";
+    case "future":
+      return "text-gray-400 bg-gray-500/10 border-gray-500/20";
+    case "waiting":
+      return "text-gray-400 bg-gray-100 border-gray-300 border-dashed";
+    default:
+      return "text-gray-400 bg-gray-500/10 border-gray-500/20";
+  }
+};
 
-  const getStageIcon = (status) => {
-    switch (status) {
-      case "completed":
-        return "✓";
-      case "current":
-        return "⏱";
-      case "future":
-        return "⏳";
-      default:
-        return "⏳";
-    }
-  };
+const getStageIcon = (status, mode) => {
+  if (mode === "queried" && status === "current") return "❓";
+  if (mode === "querying" && status === "waiting") return "⏳";
+  switch (status) {
+    case "completed":
+      return "✓";
+    case "current":
+      return "⏱";
+    case "future":
+      return "⏳";
+    case "waiting":
+      return "⏳";
+    default:
+      return "⏳";
+  }
+};
 
   // Extract role from state name if role is not provided
   const getRoleFromState = (stage) => {
@@ -176,54 +190,72 @@ const RequestWorkflow = ({ workflowPath }) => {
             }`}
             style={{ minWidth: shouldCenter ? "auto" : "max-content" }}
           >
-            {visibleStages.map((stage, index) => {
-              const roleName = getRoleFromState(stage);
+          {visibleStages.map((stage, index) => {
+  const roleName = getRoleFromState(stage);
+  const mode = stage.mode || "standard";
+  const status = stage.status || "future";
 
-              return (
-                <div
-                  key={index}
-                  className="flex flex-col items-center min-w-[100px] flex-shrink-0"
-                >
-                  {/* Icon */}
-                  <div
-                    className={`w-12 h-12 rounded-full border-2 flex items-center justify-center mb-2 text-xl font-bold transition-all duration-300 bg-white ${getStageColor(
-                      stage.status
-                    )}`}
-                  >
-                    {getStageIcon(stage.status)}
-                  </div>
+  return (
+    <div
+      key={index}
+      className="flex flex-col items-center min-w-[100px] flex-shrink-0"
+    >
+      {/* Icon */}
+      <div
+        className={`w-12 h-12 rounded-full border-2 flex items-center justify-center mb-2 text-xl font-bold transition-all duration-300 bg-white ${getStageColor(
+          status,
+          mode
+        )}`}
+      >
+        {getStageIcon(status, mode)}
+      </div>
 
-                  {/* Role */}
-                  <p
-                    className={`text-xs font-medium text-center leading-tight px-2 ${
-                      stage.status === "completed"
-                        ? "text-emerald-600"
-                        : stage.status === "current"
-                        ? "text-teal-600"
-                        : "text-slate-400"
-                    }`}
-                  >
-                    {roleName}
-                  </p>
+      {/* Role */}
+      <p
+        className={`text-xs font-medium text-center leading-tight px-2 ${
+          status === "completed"
+            ? "text-emerald-600"
+            : status === "current" && mode === "queried"
+            ? "text-indigo-600"
+            : status === "current"
+            ? "text-yellow-600"
+            : status === "waiting" && mode === "querying"
+            ? "text-gray-400"
+            : "text-slate-400"
+        }`}
+      >
+        {roleName}
+      </p>
 
-                  {/* "IN PROGRESS" badge */}
-                  {stage.status === "current" && (
-                    <span className="mt-1 px-2 py-0.5 bg-teal-500/10 text-teal-600 text-[10px] font-semibold rounded-full">
-                      IN PROGRESS
-                    </span>
-                  )}
+      {/* "IN PROGRESS" badge */}
+      {status === "current" && mode === "standard" && (
+        <span className="mt-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-semibold rounded-full">
+          IN PROGRESS
+        </span>
+      )}
+      {status === "current" && mode === "queried" && (
+        <span className="mt-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-semibold rounded-full">
+          QUERIED
+        </span>
+      )}
+      {status === "waiting" && mode === "querying" && (
+        <span className="mt-1 px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-semibold rounded-full border border-dashed border-gray-300">
+          WAITING FOR REPLY
+        </span>
+      )}
 
-                  {/* User name */}
-                  {stage.user &&
-                    (stage.status === "completed" ||
-                      stage.status === "current") && (
-                      <p className="text-[9px] text-slate-500 mt-1 text-center truncate w-full px-1">
-                        {stage.user.displayName}
-                      </p>
-                    )}
-                </div>
-              );
-            })}
+      {/* User name */}
+      {stage.user &&
+        (status === "completed" ||
+          status === "current" ||
+          (status === "waiting" && mode === "querying")) && (
+          <p className="text-[9px] text-slate-500 mt-1 text-center truncate w-full px-1">
+            {stage.user.displayName}
+          </p>
+        )}
+    </div>
+  );
+})}
           </div>
         </div>
       </div>

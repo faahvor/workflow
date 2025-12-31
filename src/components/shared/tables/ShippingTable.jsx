@@ -427,26 +427,37 @@ const ShippingTable = ({
                                 }
                               : null;
                           })()}
-                          onChange={(sel) => {
-                            const vname = sel?.label || null;
-                            const vid = sel?.value || null;
-                            setEditedRequests((prev) =>
-                              prev.map((row) =>
-                                (row.itemId || row._id) === itemId
-                                  ? {
-                                      ...row,
-                                      vendor: vname,
-                                      vendorId: vid,
-                                      _dirty: true,
-                                      _pendingVendor:
-                                        sel && sel.__isNew__
-                                          ? { name: vname, isNew: true }
-                                          : undefined,
-                                    }
-                                  : row
-                              )
-                            );
-                          }}
+                         onChange={(sel) => {
+  const vname = sel?.label || null;
+  const vid = sel?.value || null;
+  setEditedRequests((prev) =>
+    prev.map((row) =>
+      (row.itemId || row._id) === itemId
+        ? {
+            ...row,
+            vendor: vname,
+            vendorId: vid,
+            _dirty: true,
+            _pendingVendor:
+              sel && sel.__isNew__
+                ? { name: vname, isNew: true }
+                : undefined,
+          }
+        : row
+    )
+  );
+  // Move shipping fee to new vendor key
+  setShippingFees((prev) => {
+    const oldKey = it.vendorId ?? it.vendor ?? "No Vendor";
+    const newKey = vid ?? vname ?? "No Vendor";
+    const fee = prev[oldKey] ?? 0;
+    const updated = { ...prev };
+    // Remove old key, set new key
+    delete updated[oldKey];
+    updated[newKey] = fee;
+    return updated;
+  });
+}}
                           onCreateOption={(inputValue) => {
                             setEditedRequests((prev) =>
                               prev.map((row) =>

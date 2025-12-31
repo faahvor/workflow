@@ -16,6 +16,8 @@ const ProcurementMTable = ({
   isIncompleteDelivery = false,
   requestId = "",
   onRefreshRequest = () => {},
+  clearingFee = 0,
+  request,
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
@@ -26,9 +28,12 @@ const ProcurementMTable = ({
   const { getToken } = useAuth();
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
+  const showShippingFee = request?.logisticsType === "international";
+
   // Determine if editing is allowed (override isReadOnly when isIncompleteDelivery)
   const canEdit = isIncompleteDelivery || !isReadOnly;
-    const isPettyCash = (requestType || "").toString().toLowerCase() === "pettycash";
+  const isPettyCash =
+    (requestType || "").toString().toLowerCase() === "pettycash";
 
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
@@ -153,6 +158,9 @@ const ProcurementMTable = ({
   };
 
   const getFeeValue = (item) => {
+    if (feeFieldName === "clearingFee") {
+      return clearingFee || 0;
+    }
     if (!item) return 0;
     const v = item[feeFieldName];
     return typeof v === "number" ? v : Number(v || 0);
@@ -309,19 +317,24 @@ const ProcurementMTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
-                 {showFeeColumns && (
-              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                Shipping Qty
-              </th>
-            )}
+              {showFeeColumns && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Shipping Qty
+                </th>
+              )}
 
               {showFeeColumns && (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
                   {feeLabel}
                 </th>
               )}
-              {!isAnyItemInStock && (
+              {!isAnyItemInStock && !showFeeColumns && (
                 <>
+                {showShippingFee && (
+      <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+        Shipping Fee
+      </th>
+    )}
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Unit Price
                   </th>
@@ -330,20 +343,19 @@ const ProcurementMTable = ({
                   </th>
                 </>
               )}
-                            {!isAnyItemInStock && (
-
+              {!isAnyItemInStock && !showFeeColumns && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                   Discount (%)
                 </th>
-                            )}
-             
-              {!isPettyCash && !isAnyItemInStock  && (
+              )}
+
+              {!isPettyCash && !isAnyItemInStock && !showFeeColumns && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   VAT Amount
                 </th>
               )}
-            
-              {(requestType !== "pettyCash" && !isAnyItemInStock) && (
+
+              {requestType !== "pettyCash" && !isAnyItemInStock && (
                 <>
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                     PRN
@@ -373,7 +385,7 @@ const ProcurementMTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}
@@ -421,20 +433,11 @@ const ProcurementMTable = ({
                     </span>
                   )}
                 </td>
-                   {showFeeColumns && (
-                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                  <span className="font-semibold text-slate-900">
-                    {item.shippingQuantity ?? 0}
-                  </span>
-                </td>
-              )}
                 {showFeeColumns && (
-                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                    {item.currency || "NGN"}{" "}
-                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">
+                      {item.shippingQuantity ?? 0}
+                    </span>
                   </td>
                 )}
                 {showFeeColumns && (
@@ -448,8 +451,20 @@ const ProcurementMTable = ({
                 )}
 
                 {/* Unit Price - Read Only */}
-                {!isAnyItemInStock && (
+                {!isAnyItemInStock && !showFeeColumns && (
                   <>
+                   {showShippingFee && (
+      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+        {item.shippingFee ? (
+          <>
+            {item.currency || "NGN"}{" "}
+            {parseFloat(item.shippingFee).toFixed(2)}
+          </>
+        ) : (
+          "N/A"
+        )}
+      </td>
+    )}
                     <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                       {item.unitPrice ? (
                         <>
@@ -477,8 +492,7 @@ const ProcurementMTable = ({
                     </td>
                   </>
                 )}
-                              {!isAnyItemInStock && (
-
+                {!isAnyItemInStock && !showFeeColumns && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.discount !== "" &&
                     item.discount !== null &&
@@ -486,10 +500,10 @@ const ProcurementMTable = ({
                       ? `${item.discount}%`
                       : "0%"}
                   </td>
-                              )}
+                )}
 
                 {/* VAT Amount Column - Only show when isIncompleteDelivery */}
-              {!isPettyCash && !isAnyItemInStock  && (
+                {!isPettyCash && !isAnyItemInStock && !showFeeColumns && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.vatted ? (
                       <>
@@ -506,9 +520,8 @@ const ProcurementMTable = ({
                     )}
                   </td>
                 )}
-                
 
-                {(requestType !== "pettyCash" && !isAnyItemInStock) && (
+                {requestType !== "pettyCash" && !isAnyItemInStock && (
                   <>
                     <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
                       {item.purchaseRequisitionNumber || "N/A"}

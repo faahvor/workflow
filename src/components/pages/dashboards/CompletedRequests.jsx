@@ -7,7 +7,7 @@ import {
   MdDirectionsBoat,
   MdArrowForward,
   MdPendingActions,
-   MdPriorityHigh,
+  MdPriorityHigh,
   MdInventory,
   MdLocalShipping,
 } from "react-icons/md";
@@ -16,7 +16,11 @@ import { HiClock } from "react-icons/hi";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail = () => {} }) => {
+const CompletedRequests = ({
+  searchQuery = "",
+  filterType = "all",
+  onOpenDetail = () => {},
+}) => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDepartment, setSelectedDepartment] = useState("all");
@@ -58,11 +62,12 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
     return <MdInventory className="text-sm" />;
   };
 
-
   const filteredRequests = (requests || []).filter((req) => {
     const matchesSearch =
       !normalizedSearch ||
       (req.requestId || "").toLowerCase().includes(normalizedSearch) ||
+      req.offshoreReqNumber?.toLowerCase().includes(normalizedSearch) ||
+      req.jobNumber?.toLowerCase().includes(normalizedSearch) ||
       (req.requester?.displayName || "")
         .toLowerCase()
         .includes(normalizedSearch) ||
@@ -85,6 +90,7 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
     "managing director",
     "cfo",
     "procurement officer",
+    "procurement manager",
     "accounting officer",
     "delivery base",
     "delivery vessel",
@@ -109,7 +115,7 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
     fetchVessels();
   }, []);
 
- const fetchVessels = async () => {
+  const fetchVessels = async () => {
     try {
       const token = getToken();
       const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
@@ -121,69 +127,80 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
     }
   };
 
-  const fetchCompletedRequests = async () => {
-    try {
-      setLoading(true);
-      const token = getToken();
-      let url = `${API_BASE_URL}/requests/completed`;
+const fetchCompletedRequests = async () => {
+  try {
+    setLoading(true);
+    const token = getToken();
+    let url = `${API_BASE_URL}/requests/completed`;
 
-      if (canViewAllDepartments && selectedDepartment !== "all") {
+    if (canViewAllDepartments) {
+      if (selectedDepartment !== "all") {
         url += `?department=${selectedDepartment}`;
-      } else if (!canViewAllDepartments) {
-        url += `?department=${user?.department}`;
       }
-
-      const response = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setRequests(response.data.data || []);
-    } catch (error) {
-      console.error("Error fetching completed requests:", error);
-      setRequests([]);
-    } finally {
-      setLoading(false);
+      // else: fetch all, do not add department param
+    } else {
+      url += `?department=${user?.department}`;
     }
-  };
+
+    console.log("Fetching completed requests from:", url);
+
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setRequests(response.data.data || []);
+  } catch (error) {
+    console.error("Error fetching completed requests:", error);
+    setRequests([]);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const getVesselName = (vesselId) => {
     const v = vessels.find((x) => x.vesselId === vesselId);
     return v?.name || vesselId;
   };
+const getTypeColor = (type) => {
+  switch (type) {
+    case "purchaseOrder":
+      return "bg-emerald-100 text-emerald-600 border-emerald-200";
+    case "pettyCash":
+      return "bg-teal-100 text-teal-600 border-teal-200";
+    case "inStock":
+      return "bg-blue-100 text-blue-600 border-blue-200"; // <-- Add this line
+    default:
+      return "bg-slate-100 text-slate-600 border-slate-200";
+  }
+};
 
-  const getTypeColor = (type) => {
-    switch (type) {
-      case "purchaseOrder":
-        return "bg-emerald-100 text-emerald-600 border-emerald-200";
-      case "quotation":
-        return "bg-teal-100 text-teal-600 border-teal-200";
-      default:
-        return "bg-slate-100 text-slate-600 border-slate-200";
-    }
-  };
+const getTypeIcon = (type) => {
+  switch (type) {
+    case "purchaseOrder":
+      return <MdShoppingCart className="text-sm" />;
+    case "pettyCash":
+      return <MdAttachMoney className="text-sm" />;
+    case "inStock":
+      return <MdInventory className="text-sm" />; // <-- Add this line
+    default:
+      return null;
+  }
+};
 
-  const getTypeIcon = (type) => {
-    switch (type) {
-      case "purchaseOrder":
-        return <MdShoppingCart className="text-sm" />;
-      case "quotation":
-        return <MdAttachMoney className="text-sm" />;
-      default:
-        return null;
-    }
-  };
-
+  // Get label for request type
   const getTypeLabel = (type) => {
     switch (type) {
       case "purchaseOrder":
         return "Purchase Order";
-      case "quotation":
-        return "Quotation";
+       case "pettyCash":
+      return "Petty Cash";
+       case "inStock":
+      return "INSTOCK";
       default:
         return type;
     }
   };
 
- const handleViewDetails = (request) => {
+  const handleViewDetails = (request) => {
     if (typeof onOpenDetail === "function") {
       onOpenDetail(request);
     }
@@ -193,10 +210,8 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
     setSelectedRequest(null);
   };
 
- 
-
   return (
-    <div className="p-6 md:p-8">
+    <div className="">
       <div className="mb-6 flex items-start justify-between gap-4">
         {canViewAllDepartments && (
           <select
@@ -227,7 +242,6 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
             >
               <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex-1 min-w-0">
-                  
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="text-slate-500 text-xs font-mono font-semibold">
                       {request.requestId}
@@ -242,30 +256,19 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
                       >
                         {getTagIcon(request.tag)}
                         <span>
-                          {String(request.tag).replace(
-                            /(^\w|\s\w)/g,
-                            (m) => m.toUpperCase()
+                          {String(request.tag).replace(/(^\w|\s\w)/g, (m) =>
+                            m.toUpperCase()
                           )}
                         </span>
                       </span>
                     )}
 
-                    {/* In Stock badge */}
-                    {request.items &&
-                      request.items.some((it) => it && it.inStock) && (
-                        <span
-                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getInStockColor()}`}
-                        >
-                          {getInStockIcon()}
-                          <span>In Stock</span>
-                        </span>
-                      )}
-                        {request.isIncompleteDelivery && (
-                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
-                                  <MdLocalShipping className="text-sm" />
-                                  <span>Incomplete Delivery</span>
-                                </span>
-                              )}
+                    {request.isIncompleteDelivery && (
+                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                        <MdLocalShipping className="text-sm" />
+                        <span>Incomplete Delivery</span>
+                      </span>
+                    )}
 
                     {/* Request type badge */}
                     <span
@@ -285,7 +288,6 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
                       </span>
                     )}
                   </div>
-
 
                   <p className="text-slate-600 text-sm mb-3">
                     Requested by{" "}
@@ -314,12 +316,13 @@ const CompletedRequests = ({ searchQuery = "", filterType = "all", onOpenDetail 
                       </div>
                     )}
 
-                   <div className="flex items-center gap-1.5 text-slate-600">
-                      <HiClock className="text-base" />
-                      <span className="text-xs md:text-sm font-medium">
-                        {new Date(request.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-600">
+  <HiClock className="text-base" />
+  <span className="text-xs md:text-sm font-medium">
+    {new Date(request.createdAt).toLocaleDateString()}{" "}
+    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+  </span>
+</div>
                   </div>
                 </div>
 

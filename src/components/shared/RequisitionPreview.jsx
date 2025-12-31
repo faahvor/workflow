@@ -168,11 +168,12 @@ const RequisitionPreview = forwardRef(
           );
           if (!mounted) return;
           // keep only procurement officer signatures (case-insensitive, also allow 'procurement' substring)
-          const procurementOnly = prepared.filter((p) => {
-            const r = (p.role || "").toString().toLowerCase();
-            return r === "procurement officer" || r.includes("procurement");
-          });
-          setSignaturesPrepared(procurementOnly);
+          // const procurementOnly = prepared.filter((p) => {
+          //   const r = (p.role || "").toString().toLowerCase();
+          //   return r === "procurement officer" || r.includes("procurement");
+          // });
+          // setSignaturesPrepared(procurementOnly);
+          setSignaturesPrepared(prepared);
         } catch (err) {
         } finally {
           if (mounted) setLoading(false);
@@ -223,15 +224,15 @@ const RequisitionPreview = forwardRef(
     ).toLocaleDateString();
     const reference = req.reference || "N/A";
     const paymentType = req.paymentType || "N/A";
-   const grandTotal = usedItems.reduce((s, it) => {
-  const total =
-    it.totalPrice !== undefined
-      ? Number(it.totalPrice)
-      : it.total !== undefined
-      ? Number(it.total)
-      : Number(it.unitPrice || 0) * Number(it.quantity || 0);
-  return s + (isNaN(total) ? 0 : total);
-}, 0);
+    const grandTotal = usedItems.reduce((s, it) => {
+      const total =
+        it.totalPrice !== undefined
+          ? Number(it.totalPrice)
+          : it.total !== undefined
+          ? Number(it.total)
+          : Number(it.unitPrice || 0) * Number(it.quantity || 0);
+      return s + (isNaN(total) ? 0 : total);
+    }, 0);
 
     const getVendorAddressLines = (v) => {
       if (!v) return null;
@@ -336,35 +337,39 @@ const RequisitionPreview = forwardRef(
               Issued To:
             </div>
             <div>
-          {!doVendorSplit ? (
-  <div className="text-base font-semibold text-slate-800">
-    Multiple Vendors
-  </div>
-) : (
-  <>
-    <div className="text-base font-semibold text-slate-800">
-      {vendorNameLine}
-    </div>
-    {addressPart ? (
-      <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
-        {addressPart}
-      </div>
-    ) : null}
-  </>
-)}
+              {!doVendorSplit &&
+              !(
+                req.department?.toLowerCase() === "freight" &&
+                req.logisticsType?.toLowerCase() === "international"
+              ) ? (
+                <div className="text-base font-semibold text-slate-800 ml-[3rem]">
+                  Multiple Vendors
+                </div>
+              ) : (
+                <>
+                  <div className="text-base font-semibold text-slate-800 ml-[3rem]">
+                    {vendorNameLine}
+                  </div>
+                  {addressPart ? (
+                    <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1 ml-[3rem]">
+                      {addressPart}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>{" "}
           </div>
 
           <div className="bg-white p-4 rounded-lg border-2 border-dashed border-slate-300">
-            <div className="text-sm font-semibold text-slate-800 mb-2">
+            <div className="text-sm font-semibold text-slate-800 mb-2 ">
               Ship To:
             </div>
             <div>
-              <div className="text-base font-semibold text-slate-800">
+              <div className="text-base font-semibold text-slate-800 ml-[3rem]">
                 {req.company?.name || "Hydrodive Nigeria Limited"}
               </div>
               {req.company && req.company.address ? (
-                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1">
+                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line mt-1 ml-[3rem]">
                   {[
                     req.company.address.street || "",
                     req.company.address.city || "",
@@ -383,6 +388,23 @@ const RequisitionPreview = forwardRef(
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Additional Information */}
+          {req.additionalInformation && (
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <span role="img" aria-label="info" className="text-xl">
+                  ℹ️
+                </span>
+                Additional Information
+              </h3>
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <p className="text-slate-700 leading-relaxed">
+                  {req.additionalInformation}
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
             <h4 className="text-sm font-semibold mb-3">Requisition Items</h4>
             <div className="overflow-x-auto">
@@ -446,14 +468,16 @@ const RequisitionPreview = forwardRef(
                       )}
 
                       {/* ✅ Shipping Fee - only for shipping/clearing */}
-                      {showFeeColumns && (
-                        <td className="py-3 text-right text-slate-700">
-                          {formatCurrency(
-                            it.shippingFee || 0,
-                            it.currency || req.currency
-                          )}
-                        </td>
-                      )}
+                     {showFeeColumns && (
+  <td className="py-3 text-right text-slate-700">
+    {formatCurrency(
+      isClearingTag
+        ? req.shippingFee || 0 // Use request-level shippingFee for clearing
+        : it.shippingFee || 0, // Use item-level shippingFee for shipping
+      it.currency || req.currency
+    )}
+  </td>
+)}
 
                       {/* ✅ Clearing Fee - only for clearing */}
                       {isClearingTag && (
@@ -497,14 +521,15 @@ const RequisitionPreview = forwardRef(
                       {/* ✅ Total - hide for shipping/clearing */}
                       {!showFeeColumns && (
                         <td className="py-3 text-right font-semibold text-slate-900">
-                         {formatCurrency(
-  it.totalPrice !== undefined
-    ? it.totalPrice
-    : it.total !== undefined
-    ? it.total
-    : Number(it.unitPrice || 0) * Number(it.quantity || 0),
-  it.currency || req.currency
-)}
+                          {formatCurrency(
+                            it.totalPrice !== undefined
+                              ? it.totalPrice
+                              : it.total !== undefined
+                              ? it.total
+                              : Number(it.unitPrice || 0) *
+                                Number(it.quantity || 0),
+                            it.currency || req.currency
+                          )}
                         </td>
                       )}
                     </tr>
@@ -548,10 +573,17 @@ const RequisitionPreview = forwardRef(
                     return (
                       <div
                         key={s.userId || idx}
-                        className="bg-white p-3 rounded-xl border border-slate-100"
+                        className="bg-white p-2 rounded-xl border w-full text-center border-slate-100"
                       >
                         {s.imageData ? (
-                          <div style={{ height: 40 }}>
+                          <div
+                            style={{
+                              height: 40,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
                             <img
                               src={s.imageData}
                               alt={s.name}
@@ -565,11 +597,12 @@ const RequisitionPreview = forwardRef(
                         ) : (
                           <div
                             style={{
-                              height: 36,
+                              height: 25,
                               fontFamily:
                                 "Brush Script MT, Lucida Handwriting, cursive",
-                              fontSize: 20,
+                              fontSize: 15,
                               color: "#036173",
+                              marginBottom: "1rem",
                             }}
                           >
                             {s.name}

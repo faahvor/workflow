@@ -8,19 +8,21 @@ import {
   MdCheckCircle,
   MdFilterList,
   MdExpandMore,
+  MdHelp,
 } from "react-icons/md";
 import { IoMdSearch } from "react-icons/io";
 import Approved from "./Approved";
 import PendingRequestsList from "./PendingRequestList";
+import QueriedRequest from "./QueriedRequest";
 
 const OverviewDashboard = ({
   user,
   pendingRequests = [],
   approvedTodayCount = 0,
-  department = "",
-  destination = "",
+  queriedCount = 0,
   setActiveView = () => {},
   onViewDetails = () => {},
+   onPendingUnreadChange = () => {},
 }) => {
   // Get user role for future role-specific logic
   const userRole = (user?.role || "").toString().toLowerCase();
@@ -51,24 +53,31 @@ const OverviewDashboard = ({
     userRole === "delivery vessel";
 
   // Handle card click for delivery roles
-const handleCardClick = (cardId) => {
-  // Allow "pending", "approved", and "delivered" for delivery roles
-  if (cardId !== "pending" && cardId !== "approved" && cardId !== "delivered") return;
-  // Treat "delivered" as "approved" for the selectedCard state
-  setSelectedCard(cardId === "delivered" ? "approved" : cardId);
-  // Don't navigate sidebar here - just update the displayed list
-};
+  const handleCardClick = (cardId) => {
+    // Allow "pending", "approved", and "delivered" for delivery roles
+    if (
+      cardId !== "pending" &&
+      cardId !== "approved" &&
+      cardId !== "delivered" &&
+      cardId !== "queried"
+    )
+      return;
+    // Treat "delivered" as "approved" for the selectedCard state
+    setSelectedCard(cardId === "delivered" ? "approved" : cardId);
+    // Don't navigate sidebar here - just update the displayed list
+  };
 
   // Handle view details - navigate sidebar AND open detail
-  const handleViewDetailsWithNavigation = (request) => {
-    // Navigate sidebar to appropriate view
-    if (selectedCard === "pending") {
+  const handleViewDetailsWithNavigation = (request, cardType) => {
+    // Use cardType instead of selectedCard
+    if (cardType === "pending") {
       setActiveView("pending");
-    } else if (selectedCard === "delivered" || selectedCard === "approved") {
+    } else if (cardType === "delivered" || cardType === "approved") {
       setActiveView("approved");
+    } else if (cardType === "queried") {
+      setActiveView("queried");
     }
-    // Open the detail view
-    onViewDetails(request);
+  onViewDetails(request, cardType);
   };
   // Card definitions - customized per role
   const getCardsForRole = () => {
@@ -97,7 +106,7 @@ const handleCardClick = (cardId) => {
     }
 
     // Default cards for other roles
- return [
+    return [
       {
         id: "pending",
         label: "Pending Requests",
@@ -114,6 +123,15 @@ const handleCardClick = (cardId) => {
         icon: MdCheckCircle,
         bgColor: "bg-purple-500",
         shadowColor: "shadow-purple-500/20",
+        clickable: true,
+      },
+      {
+        id: "queried",
+        label: "Queried Requests",
+        value: queriedCount,
+        icon: MdHelp,
+        bgColor: "bg-amber-500",
+        shadowColor: "shadow-amber-500/20",
         clickable: true,
       },
     ];
@@ -142,10 +160,12 @@ const handleCardClick = (cardId) => {
           const IconComponent = card.icon;
 
           const isClickable = card.clickable || isDeliveryRole;
-       const isSelected =
-  selectedCard === card.id ||
-  // For delivery roles, highlight "delivered" card when selectedCard is "approved"
-  (isDeliveryRole && card.id === "delivered" && selectedCard === "approved");
+          const isSelected =
+            selectedCard === card.id ||
+            // For delivery roles, highlight "delivered" card when selectedCard is "approved"
+            (isDeliveryRole &&
+              card.id === "delivered" &&
+              selectedCard === "approved");
 
           return (
             <div
@@ -180,20 +200,20 @@ const handleCardClick = (cardId) => {
       </div>
 
       {/* Search and Filter - Only for delivery roles */}
-        <>
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
-                <IoMdSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl" />
-                <input
-                  type="text"
-                  placeholder="Search by request ID, requester, or department..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
-                />
-              </div>
-              <div className="relative">
+      <>
+        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <IoMdSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl" />
+              <input
+                type="text"
+                placeholder="Search by request ID, requester, or department..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
+              />
+            </div>
+            {/* <div className="relative">
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
@@ -205,29 +225,43 @@ const handleCardClick = (cardId) => {
                 </select>
                 <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
                 <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
-              </div>
-            </div>
+              </div> */}
           </div>
+        </div>
 
-          {/* Request List based on selected card */}
-         {selectedCard === "pending" && (
-  <PendingRequestsList
-    searchQuery={searchQuery}
-    filterType={filterType}
-    requests={pendingRequests}
-    onViewDetails={handleViewDetailsWithNavigation}
-  />
-)}
+        {/* Request List based on selected card */}
+        {selectedCard === "pending" && (
+          <PendingRequestsList
+            searchQuery={searchQuery}
+            filterType={filterType}
+            requests={pendingRequests}
+            onViewDetails={(request) =>
+              handleViewDetailsWithNavigation(request, "pending")
+            }
+              onUnreadChange={onPendingUnreadChange} // <-- add this
 
-{(selectedCard === "delivered" || selectedCard === "approved") && (
-  <Approved
-    searchQuery={searchQuery}
-    filterType={filterType}
-    onOpenDetail={handleViewDetailsWithNavigation}
-  />
-)}
-        </>
-     
+          />
+        )}
+
+        {(selectedCard === "delivered" || selectedCard === "approved") && (
+          <Approved
+            searchQuery={searchQuery}
+            filterType={filterType}
+            onOpenDetail={(request) =>
+              handleViewDetailsWithNavigation(request, "approved")
+            }
+          />
+        )}
+        {selectedCard === "queried" && (
+          <QueriedRequest
+            searchQuery={searchQuery}
+            filterType={filterType}
+            onOpenDetail={(request) =>
+              handleViewDetailsWithNavigation(request, "queried")
+            }
+          />
+        )}
+      </>
     </div>
   );
 };

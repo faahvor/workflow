@@ -9,6 +9,8 @@ const ClearingTable = ({
   selectedRequest = null,
   onEditItem = async () => {},
   onRefreshRequest = async () => {},
+    onFilesChanged = () => {},
+
 }) => {
   const [editedRequests, setEditedRequests] = useState([]);
   const [clearingFees, setClearingFees] = useState({});
@@ -222,6 +224,11 @@ const ClearingTable = ({
       if (typeof onRefreshRequest === "function") {
         await onRefreshRequest();
       }
+      try {
+  if (typeof onFilesChanged === "function") onFilesChanged();
+} catch (cbErr) {
+  console.error("onFilesChanged callback error after save:", cbErr);
+}
 
       alert("Saved successfully");
 
@@ -287,6 +294,9 @@ const ClearingTable = ({
                     Quantity
                   </th>
                   <th className="p-3 border border-slate-200 text-center">
+                    Shipping Quantity
+                  </th>
+                  <th className="p-3 border border-slate-200 text-center">
                     Shipping Fee
                   </th>
 
@@ -325,8 +335,11 @@ const ClearingTable = ({
                         {it.quantity ?? it.qty ?? "0"}
                       </td>
                       <td className="border p-3 border-slate-200 text-center">
-                        {it.shippingFee || "N/A"}
+                        {it.shippingQuantity ?? it.qty ?? "0"}
                       </td>
+                     <td className="border p-3 border-slate-200 text-center">
+  {selectedRequest?.shippingFee ?? "N/A"}
+</td>
                       {idx === 0 ? (
                         <td
                           className="border p-3 border-slate-200 text-center"

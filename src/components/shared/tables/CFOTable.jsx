@@ -303,11 +303,18 @@ const CFOTable = ({
                 </>
               )}
               {showPaymentStatus && (
-                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                  Total Price
-                </th>
+                <>
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                    Discount (%)
+                  </th>
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                    Total Price
+                  </th>
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                    VAT Amount
+                  </th>
+                </>
               )}
-             
             </tr>
           </thead>
           <tbody>
@@ -328,7 +335,7 @@ const CFOTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}
@@ -477,18 +484,45 @@ const CFOTable = ({
                   </>
                 )}
 
-                {/* Total Price - Calculated */}
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700">
-                  {item.total || item.unitPrice ? (
-                    <>
-                      {item.currency || "NGN"} {calculateTotal(item)}
-                    </>
-                  ) : (
-                    "N/A"
-                  )}
-                </td>
-
-               
+                {showPaymentStatus && (
+                  <>
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      {item.discount ? `${item.discount}%` : "0%"}
+                    </td>
+                    {/* Total Price - Calculated */}
+                    <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700">
+                      {item.total || item.unitPrice ? (
+                        <>
+                          {item.currency || "NGN"}{" "}
+                          {Number(
+                            item.totalPrice || item.total || 0
+                          ).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </>
+                      ) : (
+                        "N/A"
+                      )}
+                    </td>
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      {item.vatted ? (
+                        <span>
+                          {item.currency || "NGN"}{" "}
+                          {Number(calculateVatAmount(item)).toLocaleString(
+                            undefined,
+                            {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">N/A</span>
+                      )}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -511,10 +545,7 @@ const CFOTable = ({
           >
             ◄
           </button>
-          <div className="flex items-center justify-center">
-
-           
-          </div>
+          <div className="flex items-center justify-center"></div>
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {

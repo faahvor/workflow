@@ -45,6 +45,14 @@ import DeliveryRequestView from "./DeliveryRequestView";
 import InvoiceControllerTable from "../../shared/tables/InvoiceControllerTable";
 import ReadOnlyTable from "../../shared/tables/ReadOnlyTable";
 import InvoiceFilesUpload from "./InvoiceFilesUpload";
+import CommentThread from "../../shared/CommentThread";
+import EmailComposer from "../EmailComposer";
+
+async function fetchFileAsAttachment(url, filename) {
+  const resp = await fetch(url);
+  const blob = await resp.blob();
+  return new File([blob], filename, { type: blob.type });
+}
 
 const RequestDetailView = ({
   request,
@@ -82,6 +90,7 @@ const RequestDetailView = ({
   const [attachFocusedIndex, setAttachFocusedIndex] = useState(-1);
   const attachInputRef = useRef(null);
   const [showSnapshot, setShowSnapshot] = useState(false);
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
 
   const [accAttachSearchTerm, setAccAttachSearchTerm] = useState("");
   const [accAttachDropdownResults, setAccAttachDropdownResults] = useState([]);
@@ -135,9 +144,20 @@ const RequestDetailView = ({
   const [isSavingPaymentType, setIsSavingPaymentType] = useState(false);
   const [freightRoute, setFreightRoute] = useState(null);
   const [isSavingFreightRoute, setIsSavingFreightRoute] = useState(false);
-  
+  const [editingAdditionalInfo, setEditingAdditionalInfo] = useState(false);
+  const [additionalInfoDraft, setAdditionalInfoDraft] = useState(
+    request.additionalInformation || ""
+  );
+  const [savingAdditionalInfo, setSavingAdditionalInfo] = useState(false);
 
- 
+  const queriedByRole = (
+    selectedRequest?.queriedByRole ||
+    request?.queriedByRole ||
+    ""
+  )
+    .toLowerCase()
+    .replace(/\s/g, "");
+
   const nextApprovalOptions = [
     { value: "None", label: "None" },
     { value: "Fleet Manager", label: "Fleet Manager" },
@@ -183,6 +203,32 @@ const RequestDetailView = ({
       />
     );
   }
+
+  const [emailInitialAttachments, setEmailInitialAttachments] = useState([]);
+
+  const handleApproveAndSendMail = async () => {
+    // Find the purchase order file (from request or attached files)
+    const poFileMeta =
+      (request.purchaseOrderFiles && request.purchaseOrderFiles[0]) ||
+      (currentRequest.purchaseOrderFiles &&
+        currentRequest.purchaseOrderFiles[0]);
+    if (!poFileMeta) {
+      alert("No Purchase Order file found to attach.");
+      setShowEmailComposer(true); // Still show composer, just no attachment
+      return;
+    }
+
+    // Download the file as a File object
+    try {
+      const filename = poFileMeta.split("/").pop().split("?")[0];
+      const file = await fetchFileAsAttachment(poFileMeta, filename);
+      setEmailInitialAttachments([file]);
+    } catch (err) {
+      alert("Failed to fetch Purchase Order file for attachment.");
+      setEmailInitialAttachments([]);
+    }
+    setShowEmailComposer(true);
+  };
 
   const handlePaymentTypeChange = async (option) => {
     setPaymentType(option);
@@ -501,12 +547,14 @@ const RequestDetailView = ({
     "managing director",
     "operations manager",
     "equipment manager",
+    "procurement manager",
   ];
   const allowedQueryRoles = [
     "vessel manager",
     "managing director",
     "cfo",
     "accounting lead",
+    "procurement manager"
   ];
   const isVesselManagerBlockedForActions =
     userRole === "vessel manager" &&
@@ -675,13 +723,13 @@ const RequestDetailView = ({
     const trimmed = (queryComment || "").trim();
     if (!trimmed || trimmed.length < 3) {
       alert(
-        "Please provide a brief reason for the query (at least 3 characters)."
+        "Please provide a brief reason for querying (at least 3 characters)."
       );
       return;
     }
 
     if (!selectedQueryTarget || !selectedQueryTarget.value) {
-      alert("Please select who to query from the dropdown below.");
+      alert("Please select who to query.");
       return;
     }
 
@@ -693,31 +741,26 @@ const RequestDetailView = ({
     try {
       setIsQuerying(true);
       const token = getToken();
-      if (!token) throw new Error("Not authenticated");
-
-      const payload = {
-        targetRole: selectedQueryTarget.value,
-        comment: trimmed,
-      };
+      if (!token) throw new Error("No token found");
 
       const resp = await axios.post(
-        `${API_BASE_URL}/requests/${encodeURIComponent(
-          request.requestId
-        )}/query`,
-        payload,
+        `${API_BASE_URL}/requests/${request.requestId}/query`,
+        {
+          comment: trimmed,
+          targetRole: selectedQueryTarget.value,
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const updated =
-        resp.data?.request ?? resp.data?.data ?? resp.data ?? null;
-      if (updated) {
-        setSelectedRequest(updated);
-      } else {
-        await fetchRequestDetails();
-      }
+      alert(
+        resp.data?.message || "Request queried and sent back to requester!"
+      );
+      setIsQueryModalOpen(false);
 
-      closeQueryModal();
-      alert(resp.data?.message || "Query sent successfully");
+      // ✅ Call parent handler to close detail view and refresh list
+      if (typeof onQuery === "function") {
+        onQuery(request.requestId);
+      }
     } catch (err) {
       console.error("Query error:", err);
       alert(err?.response?.data?.message || "Failed to query request");
@@ -1444,18 +1487,33 @@ const RequestDetailView = ({
       setAttachDropdownLoading(false);
     }
   };
-  const fetchAccAttachDropdownResults = async (term = "") => {
-    setAccAttachDropdownLoading(true);
-    try {
-      const token = getToken();
-      if (!token) throw new Error("Not authenticated");
-      const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const all = resp.data?.data || resp.data || [];
 
-      // exclude any request that is shipping (supports tag or tags)
-      const nonShipping = all.filter((r) => {
+
+ // Helper to normalize request type for comparison
+function normalizeType(type) {
+  return String(type || "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+
+const fetchAccAttachDropdownResults = async (term = "") => {
+  setAccAttachDropdownLoading(true);
+  try {
+    const token = getToken();
+    if (!token) throw new Error("Not authenticated");
+    const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const all = resp.data?.data || resp.data || [];
+
+    // Only exclude shipping for non-accounting officer roles
+    let filtered = all;
+    if (
+      userRole !== "accountingofficer" &&
+      userRole !== "accounting officer"
+    ) {
+      filtered = all.filter((r) => {
         if (!r) return false;
         if (Array.isArray(r.tags) && r.tags.length) {
           return !r.tags
@@ -1465,47 +1523,59 @@ const RequestDetailView = ({
         const tag = (r.tag || "").toString().toLowerCase();
         return !tag.includes("shipping");
       });
-
-      // exclude the currently opened request
-      const currentOpenId = request?.requestId || request?.id || null;
-      const filtered = nonShipping.filter(
-        (r) => (r.requestId || r.id) !== currentOpenId
-      );
-
-      // optional client-side search (vendor or PON)
-      const q = (term || "").toString().trim().toLowerCase();
-      const matched = q
-        ? filtered.filter((r) => {
-            const vendor = (r.vendor || r.requester?.displayName || "")
-              .toString()
-              .toLowerCase();
-            const po = (
-              r.purchaseOrderNumber ||
-              r.reference ||
-              r.requestId ||
-              ""
-            )
-              .toString()
-              .toLowerCase();
-            return vendor.includes(q) || po.includes(q);
-          })
-        : filtered;
-
-      const sorted = matched
-        .slice()
-        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-        .slice(0, 10);
-
-      setAccAttachDropdownResults(sorted);
-      setAccAttachDropdownOpen(true);
-    } catch (err) {
-      console.error("Accounting attach dropdown fetch error:", err);
-      setAccAttachDropdownResults([]);
-      setAccAttachDropdownOpen(false);
-    } finally {
-      setAccAttachDropdownLoading(false);
     }
-  };
+
+    // exclude the currently opened request
+    const currentOpenId = request?.requestId || request?.id || null;
+    filtered = filtered.filter(
+      (r) => (r.requestId || r.id) !== currentOpenId
+    );
+
+    // --- Only for accounting officer: filter by request type ---
+    if (
+      userRole === "accountingofficer" ||
+      userRole === "accounting officer"
+    ) {
+      const currentType = normalizeType(currentRequest?.requestType);
+      filtered = filtered.filter(
+        (r) => normalizeType(r.requestType) === currentType
+      );
+    }
+
+    // optional client-side search (vendor or PON)
+    const q = (term || "").toString().trim().toLowerCase();
+    const matched = q
+      ? filtered.filter((r) => {
+          const vendor = (r.vendor || r.requester?.displayName || "")
+            .toString()
+            .toLowerCase();
+          const po = (
+            r.purchaseOrderNumber ||
+            r.reference ||
+            r.requestId ||
+            ""
+          )
+            .toString()
+            .toLowerCase();
+          return vendor.includes(q) || po.includes(q);
+        })
+      : filtered;
+
+    const sorted = matched
+      .slice()
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 10);
+
+    setAccAttachDropdownResults(sorted);
+    setAccAttachDropdownOpen(true);
+  } catch (err) {
+    console.error("Accounting attach dropdown fetch error:", err);
+    setAccAttachDropdownResults([]);
+    setAccAttachDropdownOpen(false);
+  } finally {
+    setAccAttachDropdownLoading(false);
+  }
+};
 
   const loadSourceRequestItems = async (sourceRequestId) => {
     try {
@@ -1661,6 +1731,8 @@ const RequestDetailView = ({
     }
   };
 
+
+  
   const currentRequest = selectedRequest || request;
   const isQueried = (selectedRequest?.isQueried ?? request?.isQueried) === true;
 
@@ -1810,10 +1882,10 @@ const RequestDetailView = ({
     // ✅ FIX: Only return CompletedTable when isReadOnly is true
     if (isReadOnly) {
       if (reqType === "purchaseorder" || reqType === "pettycash") {
-        return <CompletedTable items={items} userRole={userRole} />;
+        return <CompletedTable items={items} userRole={userRole}  requestType={request.requestType} />;
       }
       // Fallback for any other request type in read-only mode
-      return <CompletedTable items={items} userRole={userRole} />;
+      return <CompletedTable items={items} userRole={userRole}  requestType={request.requestType} />;
     }
 
     // Role-based table selection (for non-read-only mode)
@@ -1826,6 +1898,7 @@ const RequestDetailView = ({
             items={items}
             onEditItem={handleEditItem}
             requestId={request.requestId}
+            request={currentRequest}
             isReadOnly={tableReadOnly}
             onDeleteItem={openDeleteModal}
             currentState={request.flow?.currentState}
@@ -1834,7 +1907,7 @@ const RequestDetailView = ({
               selectedRequest?.requestType || request?.requestType || ""
             }
             tag={currentRequest?.tag || ""}
-             clearingFee={currentRequest?.clearingFee}
+            clearingFee={currentRequest?.clearingFee}
           />
         );
       // ...existing code (rest of switch cases)...
@@ -1863,9 +1936,8 @@ const RequestDetailView = ({
             requestType={
               selectedRequest?.requestType || request?.requestType || ""
             }
-             clearingFee={currentRequest?.clearingFee}
-                         tag={currentRequest?.tag || ""}
-
+            clearingFee={currentRequest?.clearingFee}
+            tag={currentRequest?.tag || ""}
           />
         );
       case "technicalmanager":
@@ -1892,7 +1964,9 @@ const RequestDetailView = ({
             isReadOnly={tableReadOnly}
             vendors={vendors}
             tag={currentRequest?.tag}
-             clearingFee={currentRequest?.clearingFee}
+                        request={currentRequest}
+
+            clearingFee={currentRequest?.clearingFee}
           />
         );
 
@@ -1908,7 +1982,9 @@ const RequestDetailView = ({
             isIncompleteDelivery={currentRequest?.isIncompleteDelivery || false}
             requestId={request.requestId}
             onRefreshRequest={fetchRequestDetails}
-             clearingFee={currentRequest?.clearingFee}
+            clearingFee={currentRequest?.clearingFee}
+                        request={currentRequest}
+
           />
         );
       case "storebase":
@@ -1960,7 +2036,7 @@ const RequestDetailView = ({
             }
             tag={currentRequest?.tag}
             request={currentRequest}
-             clearingFee={currentRequest?.clearingFee}
+            clearingFee={currentRequest?.clearingFee}
           />
         );
       case "accountinglead":
@@ -2027,6 +2103,7 @@ const RequestDetailView = ({
             onDeliveryQuantityChange={handleDeliveryQuantityChange}
             onDeliveryStatusChange={handleDeliveryStatusChange}
             tag={currentRequest?.tag || ""}
+            request={currentRequest}
           />
         );
       case "requester":
@@ -2061,6 +2138,7 @@ const RequestDetailView = ({
               isReadOnly={tableReadOnly}
               vendors={vendors}
               selectedRequest={currentRequest}
+              onFilesChanged={handleFilesChanged}
               onEditItem={handleEditItem}
               onRefreshRequest={fetchRequestDetails}
             />
@@ -2073,6 +2151,7 @@ const RequestDetailView = ({
             requestId={request.requestId}
             requestType={selectedRequest?.requestType || request?.requestType}
             onEditItem={handleEditItem}
+            request={currentRequest}
             requestStatus={
               selectedRequest?.flow?.currentState ||
               request?.flow?.currentState ||
@@ -2085,14 +2164,11 @@ const RequestDetailView = ({
 
       case "procurement":
       case "procurement officer":
-         if (isReadOnlyMode) {
-    return (
-      <ReadOnlyTable
-        items={items}
-        tag={currentRequest?.tag || ""}
-      />
-    );
-  }
+        if (isReadOnlyMode) {
+          return (
+            <ReadOnlyTable items={items} tag={currentRequest?.tag || ""} />
+          );
+        }
         return (
           <ProcurementTable
             requests={items}
@@ -2173,10 +2249,10 @@ const RequestDetailView = ({
 
       console.log("🔁 Edit item response:", response?.data);
 
+      // ✅ Always refresh the full request after any item edit
       if (response.status === 200) {
-        // Refresh local request details to reflect server changes
-        await fetchRequestDetails();
-        return response.data;
+        const updated = await fetchRequestDetails();
+        return updated; // Return the full updated request object
       } else {
         console.error("Unexpected response editing item:", response);
         throw new Error("Failed to update item");
@@ -2189,32 +2265,9 @@ const RequestDetailView = ({
         errorsArray: error?.response?.data?.errors,
         payloadPreview: item,
       });
-
-      // extra full dump to help debugging in environments where object expansion is collapsed
-      try {
-        console.error(
-          "Full server response (stringified):",
-          JSON.stringify(error?.response?.data)
-        );
-      } catch (e) {
-        console.error(
-          "Could not stringify response data:",
-          e,
-          error?.response?.data
-        );
-      }
-      // better error output for debugging
-      console.error("Error editing item:", {
-        message: error.message,
-        status: error.response?.status,
-        responseData: error.response?.data,
-        errorsArray: error.response?.data?.errors,
-        payloadPreview: item,
-      });
       throw error;
     }
   };
-
   // Handle delete item
   const handleDeleteItem = async (requestId, itemId, reason = "") => {
     try {
@@ -2272,10 +2325,63 @@ const RequestDetailView = ({
     return true;
   };
 
+// ...existing code...
+const tagLower = (currentRequest?.tag || "").toString().toLowerCase();
+const isShippingOrClearing =
+  tagLower === "shipping" || tagLower === "clearing";
+// ...existing code...
   const handleApproveClick = () => {
     const req = selectedRequest || request;
     const reqType = (req?.requestType || "").toString().toLowerCase();
     const dest = (req?.destination || "").toString().toLowerCase();
+    const userRole = (user?.role || "").toString().toLowerCase();
+    const items = Array.isArray(req?.items) ? req.items : [];
+
+   if (!allItemsAreInStock && userRole === "procurement officer") {
+    // Check for purchaseOrder with all pettycash items
+    if (reqType === "purchaseorder") {
+      const allPettyCash =
+        items.length > 0 &&
+        items.every(
+          (it) =>
+            (it?.itemType || "").toString().toLowerCase() === "pettycash"
+        );
+      if (allPettyCash) {
+        const invoiceFiles = Array.isArray(req?.invoiceFiles)
+          ? req.invoiceFiles
+          : [];
+        if (invoiceFiles.length === 0) {
+          alert(
+            "Please upload at least one invoice file before approving this Petty Cash Purchase Order request."
+          );
+          return;
+        }
+      } else {
+        const quotationFiles = Array.isArray(req?.quotationFiles)
+          ? req.quotationFiles
+          : [];
+        if (quotationFiles.length === 0) {
+          alert(
+            "Please upload at least one quotation file before approving this Purchase Order request."
+          );
+          return;
+        }
+      }
+    }
+      // For pettyCash request type
+      if (reqType === "pettycash") {
+        const invoiceFiles = Array.isArray(req?.invoiceFiles)
+          ? req.invoiceFiles
+          : [];
+        if (invoiceFiles.length === 0) {
+          alert(
+            "Please upload at least one invoice file before approving this Petty Cash request."
+          );
+          return;
+        }
+      }
+    }
+
     const isProcurementOfficer =
       (userRole || "").toString().toLowerCase() === "procurement officer";
     const reqItems = Array.isArray(req?.items) ? req.items : [];
@@ -2290,33 +2396,33 @@ const RequestDetailView = ({
         (it) => (it?.itemType || "").toString().toLowerCase() === "pettycash"
       );
 
-    if (isProcurementOfficer) {
-      // Delivery Target required only for purchaseOrder and not the special petty-in-PO cases
-      if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
-        if (!deliveryTarget || !deliveryTarget.value) {
-          alert(
-            "Please select 'Delivery Target' before approving this request."
-          );
-          return;
-        }
-      }
-
-      // Payment Type must be selected for purchaseOrder (visible for all non-pettyCash)
-      if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
-        if (!paymentType || !paymentType.value) {
-          alert("Please select 'Payment Type' before approving this request.");
-          return;
-        }
-      }
-
-      // Next Approval is required only when destination is marine and request is purchaseOrder
-      if (reqType === "purchaseorder" && dest.includes("marine")) {
-        if (!nextApprovalRole || !nextApprovalRole.value) {
-          alert("Please select 'Next Approval' before approving this request.");
-          return;
-        }
-      }
+    if (isProcurementOfficer && !allItemsAreInStock) {
+  // Delivery Target required only for purchaseOrder and not the special petty-in-PO cases
+  if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
+    if (!deliveryTarget || !deliveryTarget.value) {
+      alert(
+        "Please select 'Delivery Target' before approving this request."
+      );
+      return;
     }
+  }
+
+  // Payment Type must be selected for purchaseOrder (visible for all non-pettyCash)
+  if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
+    if (!paymentType || !paymentType.value) {
+      alert("Please select 'Payment Type' before approving this request.");
+      return;
+    }
+  }
+
+  // Next Approval is required only when destination is marine and request is purchaseOrder
+  if (reqType === "purchaseorder" && dest.includes("marine")) {
+    if (!nextApprovalRole || !nextApprovalRole.value) {
+      alert("Please select 'Next Approval' before approving this request.");
+      return;
+    }
+  }
+}
 
     const reqDepartment = (request?.department || "").toString().toLowerCase();
     if (
@@ -2336,8 +2442,6 @@ const RequestDetailView = ({
         ? req.invoiceFiles
         : [];
     }
-
-    const items = Array.isArray(req?.items) ? req.items : [];
 
     // check for paid / partpayment statuses (case-insensitive)
     const roleLowerForPayment = (userRole || "").toString().toLowerCase();
@@ -2372,22 +2476,6 @@ const RequestDetailView = ({
           return;
         }
       }
-
-      // Existing check: require payment advice files if any item is paid or partpayment
-      const hasPaidOrPart = items.some((it) => {
-        const st = (it?.paymentStatus || "").toString().toLowerCase();
-        return st === "paid" || st === "partpayment";
-      });
-
-      const adviceFiles = Array.isArray(req?.paymentAdviceFiles)
-        ? req.paymentAdviceFiles
-        : [];
-
-      if (hasPaidOrPart && adviceFiles.length === 0) {
-        alert("Please upload payment advice files");
-        // blocked — user should upload files then click Approve again
-        return;
-      }
     }
 
     // existing local validations
@@ -2406,28 +2494,41 @@ const RequestDetailView = ({
     const isDeliveryRoleNow = deliveryRoles.includes(roleLower);
 
     // Only check delivery validation for delivery roles, NOT for requesters
-    if (isDeliveryRoleNow) {
-      const incompleteDelivery = (itemsList || []).some((it) => {
-        const delivered =
-          Number(
-            it.deliveredQuantity ??
-              it.deliverybaseDeliveredQuantity ??
-              it.deliveryjettyDeliveredQuantity ??
-              it.deliveryvesselDeliveredQuantity ??
-              0
-          ) || 0;
-        const qty = Number(it.quantity || 0) || 0;
-        return qty > 0 && delivered !== qty;
-      });
+   if (isDeliveryRoleNow) {
+  const tagLower =
+    (selectedRequest?.tag || request?.tag || "")
+      .toString()
+      .toLowerCase();
+  const isShippingOrClearing =
+    tagLower === "shipping" || tagLower === "clearing";
 
-      if (incompleteDelivery) {
-        const currentUserId = user?.userId || user?.id || user?._id || null;
-        if (!hasCommentByUser(currentUserId)) {
-          alert("Please state a reason for approving delivery not completed");
-          return; // block approval
-        }
-      }
+  const incompleteDelivery = (itemsList || []).some((it) => {
+    let delivered, qty;
+    if (isShippingOrClearing) {
+      delivered = Number(it.shippingDeliveredQuantity || 0);
+      qty = Number(it.shippingQuantity || 0);
+    } else {
+      delivered =
+        Number(
+          it.deliveredQuantity ??
+            it.deliverybaseDeliveredQuantity ??
+            it.deliveryjettyDeliveredQuantity ??
+            it.deliveryvesselDeliveredQuantity ??
+            0
+        ) || 0;
+      qty = Number(it.quantity || 0) || 0;
     }
+    return qty > 0 && delivered !== qty;
+  });
+
+  if (incompleteDelivery) {
+    const currentUserId = user?.userId || user?.id || user?._id || null;
+    if (!hasCommentByUser(currentUserId)) {
+      alert("Please state a reason for approving delivery not completed");
+      return; // block approval
+    }
+  }
+}
 
     // finally call parent approve handler
     onApprove(request.requestId);
@@ -2763,6 +2864,11 @@ const RequestDetailView = ({
     }
   };
 
+  const allItemsAreInStock =
+  Array.isArray(currentRequest?.items) &&
+  currentRequest.items.length > 0 &&
+  currentRequest.items.every((it) => it.inStock === true);
+
   useEffect(() => {
     return () => {
       // cleanup preview urls
@@ -2772,197 +2878,661 @@ const RequestDetailView = ({
     };
   }, []); // run once on unmount
 
-   const isReadOnlyMode =
-  (userRole === "procurement officer" || userRole === "procurement") &&
-  currentRequest?.isIncompleteDelivery === true;
+  const isReadOnlyMode =
+    (userRole === "procurement officer" || userRole === "procurement") &&
+    currentRequest?.isIncompleteDelivery === true;
 
+  function isProcurementOfficerApproved(req) {
+    return (
+      Array.isArray(req.history) &&
+      (req.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+        req.history.some(
+          (h) =>
+            h.action === "SPLIT" &&
+            h.role === "SYSTEM" &&
+            typeof h.info === "string" &&
+            h.info.includes("Petty Cash items moved to Petty Cash flow")
+        ))
+    );
+  }
 
+  const isRejected = currentRequest?.isRejected === true;
+  const rejectedByUserId =
+    currentRequest?.rejectedByUserId || currentRequest?.rejectedBy || null;
+  const currentUserId = user?._id || user?.id || user?.userId || null;
+  const canRecall =
+    isRejected &&
+    rejectedByUserId &&
+    currentUserId &&
+    String(rejectedByUserId) === String(currentUserId);
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
-      {/* Back Button */}
-      <button
-        onClick={onBack}
-        className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium"
-      >
-        <MdArrowBack className="text-xl" />
-        Back to Requests
-      </button>
-
-      {/* Workflow Progress - Now a separate component */}
-      {request.flow?.path && (
-        <div className="mb-8">
-          <RequestWorkflow workflowPath={request.flow.path} />
-        </div>
+    <>
+      {showEmailComposer && (
+        <EmailComposer
+          initialAttachments={[]} // No attachments
+          subject={`Purchase Order Reminder`}
+          userEmail={user?.email || ""}
+          token={getToken ? getToken() : ""}
+          docType="reminder"
+          userRole={userRole}
+          purchaseOrderNumber={
+            // Try to get the first item's purchaseOrderNumber, fallback to request.reference
+            currentRequest?.items?.[0]?.purchaseOrderNumber ||
+            currentRequest?.reference ||
+            ""
+          }
+          onClose={() => setShowEmailComposer(false)}
+          onSent={() => setShowEmailComposer(false)}
+        />
       )}
+      <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+        {/* Back Button */}
+        <button
+          onClick={onBack}
+          className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium"
+        >
+          <MdArrowBack className="text-xl" />
+          Back to Requests
+        </button>
 
-      {/* Request Information */}
-      <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg mb-8">
-        <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-3 border-b border-slate-200">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-            Request Details
-          </h3>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Request ID
-            </p>
-            <p className="text-sm text-slate-900 font-semibold font-mono">
-              {request.requestId}
-            </p>
+        {/* Workflow Progress - Now a separate component */}
+        {request.flow?.path && (
+          <div className="mb-8">
+            <RequestWorkflow workflowPath={request.flow.path} />
           </div>
+        )}
 
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">Company</p>
-            <p className="text-sm text-slate-900 font-semibold font-mono">
-              {request.company?.name || "N/A"}
-            </p>
+        {/* Request Information */}
+        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg mb-8">
+          <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-3 border-b border-slate-200">
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Request Details
+            </h3>
           </div>
-
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Requester
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.requester?.displayName || "N/A"}
-            </p>
-          </div>
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Department
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.department}
-            </p>
-          </div>
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            {" "}
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Destination
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.destination}
-            </p>
-          </div>
-
-          {request.vesselId && (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <div className="px-4 py-3 border-b border-r border-slate-200">
               <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Vessel
+                Request ID
+              </p>
+              <p className="text-sm text-slate-900 font-semibold font-mono">
+                {request.requestId}
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Company
+              </p>
+              <p className="text-sm text-slate-900 font-semibold font-mono">
+                {request.company?.name || "N/A"}
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Requester
               </p>
               <p className="text-sm text-slate-900 font-semibold">
-                {getVesselName(request.vesselId)}
+                {request.requester?.displayName || "N/A"}
               </p>
             </div>
-          )}
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Submitted Date
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {new Date(request.createdAt).toLocaleDateString()}
-            </p>
-          </div>
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Department
+              </p>
+              <p className="text-sm text-slate-900 font-semibold">
+                {request.department}
+              </p>
+            </div>
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              {" "}
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Destination
+              </p>
+              <p className="text-sm text-slate-900 font-semibold">
+                {request.destination}
+              </p>
+            </div>
 
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Request Type
-            </p>
-            <p className="text-sm font-semibold">
-              <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                {request.requestType === "purchaseOrder"
-                  ? "Purchase Order"
-                  : "Petty Cash"}
+            {request.vesselId && (
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Vessel
+                </p>
+                <p className="text-sm text-slate-900 font-semibold">
+                  {getVesselName(request.vesselId)}
+                </p>
+              </div>
+            )}
+           <div className="px-4 py-3 border-b border-r border-slate-200">
+  <p className="text-xs text-slate-500 font-medium mb-0.5">
+    Submitted Date /Time
+  </p>
+  <p className="text-sm text-slate-900 font-semibold">
+    {new Date(request.createdAt).toLocaleDateString()}{" "}
+    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+  </p>
+</div>
+
+           {!(
+  (request.department || "").toLowerCase() === "freight" &&
+  (request.logisticsType || "").toLowerCase() === "international"
+) && (
+  <div className="px-4 py-3 border-b border-r border-slate-200">
+    <p className="text-xs text-slate-500 font-medium mb-0.5">
+      Request Type
+    </p>
+    <p className="text-sm font-semibold">
+      <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+        {isProcurementOfficerApproved(request)
+          ? request.requestType === "purchaseOrder"
+            ? "Purchase Order"
+            : request.requestType === "pettyCash"
+            ? "Petty Cash"
+            : request.requestType === "inStock"
+            ? "INSTOCK"
+            : request.requestType || "N/A"
+          : "N/A"}
+      </span>
+    </p>
+  </div>
+)}
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Reference
+              </p>
+              <p className="text-sm text-slate-900 font-semibold">
+                {request.reference || "N/A"}
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Logistics Type{" "}
+              </p>
+              <p className="text-sm text-slate-900 font-semibold capitalize">
+                {request.logisticsType || "N/A"}
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                <i className="ri-secure-payment-fill"></i> Payment Type{" "}
+              </p>
+              <p className="text-sm text-slate-900 font-semibold capitalize">
+                {request.paymentType || "N/A"}
+              </p>
+            </div>
+            {request.destination === "Marine" ? (
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  OffShore Number
+                </p>
+                <p className="text-sm font-semibold">
+                  <span className="inline-block px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                    {request.offshoreReqNumber || "N/A"}
+                  </span>
+                </p>
+              </div>
+            ) : (
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Job Number
+                </p>
+                <p className="text-sm font-semibold">
+                  <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+                    {request.jobNumber || "N/A"}
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Purpose */}
+        {request.purpose && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdDescription className="text-xl" />
+              Purpose
+            </h3>
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+              <p className="text-slate-700 leading-relaxed">
+                {request.purpose}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Additional Information */}
+        {(
+  (userRole === "requester" &&
+    (currentRequest.department || "").toLowerCase() === "freight") ||
+  currentRequest.additionalInformation
+) && (
+  <div className="mb-8 relative">
+    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+      <MdInfo className="text-xl" />
+      Additional Information
+    </h3>
+    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg relative">
+      {!editingAdditionalInfo ? (
+        <>
+          <p className="text-slate-700 leading-relaxed">
+            {currentRequest.additionalInformation || (
+              <span className="text-slate-400 italic">
+                No additional information provided.
               </span>
-            </p>
+            )}
+          </p>
+          {/* Only show edit button if user is requester and department is freight */}
+          {userRole === "requester" &&
+            (currentRequest.department || "").toLowerCase() === "freight" && (
+              <button
+                className="absolute bottom-4 right-4 text-emerald-600 hover:text-emerald-800"
+                onClick={() => {
+                  setEditingAdditionalInfo(true);
+                  setAdditionalInfoDraft(
+                    currentRequest.additionalInformation || ""
+                  );
+                }}
+                title="Edit Additional Information"
+              >
+                <svg
+                  width="22"
+                  height="22"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M16.862 5.487a2.07 2.07 0 1 1 2.93 2.93l-9.193 9.193-3.293.364.364-3.293 9.192-9.194Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+        </>
+      ) : (
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setSavingAdditionalInfo(true);
+            try {
+              const token = getToken();
+              await axios.patch(
+                `${API_BASE_URL}/requests/${request.requestId}`,
+                { additionalInformation: additionalInfoDraft },
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              // Refresh request details to show updated info
+              await fetchRequestDetails();
+              setFilesRefreshCounter((c) => c + 1);
+              setEditingAdditionalInfo(false);
+            } catch (err) {
+              alert("Failed to update Additional Information");
+            } finally {
+              setSavingAdditionalInfo(false);
+            }
+          }}
+        >
+          <textarea
+            className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
+            rows={4}
+            value={additionalInfoDraft}
+            onChange={(e) => setAdditionalInfoDraft(e.target.value)}
+            disabled={savingAdditionalInfo}
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            <button
+              type="button"
+              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-md"
+              onClick={() => setEditingAdditionalInfo(false)}
+              disabled={savingAdditionalInfo}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-emerald-500 text-white rounded-md"
+              disabled={savingAdditionalInfo}
+            >
+              {savingAdditionalInfo ? "Saving..." : "Save"}
+            </button>
           </div>
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Reference
-            </p>
-            <p className="text-sm text-slate-900 font-semibold">
-              {request.reference || "N/A"}
-            </p>
-          </div>
+        </form>
+      )}
+    </div>
+  </div>
+)}
 
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              Logistics Type{" "}
-            </p>
-            <p className="text-sm text-slate-900 font-semibold capitalize">
-              {request.logisticsType || "N/A"}
-            </p>
-          </div>
+        {/* ===== attaching of request to another request ===== */}
 
-          <div className="px-4 py-3 border-b border-r border-slate-200">
-            <p className="text-xs text-slate-500 font-medium mb-0.5">
-              <i className="ri-secure-payment-fill"></i> Payment Type{" "}
-            </p>
-            <p className="text-sm text-slate-900 font-semibold capitalize">
-              {request.paymentType || "N/A"}
-            </p>
-          </div>
-          {request.destination === "Marine" ? (
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                OffShore Number
-              </p>
-              <p className="text-sm font-semibold">
-                <span className="inline-block px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
-                  {request.offshoreReqNumber || "N/A"}
-                </span>
-              </p>
-            </div>
-          ) : (
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Job Number
-              </p>
-              <p className="text-sm font-semibold">
-                <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                  {request.jobNumber || "N/A"}
-                </span>
-              </p>
+        {String(currentRequest?.tag || "")
+          .toLowerCase()
+          .includes("shipping") &&
+          userRole === "requester" &&
+          !isReadOnly && (
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                🔗 Attach Items from Another Request
+              </h3>
+
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
+                <div className="flex gap-3 items-start relative">
+                  <input
+                    ref={attachInputRef}
+                    value={attachSearchTerm}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAttachSearchTerm(v);
+                      // live filter / fetch dropdown results
+                      fetchAttachDropdownResults(v);
+                    }}
+                    onFocus={() => {
+                      // show default dropdown (shipping pending requests)
+                      fetchAttachDropdownResults("");
+                    }}
+                    onBlur={() => {
+                      // small delay to allow click on dropdown item
+                      setTimeout(() => setAttachDropdownOpen(false), 150);
+                    }}
+                    onKeyDown={(e) => {
+                      const max = (attachDropdownResults || []).length - 1;
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setAttachFocusedIndex((i) =>
+                          Math.min(max, Math.max(-1, i + 1))
+                        );
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setAttachFocusedIndex((i) =>
+                          Math.max(-1, Math.min(max, i - 1))
+                        );
+                        return;
+                      }
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const idx = attachFocusedIndex;
+                        if (idx >= 0 && attachDropdownResults[idx]) {
+                          const selected = attachDropdownResults[idx];
+                          loadSourceRequestItems(
+                            selected.requestId || selected.id
+                          );
+                          setAttachDropdownOpen(false);
+                        } else {
+                          performAttachSearch();
+                        }
+                      }
+                    }}
+                    placeholder="Search by vendor name or PON (click to show shipping requests)"
+                    className="flex-1 px-4 py-3 border rounded-xl"
+                  />
+                  <button
+                    onClick={() => performAttachSearch()}
+                    disabled={attachSearching || !attachSearchTerm.trim()}
+                    className="px-4 py-3 bg-[#036173] text-white rounded-xl"
+                  >
+                    {attachSearching ? "Searching..." : "Search"}
+                  </button>
+
+                  {/* Dropdown results (shows on focus or when open) */}
+                  {attachDropdownOpen &&
+                    (() => {
+                      const portalTarget =
+                        typeof document !== "undefined" && document.body
+                          ? document.body
+                          : null;
+
+                      // compute position relative to viewport (use fixed so it escapes stacking contexts)
+                      let dropdownStyle = {
+                        position: "fixed",
+                        top: "0px",
+                        left: "0px",
+                        width: "300px",
+                        zIndex: 2147483647,
+                        maxHeight: "60vh",
+                        overflow: "auto",
+                      };
+
+                      try {
+                        const el = attachInputRef && attachInputRef.current;
+                        if (
+                          el &&
+                          typeof el.getBoundingClientRect === "function"
+                        ) {
+                          const rect = el.getBoundingClientRect();
+                          dropdownStyle = {
+                            ...dropdownStyle,
+                            top: `${rect.bottom}px`,
+                            left: `${rect.left}px`,
+                            width: `${rect.width}px`,
+                          };
+                        }
+                      } catch (e) {
+                        // ignore and use fallback style
+                      }
+
+                      const dropdown = (
+                        <div
+                          style={dropdownStyle}
+                          className="bg-white border rounded-lg shadow-lg"
+                        >
+                          {attachDropdownLoading ? (
+                            <div className="p-3 text-sm text-slate-500">
+                              Loading...
+                            </div>
+                          ) : attachDropdownResults.length === 0 ? (
+                            <div className="p-3 text-sm text-slate-500">
+                              No shipping requests found
+                            </div>
+                          ) : (
+                            attachDropdownResults.map((r, idx) => {
+                              const vendor =
+                                r.vendor ||
+                                r.requester?.displayName ||
+                                "Unknown vendor";
+                              const po =
+                                r.purchaseOrderNumber ||
+                                r.reference ||
+                                r.requestId ||
+                                r.purchaseReqNumber ||
+                                r.requestId;
+                              const itemCount = Array.isArray(r.items)
+                                ? r.items.length
+                                : r.itemCount || 0;
+                              const focused = idx === attachFocusedIndex;
+                              return (
+                                <div
+                                  key={r.requestId || r.id || idx}
+                                  onMouseDown={(ev) => {
+                                    // onMouseDown so click registers before blur
+                                    ev.preventDefault();
+                                    loadSourceRequestItems(r.requestId || r.id);
+                                    setAttachDropdownOpen(false);
+                                    setAttachSearchTerm("");
+                                  }}
+                                  onMouseEnter={() =>
+                                    setAttachFocusedIndex(idx)
+                                  }
+                                  className={`p-3 cursor-pointer flex items-center justify-between ${
+                                    focused
+                                      ? "bg-slate-100"
+                                      : "hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="text-sm font-semibold">
+                                      {po}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                      {vendor}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-slate-500">
+                                    {itemCount} item{itemCount === 1 ? "" : "s"}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      );
+
+                      return portalTarget
+                        ? createPortal(dropdown, portalTarget)
+                        : dropdown;
+                    })()}
+                </div>
+
+                {attachSearchResults.length > 0 && (
+                  <div className="mt-4 grid gap-2">
+                    {attachSearchResults.map((res) => (
+                      <div
+                        key={res.requestId || res.id}
+                        className="p-3 rounded-lg border hover:bg-slate-50 cursor-pointer flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {res.summary ||
+                              res.requestId ||
+                              res.purchaseOrderNumber ||
+                              res.reference}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {res.vendor ||
+                              res.requester?.displayName ||
+                              "Unknown vendor"}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              loadSourceRequestItems(res.requestId || res.id)
+                            }
+                            className="px-3 py-1 rounded-md bg-emerald-50 text-emerald-700"
+                          >
+                            View Items
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {attachSourceItems.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="text-sm font-semibold">
+                          Source: {attachSourceMeta?.requestId}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {attachSourceMeta?.vendor}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={selectAllAttachItems}
+                          className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-md"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          onClick={clearAttachSelection}
+                          className="px-3 py-1 bg-red-50 text-red-600 rounded-md"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                      {attachSourceItems.map((it) => {
+                        const iid = it.itemId || it._id || it.id;
+                        return (
+                          <label
+                            key={iid}
+                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                          >
+                            <div>
+                              <div className="text-sm font-semibold">
+                                {it.name || it.description || iid}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                Qty: {it.quantity || it.qty || "N/A"}
+                              </div>
+                            </div>
+                            <div>
+                              <input
+                                type="checkbox"
+                                checked={attachSelectedItemIds.includes(iid)}
+                                onChange={() => toggleAttachSelect(iid)}
+                              />
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2">
+                      <input
+                        placeholder="Purpose (optional)"
+                        className="flex-1 px-3 py-2 border rounded-lg"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const p = e.target.value.trim();
+                            const confirmed = window.confirm(
+                              "Attach selected items to this request?"
+                            );
+                            if (confirmed)
+                              attachSelectedToTarget(
+                                currentRequest.requestId,
+                                p
+                              );
+                          }
+                        }}
+                        id="attach-purpose-input"
+                      />
+                      <button
+                        onClick={() => {
+                          const el = document.getElementById(
+                            "attach-purpose-input"
+                          );
+                          const purpose = el ? el.value.trim() : "";
+                          const confirmed = window.confirm(
+                            "Attach selected items to this request?"
+                          );
+                          if (confirmed)
+                            attachSelectedToTarget(
+                              currentRequest.requestId,
+                              purpose
+                            );
+                        }}
+                        disabled={attachSelectedItemIds.length === 0}
+                        className="px-4 py-2 bg-[#036173] text-white rounded-lg"
+                      >
+                        Attach Selected
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Purpose */}
-      {request.purpose && (
-        <div className="mb-8">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <MdDescription className="text-xl" />
-            Purpose
-          </h3>
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-            <p className="text-slate-700 leading-relaxed">{request.purpose}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Additional Information */}
-      {request.additionalInformation && (
-        <div className="mb-8">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <MdInfo className="text-xl" />
-            Additional Information
-          </h3>
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-            <p className="text-slate-700 leading-relaxed">
-              {request.additionalInformation}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ===== attaching of request to another request ===== */}
-
-      {String(currentRequest?.tag || "")
-        .toLowerCase()
-        .includes("shipping") &&
-        userRole === "requester" &&
-        !isReadOnly && (
+        {/* Accounting Lead: attach-from-other-request (excludes shipping requests) */}
+        {showAccountingAttach && (
           <div className="mb-8">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
               🔗 Attach Items from Another Request
@@ -2971,224 +3541,211 @@ const RequestDetailView = ({
             <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
               <div className="flex gap-3 items-start relative">
                 <input
-                  ref={attachInputRef}
-                  value={attachSearchTerm}
+                  ref={accAttachInputRef}
+                  value={accAttachSearchTerm}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setAttachSearchTerm(v);
-                    // live filter / fetch dropdown results
-                    fetchAttachDropdownResults(v);
+                    setAccAttachSearchTerm(v);
+                    fetchAccAttachDropdownResults(v);
                   }}
-                  onFocus={() => {
-                    // show default dropdown (shipping pending requests)
-                    fetchAttachDropdownResults("");
-                  }}
-                  onBlur={() => {
-                    // small delay to allow click on dropdown item
-                    setTimeout(() => setAttachDropdownOpen(false), 150);
-                  }}
+                  onFocus={() => fetchAccAttachDropdownResults("")}
+                  onBlur={() =>
+                    setTimeout(() => setAccAttachDropdownOpen(false), 150)
+                  }
                   onKeyDown={(e) => {
-                    const max = (attachDropdownResults || []).length - 1;
+                    const max = (accAttachDropdownResults || []).length - 1;
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
-                      setAttachFocusedIndex((i) =>
+                      setAccAttachFocusedIndex((i) =>
                         Math.min(max, Math.max(-1, i + 1))
                       );
                       return;
                     }
                     if (e.key === "ArrowUp") {
                       e.preventDefault();
-                      setAttachFocusedIndex((i) =>
+                      setAccAttachFocusedIndex((i) =>
                         Math.max(-1, Math.min(max, i - 1))
                       );
                       return;
                     }
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      const idx = attachFocusedIndex;
-                      if (idx >= 0 && attachDropdownResults[idx]) {
-                        const selected = attachDropdownResults[idx];
-                        loadSourceRequestItems(
-                          selected.requestId || selected.id
-                        );
-                        setAttachDropdownOpen(false);
-                      } else {
-                        performAttachSearch();
-                      }
-                    }
+                    // NOTE: Enter handling removed to avoid accidental auto-attach.
                   }}
-                  placeholder="Search by vendor name or PON (click to show shipping requests)"
+                  placeholder="Search vendor or PON "
                   className="flex-1 px-4 py-3 border rounded-xl"
                 />
-                <button
-                  onClick={() => performAttachSearch()}
-                  disabled={attachSearching || !attachSearchTerm.trim()}
-                  className="px-4 py-3 bg-[#036173] text-white rounded-xl"
-                >
-                  {attachSearching ? "Searching..." : "Search"}
-                </button>
-
-                {/* Dropdown results (shows on focus or when open) */}
-                {attachDropdownOpen &&
-                  (() => {
-                    const portalTarget =
-                      typeof document !== "undefined" && document.body
-                        ? document.body
-                        : null;
-
-                    // compute position relative to viewport (use fixed so it escapes stacking contexts)
-                    let dropdownStyle = {
-                      position: "fixed",
-                      top: "0px",
-                      left: "0px",
-                      width: "300px",
-                      zIndex: 2147483647,
-                      maxHeight: "60vh",
-                      overflow: "auto",
-                    };
-
-                    try {
-                      const el = attachInputRef && attachInputRef.current;
-                      if (
-                        el &&
-                        typeof el.getBoundingClientRect === "function"
-                      ) {
-                        const rect = el.getBoundingClientRect();
-                        dropdownStyle = {
-                          ...dropdownStyle,
-                          top: `${rect.bottom}px`,
-                          left: `${rect.left}px`,
-                          width: `${rect.width}px`,
-                        };
-                      }
-                    } catch (e) {
-                      // ignore and use fallback style
-                    }
-
-                    const dropdown = (
-                      <div
-                        style={dropdownStyle}
-                        className="bg-white border rounded-lg shadow-lg"
-                      >
-                        {attachDropdownLoading ? (
-                          <div className="p-3 text-sm text-slate-500">
-                            Loading...
-                          </div>
-                        ) : attachDropdownResults.length === 0 ? (
-                          <div className="p-3 text-sm text-slate-500">
-                            No shipping requests found
-                          </div>
-                        ) : (
-                          attachDropdownResults.map((r, idx) => {
-                            const vendor =
-                              r.vendor ||
-                              r.requester?.displayName ||
-                              "Unknown vendor";
-                            const po =
-                              r.purchaseOrderNumber ||
-                              r.reference ||
-                              r.requestId ||
-                              r.purchaseReqNumber ||
-                              r.requestId;
-                            const itemCount = Array.isArray(r.items)
-                              ? r.items.length
-                              : r.itemCount || 0;
-                            const focused = idx === attachFocusedIndex;
-                            return (
-                              <div
-                                key={r.requestId || r.id || idx}
-                                onMouseDown={(ev) => {
-                                  // onMouseDown so click registers before blur
-                                  ev.preventDefault();
-                                  loadSourceRequestItems(r.requestId || r.id);
-                                  setAttachDropdownOpen(false);
-                                  setAttachSearchTerm("");
-                                }}
-                                onMouseEnter={() => setAttachFocusedIndex(idx)}
-                                className={`p-3 cursor-pointer flex items-center justify-between ${
-                                  focused ? "bg-slate-100" : "hover:bg-slate-50"
-                                }`}
-                              >
-                                <div>
-                                  <div className="text-sm font-semibold">
-                                    {po}
-                                  </div>
-                                  <div className="text-xs text-slate-500">
-                                    {vendor}
-                                  </div>
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                  {itemCount} item{itemCount === 1 ? "" : "s"}
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    );
-
-                    return portalTarget
-                      ? createPortal(dropdown, portalTarget)
-                      : dropdown;
-                  })()}
               </div>
 
-              {attachSearchResults.length > 0 && (
-                <div className="mt-4 grid gap-2">
-                  {attachSearchResults.map((res) => (
-                    <div
-                      key={res.requestId || res.id}
-                      className="p-3 rounded-lg border hover:bg-slate-50 cursor-pointer flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="text-sm font-semibold">
-                          {res.summary ||
-                            res.requestId ||
-                            res.purchaseOrderNumber ||
-                            res.reference}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {res.vendor ||
-                            res.requester?.displayName ||
-                            "Unknown vendor"}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() =>
-                            loadSourceRequestItems(res.requestId || res.id)
-                          }
-                          className="px-3 py-1 rounded-md bg-emerald-50 text-emerald-700"
-                        >
-                          View Items
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Dropdown results portal */}
+              {accAttachDropdownOpen &&
+                (() => {
+                  const portalTarget =
+                    typeof document !== "undefined" && document.body
+                      ? document.body
+                      : null;
+                  let dropdownStyle = {
+                    position: "fixed",
+                    top: "0px",
+                    left: "0px",
+                    width: "300px",
+                    zIndex: 2147483647,
+                    maxHeight: "60vh",
+                    overflow: "auto",
+                  };
+                  try {
+                    const el = accAttachInputRef && accAttachInputRef.current;
+                    if (el && typeof el.getBoundingClientRect === "function") {
+                      const rect = el.getBoundingClientRect();
+                      dropdownStyle = {
+                        ...dropdownStyle,
+                        top: `${rect.bottom}px`,
+                        left: `${rect.left}px`,
+                        width: `${rect.width}px`,
+                      };
+                    }
+                  } catch (e) {
+                    // ignore
+                  }
 
-              {attachSourceItems.length > 0 && (
+                  const dropdown = (
+                    <div
+                      ref={accAttachDropdownRef}
+                      style={dropdownStyle}
+                      className="bg-white border rounded-lg shadow-lg"
+                    >
+                      {accAttachDropdownLoading ? (
+                        <div className="p-3 text-sm text-slate-500">
+                          Loading...
+                        </div>
+                      ) : accAttachDropdownResults.length === 0 ? (
+                        <div className="p-3 text-sm text-slate-500">
+                          No pending requests found
+                        </div>
+                      ) : (
+                        accAttachDropdownResults.map((r, idx) => {
+                          const firstItem =
+                            Array.isArray(r.items) && r.items.length
+                              ? r.items[0]
+                              : null;
+                          const vendorName =
+                            (r.vendor &&
+                              (typeof r.vendor === "string"
+                                ? r.vendor
+                                : r.vendor.name)) ||
+                            r.requester?.displayName ||
+                            (firstItem &&
+                              (firstItem.vendor?.name ||
+                                firstItem.vendor ||
+                                firstItem.supplier)) ||
+                            "Unknown vendor";
+                          const poNumber =
+                            r.purchaseOrderNumber ||
+                            r.PON ||
+                            r.reference ||
+                            (firstItem &&
+                              (firstItem.purchaseOrderNumber ||
+                                firstItem.PON ||
+                                firstItem.pon)) ||
+                            null;
+                          const requestIdLabel =
+                            r.requestId || r.id || "Unknown ID";
+                          const itemCount = Array.isArray(r.items)
+                            ? r.items.length
+                            : r.itemCount || 0;
+                          const total = (
+                            Array.isArray(r.items) ? r.items : []
+                          ).reduce((s, it) => {
+                            const qty = Number(it.quantity || it.qty || 0);
+                            const line =
+                              it.total != null
+                                ? Number(it.total)
+                                : Number(it.unitPrice || it.price || 0) * qty;
+                            return s + (isNaN(line) ? 0 : line);
+                          }, 0);
+                          const focused = idx === accAttachFocusedIndex;
+                          return (
+                            <div
+                              key={r.requestId || r.id || idx}
+                              onMouseDown={async (ev) => {
+                                ev.preventDefault();
+                                const loaded = await loadAccSourceRequestItems(
+                                  r.requestId || r.id
+                                );
+                                if (!loaded) return;
+                                setAccAttachDropdownOpen(false);
+                                setAccAttachSearchTerm("");
+                              }}
+                              onMouseEnter={() => setAccAttachFocusedIndex(idx)}
+                              className={`p-3 cursor-pointer flex items-center justify-between ${
+                                focused ? "bg-slate-100" : "hover:bg-slate-50"
+                              }`}
+                            >
+                              <div>
+                                <div className="text-sm font-semibold">
+                                  {requestIdLabel}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {vendorName}
+                                </div>
+                                {poNumber && (
+                                  <div className="text-xs text-slate-400 mt-1">
+                                    PON: {poNumber}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 text-right">
+                                <div>
+                                  {itemCount} item{itemCount === 1 ? "" : "s"}
+                                </div>
+                                <div className="mt-1">
+                                  {formatAmount(total, r.currency || "NGN")}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  );
+                  return portalTarget
+                    ? createPortal(dropdown, portalTarget)
+                    : dropdown;
+                })()}
+
+              {/* Loaded source items (after selection) */}
+              {accAttachSourceItems.length > 0 && (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <div className="text-sm font-semibold">
-                        Source: {attachSourceMeta?.requestId}
+                        Source: {accAttachSourceMeta?.requestId}
                       </div>
                       <div className="text-xs text-slate-500">
-                        {attachSourceMeta?.vendor}
+                        {accAttachSourceMeta?.vendor}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={selectAllAttachItems}
+                        onClick={() =>
+                          setAccAttachSelectedItemIds(
+                            accAttachSourceItems
+                              .map((it) => it.itemId || it._id || it.id)
+                              .filter(Boolean)
+                          )
+                        }
                         className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-md"
                       >
                         Select All
                       </button>
                       <button
-                        onClick={clearAttachSelection}
+                        onClick={() => {
+                          setAccAttachSourceItems([]);
+                          setAccAttachSelectedItemIds([]);
+                          setAccAttachSourceMeta(null);
+                          // close dropdown and clear search input per requested behavior
+                          setAccAttachDropdownOpen(false);
+                          setAccAttachSearchTerm("");
+                        }}
                         className="px-3 py-1 bg-red-50 text-red-600 rounded-md"
                       >
                         Clear
@@ -3197,7 +3754,7 @@ const RequestDetailView = ({
                   </div>
 
                   <div className="grid gap-2">
-                    {attachSourceItems.map((it) => {
+                    {accAttachSourceItems.map((it) => {
                       const iid = it.itemId || it._id || it.id;
                       return (
                         <label
@@ -3215,8 +3772,14 @@ const RequestDetailView = ({
                           <div>
                             <input
                               type="checkbox"
-                              checked={attachSelectedItemIds.includes(iid)}
-                              onChange={() => toggleAttachSelect(iid)}
+                              checked={accAttachSelectedItemIds.includes(iid)}
+                              onChange={() =>
+                                setAccAttachSelectedItemIds((prev) =>
+                                  prev.includes(iid)
+                                    ? prev.filter((x) => x !== iid)
+                                    : [...prev, iid]
+                                )
+                              }
                             />
                           </div>
                         </label>
@@ -3227,35 +3790,32 @@ const RequestDetailView = ({
                   <div className="mt-4 flex items-center gap-2">
                     <input
                       placeholder="Purpose (optional)"
+                      id="attach-purpose-accounting"
                       className="flex-1 px-3 py-2 border rounded-lg"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          const p = e.target.value.trim();
-                          const confirmed = window.confirm(
-                            "Attach selected items to this request?"
-                          );
-                          if (confirmed)
-                            attachSelectedToTarget(currentRequest.requestId, p);
-                        }
-                      }}
-                      id="attach-purpose-input"
                     />
                     <button
                       onClick={() => {
                         const el = document.getElementById(
-                          "attach-purpose-input"
+                          "attach-purpose-accounting"
                         );
                         const purpose = el ? el.value.trim() : "";
-                        const confirmed = window.confirm(
-                          "Attach selected items to this request?"
+                        const count = (accAttachSelectedItemIds || []).length;
+                        if (count === 0) return;
+                        const msg =
+                          count === 1
+                            ? "Attach this item to this request?"
+                            : `Attach these ${count} items to this request?`;
+                        const confirmed = window.confirm(msg);
+                        if (!confirmed) return;
+                        // we already confirmed, pass skipConfirm=true so helper won't prompt again
+                        attachAccSelectedToTarget(
+                          currentRequest.requestId,
+                          purpose,
+                          accAttachSourceMeta?.requestId || null,
+                          true
                         );
-                        if (confirmed)
-                          attachSelectedToTarget(
-                            currentRequest.requestId,
-                            purpose
-                          );
                       }}
-                      disabled={attachSelectedItemIds.length === 0}
+                      disabled={accAttachSelectedItemIds.length === 0}
                       className="px-4 py-2 bg-[#036173] text-white rounded-lg"
                     >
                       Attach Selected
@@ -3267,927 +3827,508 @@ const RequestDetailView = ({
           </div>
         )}
 
-      {/* Accounting Lead: attach-from-other-request (excludes shipping requests) */}
-      {showAccountingAttach && (
-        <div className="mb-8">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            🔗 Attach Items from Another Request
-          </h3>
+        {userRole === "invoice controller" && !isReadOnly && (
+          <InvoiceFilesUpload
+            requestId={request.requestId}
+            apiBase={API_BASE_URL}
+            getToken={getToken}
+            onFilesChanged={handleFilesChanged}
+            isReadOnly={isReadOnly}
+            invoiceFiles={currentRequest?.invoiceFiles || []}
+          />
+        )}
+        {userRole === "invoice controller" && !isReadOnly && (
+          <div className="mt-4 flex justify-start mb-[2rem]">
+            <button
+              className="px-4 py-2 bg-emerald-500 text-white rounded-lg shadow hover:bg-emerald-600 transition"
+              onClick={() => setShowEmailComposer(true)}
+            >
+              ✉️ Send as Mail
+            </button>
+          </div>
+        )}
 
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
-            <div className="flex gap-3 items-start relative">
-              <input
-                ref={accAttachInputRef}
-                value={accAttachSearchTerm}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setAccAttachSearchTerm(v);
-                  fetchAccAttachDropdownResults(v);
-                }}
-                onFocus={() => fetchAccAttachDropdownResults("")}
-                onBlur={() =>
-                  setTimeout(() => setAccAttachDropdownOpen(false), 150)
-                }
-                onKeyDown={(e) => {
-                  const max = (accAttachDropdownResults || []).length - 1;
-                  if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    setAccAttachFocusedIndex((i) =>
-                      Math.min(max, Math.max(-1, i + 1))
-                    );
-                    return;
-                  }
-                  if (e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setAccAttachFocusedIndex((i) =>
-                      Math.max(-1, Math.min(max, i - 1))
-                    );
-                    return;
-                  }
-                  // NOTE: Enter handling removed to avoid accidental auto-attach.
-                }}
-                placeholder="Search vendor or PON (excludes shipping requests)"
-                className="flex-1 px-4 py-3 border rounded-xl"
-              />
+        {/* Quotation/Invoice Upload - Procurement Officer gets toggle, Requester (shipping/clearing) gets quotation only */}
+       {userRole === "procurement officer" && !isReadOnly && !isReadOnlyMode && (
+  <>
+    {isPettyCash ? (
+      // Show InvoiceUpload for pettyCash requests
+      <InvoiceUpload
+        requestId={request.requestId}
+        apiBase={API_BASE_URL}
+        getToken={getToken}
+        onFilesChanged={handleFilesChanged}
+      />
+    ) : (
+      // Show Quotation upload for other requests
+      <div className="mb-8">
+        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <MdAttachFile className="text-xl" />
+          Upload Quotation
+        </h3>
+        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            role="button"
+            tabIndex={0}
+            onClick={handleBrowseClick}
+            className="w-full cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors duration-200 p-6 flex items-center justify-between gap-6"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                📎
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  {quotationFiles.length > 0
+                    ? `${quotationFiles.length} file(s) selected`
+                    : "Drag & drop quotation(s) here, or click to browse"}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  PDF or images recommended.
+                </p>
+              </div>
             </div>
-
-            {/* Dropdown results portal */}
-            {accAttachDropdownOpen &&
-              (() => {
-                const portalTarget =
-                  typeof document !== "undefined" && document.body
-                    ? document.body
-                    : null;
-                let dropdownStyle = {
-                  position: "fixed",
-                  top: "0px",
-                  left: "0px",
-                  width: "300px",
-                  zIndex: 2147483647,
-                  maxHeight: "60vh",
-                  overflow: "auto",
-                };
-                try {
-                  const el = accAttachInputRef && accAttachInputRef.current;
-                  if (el && typeof el.getBoundingClientRect === "function") {
-                    const rect = el.getBoundingClientRect();
-                    dropdownStyle = {
-                      ...dropdownStyle,
-                      top: `${rect.bottom}px`,
-                      left: `${rect.left}px`,
-                      width: `${rect.width}px`,
-                    };
-                  }
-                } catch (e) {
-                  // ignore
-                }
-
-                const dropdown = (
-                  <div
-                    ref={accAttachDropdownRef}
-                    style={dropdownStyle}
-                    className="bg-white border rounded-lg shadow-lg"
-                  >
-                    {accAttachDropdownLoading ? (
-                      <div className="p-3 text-sm text-slate-500">
-                        Loading...
-                      </div>
-                    ) : accAttachDropdownResults.length === 0 ? (
-                      <div className="p-3 text-sm text-slate-500">
-                        No pending requests found
-                      </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBrowseClick();
+                }}
+                className="px-4 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] transition"
+              >
+                Add Files
+              </button>
+              {quotationFiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUploadAll();
+                  }}
+                  disabled={isUploading}
+                  className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 transition text-sm"
+                >
+                  Upload All
+                </button>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,image/*"
+              onChange={handleInputChange}
+              multiple
+              className="hidden"
+            />
+          </div>
+          {quotationFiles.length > 0 && (
+            <div className="mt-4 space-y-3">
+              {quotationFiles.map((entry) => (
+                <div key={entry.id} className="flex items-start gap-4">
+                  <div className="w-20 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden border">
+                    {entry.previewUrl ? (
+                      <img
+                        src={entry.previewUrl}
+                        alt="preview"
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
-                      accAttachDropdownResults.map((r, idx) => {
-                        const firstItem =
-                          Array.isArray(r.items) && r.items.length
-                            ? r.items[0]
-                            : null;
-                        const vendorName =
-                          (r.vendor &&
-                            (typeof r.vendor === "string"
-                              ? r.vendor
-                              : r.vendor.name)) ||
-                          r.requester?.displayName ||
-                          (firstItem &&
-                            (firstItem.vendor?.name ||
-                              firstItem.vendor ||
-                              firstItem.supplier)) ||
-                          "Unknown vendor";
-                        const poNumber =
-                          r.purchaseOrderNumber ||
-                          r.PON ||
-                          r.reference ||
-                          (firstItem &&
-                            (firstItem.purchaseOrderNumber ||
-                              firstItem.PON ||
-                              firstItem.pon)) ||
-                          null;
-                        const requestIdLabel =
-                          r.requestId || r.id || "Unknown ID";
-                        const itemCount = Array.isArray(r.items)
-                          ? r.items.length
-                          : r.itemCount || 0;
-                        const total = (
-                          Array.isArray(r.items) ? r.items : []
-                        ).reduce((s, it) => {
-                          const qty = Number(it.quantity || it.qty || 0);
-                          const line =
-                            it.total != null
-                              ? Number(it.total)
-                              : Number(it.unitPrice || it.price || 0) * qty;
-                          return s + (isNaN(line) ? 0 : line);
-                        }, 0);
-                        const focused = idx === accAttachFocusedIndex;
-                        return (
-                          <div
-                            key={r.requestId || r.id || idx}
-                            onMouseDown={async (ev) => {
-                              ev.preventDefault();
-                              const loaded = await loadAccSourceRequestItems(
-                                r.requestId || r.id
-                              );
-                              if (!loaded) return;
-                              setAccAttachDropdownOpen(false);
-                              setAccAttachSearchTerm("");
-                            }}
-                            onMouseEnter={() => setAccAttachFocusedIndex(idx)}
-                            className={`p-3 cursor-pointer flex items-center justify-between ${
-                              focused ? "bg-slate-100" : "hover:bg-slate-50"
-                            }`}
-                          >
-                            <div>
-                              <div className="text-sm font-semibold">
-                                {requestIdLabel}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                {vendorName}
-                              </div>
-                              {poNumber && (
-                                <div className="text-xs text-slate-400 mt-1">
-                                  PON: {poNumber}
-                                </div>
-                              )}
-                            </div>
-                            <div className="text-xs text-slate-500 text-right">
-                              <div>
-                                {itemCount} item{itemCount === 1 ? "" : "s"}
-                              </div>
-                              <div className="mt-1">
-                                {formatAmount(total, r.currency || "NGN")}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
+                      <div className="text-slate-600 text-sm px-2 text-center">
+                        {entry.file.type === "application/pdf"
+                          ? "PDF"
+                          : "FILE"}
+                      </div>
                     )}
                   </div>
-                );
-                return portalTarget
-                  ? createPortal(dropdown, portalTarget)
-                  : dropdown;
-              })()}
-
-            {/* Loaded source items (after selection) */}
-            {accAttachSourceItems.length > 0 && (
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <div className="text-sm font-semibold">
-                      Source: {accAttachSourceMeta?.requestId}
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 truncate w-72">
+                          {entry.file.name}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {(entry.file.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUploadFile(entry.id);
+                          }}
+                          disabled={isUploading || entry.uploaded}
+                          className={`px-3 py-2 rounded-md text-sm font-medium ${
+                            isUploading || entry.uploaded
+                              ? "bg-gray-200 text-slate-600 cursor-not-allowed"
+                              : "bg-emerald-500 text-white hover:bg-emerald-600"
+                          }`}
+                        >
+                          {entry.uploaded ? "Uploaded" : "Upload"}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveFile(entry.id);
+                          }}
+                          className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm"
+                        >
+                          Clear
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500">
-                      {accAttachSourceMeta?.vendor}
+                    <div className="mt-3">
+                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 bg-emerald-500 transition-all"
+                          style={{ width: `${entry.progress}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {entry.progress}%{" "}
+                        {isUploading && entry.progress < 100
+                          ? "• uploading"
+                          : entry.uploaded
+                          ? "• complete"
+                          : ""}
+                      </p>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() =>
-                        setAccAttachSelectedItemIds(
-                          accAttachSourceItems
-                            .map((it) => it.itemId || it._id || it.id)
-                            .filter(Boolean)
-                        )
-                      }
-                      className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-md"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAccAttachSourceItems([]);
-                        setAccAttachSelectedItemIds([]);
-                        setAccAttachSourceMeta(null);
-                        // close dropdown and clear search input per requested behavior
-                        setAccAttachDropdownOpen(false);
-                        setAccAttachSearchTerm("");
-                      }}
-                      className="px-3 py-1 bg-red-50 text-red-600 rounded-md"
-                    >
-                      Clear
-                    </button>
-                  </div>
                 </div>
-
-                <div className="grid gap-2">
-                  {accAttachSourceItems.map((it) => {
-                    const iid = it.itemId || it._id || it.id;
-                    return (
-                      <label
-                        key={iid}
-                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
-                      >
-                        <div>
-                          <div className="text-sm font-semibold">
-                            {it.name || it.description || iid}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            Qty: {it.quantity || it.qty || "N/A"}
-                          </div>
-                        </div>
-                        <div>
-                          <input
-                            type="checkbox"
-                            checked={accAttachSelectedItemIds.includes(iid)}
-                            onChange={() =>
-                              setAccAttachSelectedItemIds((prev) =>
-                                prev.includes(iid)
-                                  ? prev.filter((x) => x !== iid)
-                                  : [...prev, iid]
-                              )
-                            }
-                          />
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-4 flex items-center gap-2">
-                  <input
-                    placeholder="Purpose (optional)"
-                    id="attach-purpose-accounting"
-                    className="flex-1 px-3 py-2 border rounded-lg"
-                  />
-                  <button
-                    onClick={() => {
-                      const el = document.getElementById(
-                        "attach-purpose-accounting"
-                      );
-                      const purpose = el ? el.value.trim() : "";
-                      const count = (accAttachSelectedItemIds || []).length;
-                      if (count === 0) return;
-                      const msg =
-                        count === 1
-                          ? "Attach this item to this request?"
-                          : `Attach these ${count} items to this request?`;
-                      const confirmed = window.confirm(msg);
-                      if (!confirmed) return;
-                      // we already confirmed, pass skipConfirm=true so helper won't prompt again
-                      attachAccSelectedToTarget(
-                        currentRequest.requestId,
-                        purpose,
-                        accAttachSourceMeta?.requestId || null,
-                        true
-                      );
-                    }}
-                    disabled={accAttachSelectedItemIds.length === 0}
-                    className="px-4 py-2 bg-[#036173] text-white rounded-lg"
-                  >
-                    Attach Selected
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-
-  {userRole === "invoice controller" && !isReadOnly && (
-  <InvoiceFilesUpload
-    requestId={request.requestId}
-    apiBase={API_BASE_URL}
-    getToken={getToken}
-    onFilesChanged={handleFilesChanged}
-    isReadOnly={isReadOnly}
-    invoiceFiles={currentRequest?.invoiceFiles || []}
-  />
+      </div>
+    )}
+  </>
 )}
+        {/* ===== End Quotation/Invoice Upload ===== */}
 
+        {/* Items List - Role-based table */}
+        {currentRequest?.items &&
+          currentRequest.items.length > 0 &&
+          userRole !== "invoice controller" && (
+            <div className="mb-8 ">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <MdShoppingCart className="text-xl" />
+                  Requested Items
+                </h3>
+                {user?.role?.toLowerCase() === "procurement officer" &&
+                  !isReadOnly &&
+                  !isReadOnlyMode && (
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="vendorSplit"
+                          checked={doVendorSplit}
+                          onChange={() => handleVendorSplitChange(true)}
+                          disabled={savingVendorSplit}
+                        />
+                        <span className="text-sm font-medium text-slate-700">
+                          Split by Vendor
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="vendorSplit"
+                          checked={!doVendorSplit}
+                          onChange={() => handleVendorSplitChange(false)}
+                          disabled={savingVendorSplit}
+                        />
+                        <span className="text-sm font-medium text-slate-700">
+                          Multiple Vendors
+                        </span>
+                      </label>
+                      {savingVendorSplit && (
+                        <span className="text-xs text-slate-500 ml-2">
+                          Saving...
+                        </span>
+                      )}
+                    </div>
+                  )}
+              </div>
+              <div
+                className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg"
+                style={{ position: "relative", zIndex: 1 }}
+              >
+                {renderItemsTable()}
+              </div>
 
-      {/* Quotation/Invoice Upload - Procurement Officer gets toggle, Requester (shipping/clearing) gets quotation only */}
-      {(canUploadQuotation ||
-        ((String(currentRequest?.tag || "")
-          .toLowerCase()
-          .includes("shipping") ||
-          String(currentRequest?.tag || "")
-            .toLowerCase()
-            .includes("clearing")) &&
-          userRole === "requester")) &&
-        (!isReadOnly && !isReadOnlyMode) && (
-          <div className="mb-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <MdAttachFile className="text-xl" />
-              {/* Show toggle title only for Procurement Officer (non-shipping/clearing) */}
-              {canUploadQuotation &&
-              !String(currentRequest?.tag || "")
-                .toLowerCase()
-                .includes("shipping") &&
-              !String(currentRequest?.tag || "")
-                .toLowerCase()
-                .includes("clearing")
-                ? "Upload Quotation/Invoice"
-                : "Upload Quotation"}
-            </h3>
+            {currentRequest?.doVendorSplit === true &&
+  userRole === "requester" &&
+  Array.isArray(currentRequest?.originalItemsSnapshot) &&
+  currentRequest.originalItemsSnapshot.length > 0 && (
+    <div className="mt-4">
+      <button
+        onClick={() => setShowSnapshot((prev) => !prev)}
+        className="px-4 py-2 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center gap-2"
+      >
+        {showSnapshot ? (
+          <>
+            <span>▲</span> Hide Snapshot
+          </>
+        ) : (
+          <>
+            <span>▼</span> Show Snapshot
+          </>
+        )}
+      </button>
+    </div>
+  )}
 
-            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-              {/* Radio toggle - Only show for Procurement Officer when NOT shipping/clearing tag */}
-              {canUploadQuotation &&
-                !String(currentRequest?.tag || "")
-                  .toLowerCase()
-                  .includes("shipping") &&
-                !String(currentRequest?.tag || "")
-                  .toLowerCase()
-                  .includes("clearing") && (
-                  <div className="mb-4 flex items-center gap-6">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="uploadType"
-                        value="quotation"
-                        checked={uploadType === "quotation"}
-                        onChange={(e) => {
-                          setUploadType(e.target.value);
-                          // Clear pending files when switching type
-                          setQuotationFiles([]);
-                        }}
-                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+{showSnapshot &&
+  currentRequest?.doVendorSplit === true &&
+  userRole === "requester" &&
+  Array.isArray(currentRequest?.originalItemsSnapshot) &&
+  currentRequest.originalItemsSnapshot.length > 0 && (
+    <div className="mt-6">
+      <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+        <MdShoppingCart className="text-xl text-amber-500" />
+        Original Items Snapshot
+      </h3>
+      <div
+        className="bg-amber-50/50 backdrop-blur-xl border-2 border-amber-200 rounded-2xl p-4 shadow-lg"
+        style={{ position: "relative", zIndex: 1 }}
+      >
+        <SnapShotTable
+          items={currentRequest.originalItemsSnapshot}
+          requestType={currentRequest?.requestType || ""}
+          tag={currentRequest?.tag || ""}
+          vendors={vendors}
+        />
+      </div>
+    </div>
+  )}
+
+              {/* Snapshot Table */}
+              {showSnapshot &&
+                currentRequest?.hasBeenIncomplete === true &&
+                Array.isArray(currentRequest?.itemsSnapshot) &&
+                currentRequest.itemsSnapshot.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <MdShoppingCart className="text-xl text-amber-500" />
+                      Original Items Snapshot
+                    </h3>
+                    <div
+                      className="bg-amber-50/50 backdrop-blur-xl border-2 border-amber-200 rounded-2xl p-4 shadow-lg"
+                      style={{ position: "relative", zIndex: 1 }}
+                    >
+                      <SnapShotTable
+                        items={currentRequest.itemsSnapshot}
+                        requestType={currentRequest?.requestType || ""}
+                        tag={currentRequest?.tag || ""}
+                        vendors={vendors}
                       />
-                      <span className="text-sm font-medium text-slate-700">
-                        Quotation
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="uploadType"
-                        value="invoice"
-                        checked={uploadType === "invoice"}
-                        onChange={(e) => {
-                          setUploadType(e.target.value);
-                          // Clear pending files when switching type
-                          setQuotationFiles([]);
-                        }}
-                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <span className="text-sm font-medium text-slate-700">
-                        Invoice
-                      </span>
-                    </label>
+                    </div>
                   </div>
                 )}
-
-              <div
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                role="button"
-                tabIndex={0}
-                onClick={handleBrowseClick}
-                className="w-full cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors duration-200 p-6 flex items-center justify-between gap-6"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
-                    📎
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {quotationFiles.length > 0
-                        ? `${quotationFiles.length} file(s) selected`
-                        : `Drag & drop ${
-                            uploadType === "invoice"
-                              ? "invoice(s)"
-                              : "quotation(s)"
-                          } here, or click to browse`}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {uploadType === "invoice"
-                        ? "PDF invoices (max 10MB each)"
-                        : "PDF or images (max 10MB each)"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleBrowseClick();
-                    }}
-                    className="px-4 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] transition"
-                  >
-                    Add Files
-                  </button>
-
-                  {quotationFiles.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUploadAll();
-                      }}
-                      disabled={isUploading}
-                      className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 transition text-sm"
-                    >
-                      Upload All
-                    </button>
-                  )}
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={uploadType === "invoice" ? ".pdf" : ".pdf,image/*"}
-                  onChange={handleInputChange}
-                  multiple
-                  className="hidden"
-                />
-              </div>
-
-              {/* Files list & per-file actions */}
-              {quotationFiles.length > 0 && (
-                <div className="mt-4 space-y-3">
-                  {quotationFiles.map((entry) => (
-                    <div key={entry.id} className="flex items-start gap-4">
-                      <div className="w-20 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden border">
-                        {entry.previewUrl ? (
-                          <img
-                            src={entry.previewUrl}
-                            alt="preview"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="text-slate-600 text-sm px-2 text-center">
-                            {entry.file.type === "application/pdf"
-                              ? "PDF"
-                              : "FILE"}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900 truncate w-72">
-                              {entry.file.name}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {(entry.file.size / 1024 / 1024).toFixed(2)} MB •{" "}
-                              <span className="capitalize">{uploadType}</span>
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUploadFile(entry.id);
-                              }}
-                              disabled={isUploading || entry.uploaded}
-                              className={`px-3 py-2 rounded-md text-sm font-medium ${
-                                isUploading || entry.uploaded
-                                  ? "bg-gray-200 text-slate-600 cursor-not-allowed"
-                                  : "bg-emerald-500 text-white hover:bg-emerald-600"
-                              }`}
-                            >
-                              {entry.uploaded ? "Uploaded" : "Upload"}
-                            </button>
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveFile(entry.id);
-                              }}
-                              className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm"
-                            >
-                              Clear
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Progress */}
-                        <div className="mt-3">
-                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                            <div
-                              className="h-2 bg-emerald-500 transition-all"
-                              style={{ width: `${entry.progress}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {entry.progress}%{" "}
-                            {isUploading && entry.progress < 100
-                              ? "• uploading"
-                              : entry.uploaded
-                              ? "• complete"
-                              : ""}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+            </div>
+          )}
+        {/* Moved Items Table */}
+        {((selectedRequest?.movedItems &&
+          selectedRequest.movedItems.length > 0) ||
+          (request?.movedItems && request.movedItems.length > 0)) && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdShoppingCart className="text-xl text-slate-400" />
+              Moved Items
+            </h3>
+            <div
+              className="bg-slate-100 backdrop-blur-xl border-2 border-slate-300 rounded-2xl p-4 shadow-lg"
+              style={{ position: "relative", zIndex: 1 }}
+            >
+              <MovedTable
+                items={selectedRequest?.movedItems || request?.movedItems || []}
+                requestType={
+                  selectedRequest?.requestType || request?.requestType || ""
+                }
+              />
             </div>
           </div>
         )}
-      {/* ===== End Quotation/Invoice Upload ===== */}
 
-      {/* Items List - Role-based table */}
-      {currentRequest?.items && currentRequest.items.length > 0 && (
-        <div className="mb-8 ">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <MdShoppingCart className="text-xl" />
-              Requested Items
-            </h3>
-            {user?.role?.toLowerCase() === "procurement officer" &&
-              (!isReadOnly && !isReadOnlyMode) && (
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="vendorSplit"
-                      checked={doVendorSplit}
-                      onChange={() => handleVendorSplitChange(true)}
-                      disabled={savingVendorSplit}
-                    />
-                    <span className="text-sm font-medium text-slate-700">
-                      Split by Vendor
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="vendorSplit"
-                      checked={!doVendorSplit}
-                      onChange={() => handleVendorSplitChange(false)}
-                      disabled={savingVendorSplit}
-                    />
-                    <span className="text-sm font-medium text-slate-700">
-                      Multiple Vendors
-                    </span>
-                  </label>
-                  {savingVendorSplit && (
-                    <span className="text-xs text-slate-500 ml-2">
-                      Saving...
-                    </span>
-                  )}
-                </div>
-              )}
-          </div>
-          <div
-            className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg"
-            style={{ position: "relative", zIndex: 1 }}
-          >
-            {renderItemsTable()}
-          </div>
+        {(() => {
+          const currentStateStr =
+            selectedRequest?.flow?.currentState ||
+            request.flow?.currentState ||
+            "" ||
+            "";
+          const reqType = (
+            selectedRequest?.requestType ||
+            request?.requestType ||
+            ""
+          )
+            .toString()
+            .toLowerCase();
+          const isSecondApprovalAcc =
+            currentStateStr === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2";
+          const isPettyCashReq = reqType === "pettycash";
+          const showPaymentAdviceUpload =
+            reqType === "purchaseorder" ||
+            (isPettyCashReq && isSecondApprovalAcc);
 
-          {/* Show Snapshot Button - Only if itemsSnapshot has data */}
-          {Array.isArray(currentRequest?.itemsSnapshot) &&
-            currentRequest.itemsSnapshot.length > 0 && (
-              <div className="mt-4">
-                <button
-                  onClick={() => setShowSnapshot((prev) => !prev)}
-                  className="px-4 py-2 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center gap-2"
-                >
-                  {showSnapshot ? (
-                    <>
-                      <span>▲</span> Hide Snapshot
-                    </>
-                  ) : (
-                    <>
-                      <span>▼</span> Show Snapshot
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
+          const isAccountingRole =
+            userRole === "accountingofficer" ||
+            userRole === "accounting officer" ||
+            userRole === "accountinglead" ||
+            userRole === "accounting lead" ||
+            userRole === "account lead";
 
-          {/* Snapshot Table */}
-          {showSnapshot &&
-            Array.isArray(currentRequest?.itemsSnapshot) &&
-            currentRequest.itemsSnapshot.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <MdShoppingCart className="text-xl text-amber-500" />
-                  Original Items Snapshot
-                </h3>
-                <div
-                  className="bg-amber-50/50 backdrop-blur-xl border-2 border-amber-200 rounded-2xl p-4 shadow-lg"
-                  style={{ position: "relative", zIndex: 1 }}
-                >
-                  <SnapShotTable
-                    items={currentRequest.itemsSnapshot}
-                    requestType={currentRequest?.requestType || ""}
-                    tag={currentRequest?.tag || ""}
-                    vendors={vendors}
-                  />
-                </div>
-              </div>
-            )}
-        </div>
-      )}
-      {/* Moved Items Table */}
-      {((selectedRequest?.movedItems &&
-        selectedRequest.movedItems.length > 0) ||
-        (request?.movedItems && request.movedItems.length > 0)) && (
-        <div className="mb-8">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <MdShoppingCart className="text-xl text-slate-400" />
-            Moved Items
-          </h3>
-          <div
-            className="bg-slate-100 backdrop-blur-xl border-2 border-slate-300 rounded-2xl p-4 shadow-lg"
-            style={{ position: "relative", zIndex: 1 }}
-          >
-            <MovedTable
-              items={selectedRequest?.movedItems || request?.movedItems || []}
-              requestType={
-                selectedRequest?.requestType || request?.requestType || ""
-              }
-            />
-          </div>
-        </div>
-      )}
-
-      {(() => {
-        const currentStateStr =
-          selectedRequest?.flow?.currentState ||
-          request.flow?.currentState ||
-          "" ||
-          "";
-        const reqType = (
-          selectedRequest?.requestType ||
-          request?.requestType ||
-          ""
-        )
-          .toString()
-          .toLowerCase();
-        const isSecondApprovalAcc =
-          currentStateStr === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2";
-        const isPettyCashReq = reqType === "pettycash";
-        const showPaymentAdviceUpload =
-          reqType === "purchaseorder" ||
-          (isPettyCashReq && isSecondApprovalAcc);
-
-        const isAccountingRole =
-          userRole === "accountingofficer" ||
-          userRole === "accounting officer" ||
-          userRole === "accountinglead" ||
-          userRole === "accounting lead" ||
-          userRole === "account lead";
-
-        if (showPaymentAdviceUpload && isAccountingRole && !isReadOnly) {
-          return (
-            <PaymentAdviceUpload
+          if (showPaymentAdviceUpload && isAccountingRole && !isReadOnly) {
+            return (
+              <PaymentAdviceUpload
+                requestId={request.requestId}
+                apiBase={API_BASE_URL}
+                getToken={getToken}
+                onFilesChanged={handleFilesChanged}
+              />
+            );
+          }
+          return null;
+        })()}
+        {userRole === "requester" &&
+          !isReadOnly &&
+          (selectedRequest?.requestType || request?.requestType) ===
+            "pettyCash" &&
+          (selectedRequest?.flow?.currentState ||
+            request?.flow?.currentState ||
+            request?.status ||
+            "") !== "PENDING_REQUESTER_DELIVERY_CONFIRMATION" && (
+            <InvoiceUpload
               requestId={request.requestId}
               apiBase={API_BASE_URL}
               getToken={getToken}
               onFilesChanged={handleFilesChanged}
             />
-          );
-        }
-        return null;
-      })()}
-      {userRole === "requester" &&
-        !isReadOnly &&
-        (selectedRequest?.requestType || request?.requestType) ===
-          "pettyCash" &&
-        (selectedRequest?.flow?.currentState ||
-          request?.flow?.currentState ||
-          request?.status ||
-          "") !== "PENDING_REQUESTER_DELIVERY_CONFIRMATION" && (
-          <InvoiceUpload
-            requestId={request.requestId}
-            apiBase={API_BASE_URL}
-            getToken={getToken}
-            onFilesChanged={handleFilesChanged}
-          />
-        )}
-      {/* Comments */}
-      <div className="mb-8">
-        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-          💬 Comments
-        </h3>
-        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg space-y-4">
-          {/* Add Comment */}
-          <div className="space-y-3">
-            <textarea
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Add a comment... (be polite and concise)"
-              rows={4}
-              maxLength={1000}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-            />
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-500">
-                {newComment.length}/1000
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setNewComment("")}
-                  className="px-4 py-2 bg-gray-100 text-slate-700 rounded-md hover:bg-gray-200 text-sm"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={postComment}
-                  disabled={postingComment || !newComment.trim()}
-                  className={`px-4 py-2 rounded-md text-sm font-semibold ${
-                    postingComment
-                      ? "bg-gray-300 text-slate-600 cursor-not-allowed"
-                      : "bg-[#036173] text-white hover:bg-[#024f57]"
-                  }`}
-                >
-                  {postingComment ? "Posting..." : "Post Comment"}
-                </button>
-              </div>
-            </div>
-          </div>
+          )}
+        {/* Comments */}
+        <CommentThread
+          requestId={request.requestId}
+          user={user}
+          getToken={getToken}
+        />
 
-          {/* Comments List */}
-          <div className="pt-2 border-t border-slate-100">
-            {commentsLoading ? (
-              <div className="py-6 text-center text-slate-500">
-                Loading comments...
-              </div>
-            ) : comments && comments.length > 0 ? (
-              <>
-                <ul className="space-y-3">
-                  {paginatedComments.map((c) => (
-                    <li
-                      key={c.id}
-                      className="flex items-start gap-3 bg-white rounded-lg p-3 border border-slate-100"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-                        {(c.author || "U")
-                          .toString()
-                          .split(" ")
-                          .map((s) => s[0])
-                          .slice(0, 2)
-                          .join("")
-                          .toUpperCase()}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">
-                              {c.author || "Unknown"}{" "}
-                              {c.role && (
-                                <span className="text-xs text-slate-400 ml-2">
-                                  • {c.role}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-slate-400">
-                              {new Date(
-                                c.createdAt || Date.now()
-                              ).toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-2 text-sm text-slate-700 whitespace-pre-line">
-                          {c.text}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+        {user?.role?.toLowerCase() === "procurement officer" &&
+  !isReadOnly &&
+  !isReadOnlyMode &&
+  !hideAssignForProcurement &&
+  !allItemsAreInStock && (
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <MdDirectionsBoat className="text-xl" />
+                Assign Delivery & Next Approval
+              </h3>
 
-                {/* Pagination controls */}
-                <div className="mt-4 flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => setCommentsPage((p) => Math.max(1, p - 1))}
-                    disabled={commentsPage === 1}
-                    className="px-3 py-1 rounded-md bg-slate-100 text-slate-700 disabled:opacity-50"
-                  >
-                    Prev
-                  </button>
-
-                  {Array.from({ length: totalCommentPages }).map((_, i) => {
-                    const pageIndex = i + 1;
-                    return (
-                      <button
-                        key={pageIndex}
-                        onClick={() => setCommentsPage(pageIndex)}
-                        className={`px-3 py-1 rounded-md text-sm ${
-                          commentsPage === pageIndex
-                            ? "bg-[#036173] text-white"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {pageIndex}
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    onClick={() =>
-                      setCommentsPage((p) => Math.min(totalCommentPages, p + 1))
-                    }
-                    disabled={commentsPage === totalCommentPages}
-                    className="px-3 py-1 rounded-md bg-slate-100 text-slate-700 disabled:opacity-50"
-                  >
-                    Next
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="py-6 text-center text-slate-500">
-                No comments yet. Be the first to comment.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {user?.role?.toLowerCase() === "procurement officer" &&
-        (!isReadOnly && !isReadOnlyMode) &&
-        !hideAssignForProcurement && (
-          <div className="mb-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <MdDirectionsBoat className="text-xl" />
-              Assign Delivery & Next Approval
-            </h3>
-
-            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-              <div className="flex flex-col md:flex-row gap-6">
-                {/* Delivery Target: only for purchaseOrder */}
-                {showDeliveryTarget && (
-                  <div className="flex-1 max-w-md">
-                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                      Delivery Target
-                    </label>
-                    <Select
-                      options={deliveryOptions}
-                      value={deliveryTarget}
-                      onChange={handleDeliveryChange}
-                      isClearable
-                      placeholder="Select delivery target..."
-                      styles={{
-                        control: (provided) => ({
-                          ...provided,
-                          minHeight: "48px",
-                          borderRadius: 12,
-                          boxShadow: "none",
-                        }),
-                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                      }}
-                      menuPortalTarget={document.body}
-                    />
-                    {deliveryTarget && (
-                      <p className="mt-3 text-sm text-slate-600">
-                        Selected:{" "}
-                        <span className="font-semibold">
-                          {deliveryTarget.label}
-                        </span>
-                        {isSavingDelivery && (
-                          <span className="ml-3 text-xs text-slate-500">
-                            Saving...
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <div className="flex flex-col md:flex-row gap-6">
+                  {/* Delivery Target: only for purchaseOrder */}
+                  {showDeliveryTarget && (
+                    <div className="flex-1 max-w-md">
+                      <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                        Delivery Target
+                      </label>
+                      <Select
+                        options={deliveryOptions}
+                        value={deliveryTarget}
+                        onChange={handleDeliveryChange}
+                        isClearable
+                        placeholder="Select delivery target..."
+                        styles={{
+                          control: (provided) => ({
+                            ...provided,
+                            minHeight: "48px",
+                            borderRadius: 12,
+                            boxShadow: "none",
+                          }),
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                        }}
+                        menuPortalTarget={document.body}
+                      />
+                      {deliveryTarget && (
+                        <p className="mt-3 text-sm text-slate-600">
+                          Selected:{" "}
+                          <span className="font-semibold">
+                            {deliveryTarget.label}
                           </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                )}
+                          {isSavingDelivery && (
+                            <span className="ml-3 text-xs text-slate-500">
+                              Saving...
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
-                {/* Next Approval: only for purchaseOrder AND marine destination */}
-                {showNextApproval && (
-                  <div className="flex-1 max-w-md">
-                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                      Next Approval
-                    </label>
-                    <Select
-                      options={nextApprovalOptions}
-                      value={nextApprovalRole}
-                      onChange={handleNextApprovalChange}
-                      isClearable={false}
-                      placeholder="Select"
-                      styles={{
-                        control: (provided) => ({
-                          ...provided,
-                          minHeight: "48px",
-                          borderRadius: 12,
-                          boxShadow: "none",
-                        }),
-                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                      }}
-                      menuPortalTarget={document.body}
-                    />
-                    <div className="mt-2 text-sm text-slate-500 flex items-center justify-between">
-                      <div>
-                        {isSavingNextApproval ? (
+                  {/* Next Approval: only for purchaseOrder AND marine destination */}
+                  {showNextApproval && (
+                    <div className="flex-1 max-w-md">
+                      <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                        Next Approval
+                      </label>
+                      <Select
+                        options={nextApprovalOptions}
+                        value={nextApprovalRole}
+                        onChange={handleNextApprovalChange}
+                        isClearable={false}
+                        placeholder="Select"
+                        styles={{
+                          control: (provided) => ({
+                            ...provided,
+                            minHeight: "48px",
+                            borderRadius: 12,
+                            boxShadow: "none",
+                          }),
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                        }}
+                        menuPortalTarget={document.body}
+                      />
+                      <div className="mt-2 text-sm text-slate-500 flex items-center justify-between">
+                        <div>
+                          {isSavingNextApproval ? (
+                            <span className="text-xs text-slate-500">
+                              Saving...
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-500"></span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Payment Type: show for non-pettyCash; required only when purchaseOrder (validation enforced separately) */}
+                  {showPaymentType && (
+                    <div className="flex-1 max-w-md">
+                      <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                        Payment Type
+                      </label>
+                      <Select
+                        options={paymentTypeOptions}
+                        value={paymentType}
+                        onChange={handlePaymentTypeChange}
+                        isClearable
+                        placeholder="Select"
+                        styles={{
+                          control: (provided) => ({
+                            ...provided,
+                            minHeight: "48px",
+                            borderRadius: 12,
+                            boxShadow: "none",
+                          }),
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                        }}
+                        menuPortalTarget={document.body}
+                      />
+                      <div className="mt-2 text-sm text-slate-500">
+                        {isSavingPaymentType ? (
                           <span className="text-xs text-slate-500">
                             Saving...
                           </span>
@@ -4196,19 +4337,36 @@ const RequestDetailView = ({
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
-                {/* Payment Type: show for non-pettyCash; required only when purchaseOrder (validation enforced separately) */}
-                {showPaymentType && (
+        {userRole === "requester" &&
+          (request?.department || "").toString().toLowerCase() === "freight" &&
+          !isReadOnly && (
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <MdDirectionsBoat className="text-xl" />
+                {String(currentRequest?.tag || "").toLowerCase() ===
+                  "shipping" ||
+                String(currentRequest?.tag || "").toLowerCase() === "clearing"
+                  ? "Flow Route & Delivery Target"
+                  : "Flow Route"}
+              </h3>
+
+              <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                <div className="flex flex-col md:flex-row gap-6">
+                  {/* Flow Route Dropdown */}
                   <div className="flex-1 max-w-md">
                     <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                      Payment Type
+                      Flow Route
                     </label>
                     <Select
-                      options={paymentTypeOptions}
-                      value={paymentType}
-                      onChange={handlePaymentTypeChange}
+                      options={flowRouteOptions}
+                      value={freightRoute}
+                      onChange={handleFreightRouteChange}
                       isClearable
                       placeholder="Select"
                       styles={{
@@ -4223,7 +4381,7 @@ const RequestDetailView = ({
                       menuPortalTarget={document.body}
                     />
                     <div className="mt-2 text-sm text-slate-500">
-                      {isSavingPaymentType ? (
+                      {isSavingFreightRoute ? (
                         <span className="text-xs text-slate-500">
                           Saving...
                         </span>
@@ -4232,485 +4390,427 @@ const RequestDetailView = ({
                       )}
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
-      {userRole === "requester" &&
-        (request?.department || "").toString().toLowerCase() === "freight" &&
-        !isReadOnly && (
-          <div className="mb-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <MdDirectionsBoat className="text-xl" />
-              {String(currentRequest?.tag || "").toLowerCase() === "shipping" ||
-              String(currentRequest?.tag || "").toLowerCase() === "clearing"
-                ? "Flow Route & Delivery Target"
-                : "Flow Route"}
-            </h3>
-
-            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-              <div className="flex flex-col md:flex-row gap-6">
-                {/* Flow Route Dropdown */}
-                <div className="flex-1 max-w-md">
-                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                    Flow Route
-                  </label>
-                  <Select
-                    options={flowRouteOptions}
-                    value={freightRoute}
-                    onChange={handleFreightRouteChange}
-                    isClearable
-                    placeholder="Select"
-                    styles={{
-                      control: (provided) => ({
-                        ...provided,
-                        minHeight: "48px",
-                        borderRadius: 12,
-                        boxShadow: "none",
-                      }),
-                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                    }}
-                    menuPortalTarget={document.body}
-                  />
-                  <div className="mt-2 text-sm text-slate-500">
-                    {isSavingFreightRoute ? (
-                      <span className="text-xs text-slate-500">Saving...</span>
-                    ) : (
-                      <span className="text-xs text-slate-500"></span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Delivery Target Dropdown - Only for shipping/clearing tags */}
-                {(String(currentRequest?.tag || "").toLowerCase() ===
-                  "shipping" ||
-                  String(currentRequest?.tag || "").toLowerCase() ===
-                    "clearing") && (
-                  <div className="flex-1 max-w-md">
-                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                      Delivery Target
-                    </label>
-                    <Select
-                      options={deliveryOptions}
-                      value={deliveryTarget}
-                      onChange={handleDeliveryChange}
-                      isClearable
-                      placeholder="Select delivery target..."
-                      styles={{
-                        control: (provided) => ({
-                          ...provided,
-                          minHeight: "48px",
-                          borderRadius: 12,
-                          boxShadow: "none",
-                        }),
-                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                      }}
-                      menuPortalTarget={document.body}
-                    />
-                    {deliveryTarget && (
-                      <p className="mt-2 text-sm text-slate-600">
-                        Selected:{" "}
-                        <span className="font-semibold">
-                          {deliveryTarget.label}
-                        </span>
-                        {isSavingDelivery && (
-                          <span className="ml-3 text-xs text-slate-500">
-                            Saving...
+                  {/* Delivery Target Dropdown - Only for shipping/clearing tags */}
+                  {(String(currentRequest?.tag || "").toLowerCase() ===
+                    "shipping" ||
+                    String(currentRequest?.tag || "").toLowerCase() ===
+                      "clearing") && (
+                    <div className="flex-1 max-w-md">
+                      <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                        Delivery Target
+                      </label>
+                      <Select
+                        options={deliveryOptions}
+                        value={deliveryTarget}
+                        onChange={handleDeliveryChange}
+                        isClearable
+                        placeholder="Select delivery target..."
+                        styles={{
+                          control: (provided) => ({
+                            ...provided,
+                            minHeight: "48px",
+                            borderRadius: 12,
+                            boxShadow: "none",
+                          }),
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                        }}
+                        menuPortalTarget={document.body}
+                      />
+                      {deliveryTarget && (
+                        <p className="mt-2 text-sm text-slate-600">
+                          Selected:{" "}
+                          <span className="font-semibold">
+                            {deliveryTarget.label}
                           </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                )}
+                          {isSavingDelivery && (
+                            <span className="ml-3 text-xs text-slate-500">
+                              Saving...
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  )}
+ <div className="flex-1 max-w-md">
+      <label className="text-sm font-semibold text-slate-700 mb-2 block">
+        Payment Type
+      </label>
+      <Select
+        options={paymentTypeOptions}
+        value={paymentType}
+        onChange={handlePaymentTypeChange}
+        isClearable
+        placeholder="Select"
+        styles={{
+          control: (provided) => ({
+            ...provided,
+            minHeight: "48px",
+            borderRadius: 12,
+            boxShadow: "none",
+          }),
+          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+        }}
+        menuPortalTarget={document.body}
+      />
+      <div className="mt-2 text-sm text-slate-500">
+        {isSavingPaymentType ? (
+          <span className="text-xs text-slate-500">Saving...</span>
+        ) : (
+          <span className="text-xs text-slate-500"></span>
+        )}
+      </div>
+    </div>
+                  
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+        {/* Attached Documents (quotationFiles from request) */}
+        <AttachedDocuments
+          requestId={request.requestId}
+          files={[
+            ...(currentRequest?.quotationFiles || []),
+            ...(currentRequest?.paymentAdviceFiles || []),
+            ...(currentRequest?.requisitionFiles || []),
+            ...(currentRequest?.requestFiles || []),
+            ...(currentRequest?.purchaseOrderFiles || []),
+          ]}
+          requestData={currentRequest}
+          filesRefreshCounter={filesRefreshCounter}
+        />
+        {isRejectModalOpen && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={closeRejectModal}
+            />
+            <div className="fixed left-1/2 -translate-x-1/2 top-1/3 z-50 w-[95%] max-w-2xl">
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b flex items-center justify-between">
+                  <div className="text-sm font-semibold">Reject Request</div>
+                  <button
+                    onClick={closeRejectModal}
+                    className="text-slate-500 hover:text-slate-700"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-6">
+                  <p className="text-sm text-slate-600 mb-3">
+                    Provide a reason for rejection.
+                  </p>
+
+                  <textarea
+                    value={rejectComment}
+                    onChange={(e) => setRejectComment(e.target.value)}
+                    rows={6}
+                    maxLength={1000}
+                    placeholder="Please explain why this request needs correction..."
+                    className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  />
+
+                  <div className="flex items-center justify-between mt-3">
+                    <div className="text-xs text-slate-500">
+                      <span>{(rejectComment || "").length}</span>/1000
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={closeRejectModal}
+                        className="px-4 py-2 bg-white border rounded-md text-sm text-slate-700 hover:bg-slate-50"
+                        disabled={isRejecting}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() =>
+                          onReject(request.requestId, rejectComment)
+                        }
+                        disabled={
+                          isRejecting || (rejectComment || "").trim().length < 3
+                        }
+                        className={`px-4 py-2 rounded-md text-sm font-semibold ${
+                          isRejecting
+                            ? "bg-gray-300 text-slate-700 cursor-not-allowed"
+                            : "bg-red-50 text-red-600 hover:bg-red-100"
+                        }`}
+                      >
+                        {isRejecting ? "Rejecting…" : "Reject and Send"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
         )}
 
-      {/* Attached Documents (quotationFiles from request) */}
-      <AttachedDocuments
-        requestId={request.requestId}
-        files={[
-          ...(currentRequest?.quotationFiles || []),
-          ...(currentRequest?.paymentAdviceFiles || []),
-          ...(currentRequest?.requisitionFiles || []),
-          ...(currentRequest?.requestFiles || []),
-          ...(currentRequest?.purchaseOrderFiles || []),
-        ]}
-        requestData={currentRequest}
-        filesRefreshCounter={filesRefreshCounter}
-      />
-      {isRejectModalOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/40 z-40"
-            onClick={closeRejectModal}
-          />
-          <div className="fixed left-1/2 -translate-x-1/2 top-1/3 z-50 w-[95%] max-w-2xl">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 border-b flex items-center justify-between">
-                <div className="text-sm font-semibold">Reject Request</div>
-                <button
-                  onClick={closeRejectModal}
-                  className="text-slate-500 hover:text-slate-700"
-                  title="Close"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="p-6">
-                <p className="text-sm text-slate-600 mb-3">
-                  Provide a reason for rejection.
-                </p>
-
-                <textarea
-                  value={rejectComment}
-                  onChange={(e) => setRejectComment(e.target.value)}
-                  rows={6}
-                  maxLength={1000}
-                  placeholder="Please explain why this request needs correction..."
-                  className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                />
-
-                <div className="flex items-center justify-between mt-3">
-                  <div className="text-xs text-slate-500">
-                    <span>{(rejectComment || "").length}</span>/1000
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={closeRejectModal}
-                      className="px-4 py-2 bg-white border rounded-md text-sm text-slate-700 hover:bg-slate-50"
-                      disabled={isRejecting}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={submitReject}
-                      disabled={
-                        isRejecting || (rejectComment || "").trim().length < 3
-                      }
-                      className={`px-4 py-2 rounded-md text-sm font-semibold ${
-                        isRejecting
-                          ? "bg-gray-300 text-slate-700 cursor-not-allowed"
-                          : "bg-red-50 text-red-600 hover:bg-red-100"
-                      }`}
-                    >
-                      {isRejecting ? "Rejecting…" : "Reject and Send"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isQueryModalOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/40 z-40"
-            onClick={closeQueryModal}
-          />
-          <div className="fixed left-1/2 -translate-x-1/2 top-1/6 z-50 w-[95%] max-w-2xl">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 border-b flex items-center justify-between">
-                <div className="text-sm font-semibold">Query Request</div>
-                <button
-                  onClick={closeQueryModal}
-                  className="text-slate-500 hover:text-slate-700"
-                  title="Close"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="p-6">
-                <p className="text-sm text-slate-600 mb-3">
-                  Provide a reason for querying this request.
-                </p>
-
-                <textarea
-                  value={queryComment}
-                  onChange={(e) => setQueryComment(e.target.value)}
-                  rows={6}
-                  maxLength={1000}
-                  placeholder="Please explain what needs correction..."
-                  className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                />
-
-                <div className="mt-4">
-                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                    Select who to query
-                  </label>
-                  {queryTargetsLoading ? (
-                    <div className="p-3 text-sm text-slate-500">
-                      Loading targets...
-                    </div>
-                  ) : queryTargets.length === 0 ? (
-                    <div className="p-3 text-sm text-red-600">
-                      No available targets to query. Query is not allowed.
-                    </div>
-                  ) : (
-                    <Select
-                      options={queryTargets.map((t) => ({
-                        value: t.role,
-                        label: t.displayName,
-                      }))}
-                      value={selectedQueryTarget}
-                      onChange={(opt) => setSelectedQueryTarget(opt)}
-                      placeholder="Select who to query..."
-                      isClearable={false}
-                      styles={{
-                        control: (provided) => ({
-                          ...provided,
-                          minHeight: "15px",
-                          borderRadius: 12,
-                          boxShadow: "none",
-                        }),
-                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                        menu: (base) => ({ ...base, maxHeight: "220px" }),
-                        menuList: (base) => ({
-                          ...base,
-                          maxHeight: "220px",
-                          overflowY: "auto",
-                        }),
-                      }}
-                      menuPortalTarget={
-                        typeof document !== "undefined" ? document.body : null
-                      }
-                      menuPosition="fixed"
-                    />
-                  )}
-                  <div className="text-xs text-slate-500 mt-2">
-                    Both the reason and the selection are required.
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-3">
-                  <div className="text-xs text-slate-500">
-                    <span>{(queryComment || "").length}</span>/1000
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={closeQueryModal}
-                      className="px-4 py-2 bg-white border rounded-md text-sm text-slate-700 hover:bg-slate-50"
-                      disabled={isQuerying}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={submitQuery}
-                      disabled={
-                        isQuerying ||
-                        (queryComment || "").trim().length < 3 ||
-                        !selectedQueryTarget ||
-                        queryTargets.length === 0
-                      }
-                      className={`px-4 py-2 rounded-md text-sm font-semibold ${
-                        isQuerying
-                          ? "bg-gray-300 text-slate-700 cursor-not-allowed"
-                          : "bg-amber-500 text-white hover:bg-amber-600"
-                      }`}
-                    >
-                      {isQuerying ? "Sending..." : "Send Query"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isDeleteModalOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/40 z-40"
-            onClick={closeDeleteModal}
-          />
-          <div className="fixed left-1/2 -translate-x-1/2 top-1/3 z-50 w-[95%] max-w-2xl">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 border-b flex items-center justify-between">
-                <div className="text-sm font-semibold">Delete Item</div>
-                <button
-                  onClick={closeDeleteModal}
-                  className="text-slate-500 hover:text-slate-700"
-                  title="Close"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="p-6">
-                <p className="text-sm text-slate-600 mb-3">
-                  Provide a reason for deleting this item:{" "}
-                  <span className="font-semibold">
-                    {deleteTargetItem?.name || deleteTargetItem?.itemId || ""}
-                  </span>
-                </p>
-
-                <textarea
-                  value={deleteReason}
-                  onChange={(e) => setDeleteReason(e.target.value)}
-                  rows={6}
-                  maxLength={1000}
-                  placeholder="Please explain why this item should be deleted..."
-                  className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                />
-
-                <div className="flex items-center justify-between mt-3">
-                  <div className="text-xs text-slate-500">
-                    <span>{(deleteReason || "").length}</span>/1000
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={closeDeleteModal}
-                      className="px-4 py-2 bg-white border rounded-md text-sm text-slate-700 hover:bg-slate-50"
-                      disabled={isDeleting}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={submitDelete}
-                      disabled={
-                        isDeleting || (deleteReason || "").trim().length < 3
-                      }
-                      className={`px-4 py-2 rounded-md text-sm font-semibold ${
-                        isDeleting
-                          ? "bg-gray-300 text-slate-700 cursor-not-allowed"
-                          : "bg-red-50 text-red-600 hover:bg-red-100"
-                      }`}
-                    >
-                      {isDeleting ? "Deleting…" : "Delete Item"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Action Footer */}
-      {(!isReadOnly && !isReadOnlyMode) && (
-        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl px-6 md:px-8 py-6 shadow-lg sticky bottom-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-slate-600 text-sm">
-              Review the request details and take action
-            </p>
-            <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-              {allowedRejectRoles.includes(userRole) &&
-                !isVesselManagerBlockedForActions &&
-                !isQueried && (
+        {isQueryModalOpen && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={closeQueryModal}
+            />
+            <div className="fixed left-1/2 -translate-x-1/2 top-1/6 z-50 w-[95%] max-w-2xl">
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b flex items-center justify-between">
+                  <div className="text-sm font-semibold">Query Request</div>
                   <button
-                    onClick={openRejectModal}
-                    disabled={actionLoading}
-                    className="w-full sm:w-auto px-6 h-12 bg-white border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:border-slate-400 hover:bg-slate-50 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                    onClick={closeQueryModal}
+                    className="text-slate-500 hover:text-slate-700"
+                    title="Close"
                   >
-                    <MdCancel className="text-lg" />
-                    Reject
+                    ✕
                   </button>
-                )}
-              {allowedQueryRoles.includes(userRole) &&
-                !isVesselManagerBlockedForActions &&
-                !isQueried && (
-                  <button
-                    onClick={openQueryModal}
-                    disabled={actionLoading}
-                    className="w-full sm:w-auto px-6 h-12 bg-amber-500 text-white rounded-xl font-semibold hover:bg-amber-600 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-50"
-                  >
-                    <MdHelp className="text-lg" />
-                    Query
-                  </button>
-                )}
+                </div>
 
-              {userRole === "procurementmanager" ||
-              userRole === "procurement manager" ? (
-                <div className="relative" ref={approveDropdownRef}>
-                  <div className="flex">
+                <div className="p-6">
+                  <p className="text-sm text-slate-600 mb-3">
+                    Provide a reason for querying this request.
+                  </p>
+
+                  <textarea
+                    value={queryComment}
+                    onChange={(e) => setQueryComment(e.target.value)}
+                    rows={6}
+                    maxLength={1000}
+                    placeholder="Please explain what needs correction..."
+                    className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  />
+
+                  <div className="mt-4">
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                      Select who to query
+                    </label>
+                    {queryTargetsLoading ? (
+                      <div className="p-3 text-sm text-slate-500">
+                        Loading targets...
+                      </div>
+                    ) : queryTargets.length === 0 ? (
+                      <div className="p-3 text-sm text-red-600">
+                        No available targets to query. Query is not allowed.
+                      </div>
+                    ) : (
+                      <Select
+                        options={queryTargets.map((t) => ({
+                          value: t.role,
+                          label: t.displayName,
+                        }))}
+                        value={selectedQueryTarget}
+                        onChange={(opt) => setSelectedQueryTarget(opt)}
+                        placeholder="Select who to query..."
+                        isClearable={false}
+                        styles={{
+                          control: (provided) => ({
+                            ...provided,
+                            minHeight: "15px",
+                            borderRadius: 12,
+                            boxShadow: "none",
+                          }),
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                          menu: (base) => ({ ...base, maxHeight: "220px" }),
+                          menuList: (base) => ({
+                            ...base,
+                            maxHeight: "220px",
+                            overflowY: "auto",
+                          }),
+                        }}
+                        menuPortalTarget={
+                          typeof document !== "undefined" ? document.body : null
+                        }
+                        menuPosition="fixed"
+                      />
+                    )}
+                    <div className="text-xs text-slate-500 mt-2">
+                      Both the reason and the selection are required.
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-3">
+                    <div className="text-xs text-slate-500">
+                      <span>{(queryComment || "").length}</span>/1000
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={closeQueryModal}
+                        className="px-4 py-2 bg-white border rounded-md text-sm text-slate-700 hover:bg-slate-50"
+                        disabled={isQuerying}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitQuery}
+                        disabled={
+                          isQuerying ||
+                          (queryComment || "").trim().length < 3 ||
+                          !selectedQueryTarget ||
+                          queryTargets.length === 0
+                        }
+                        className={`px-4 py-2 rounded-md text-sm font-semibold ${
+                          isQuerying
+                            ? "bg-gray-300 text-slate-700 cursor-not-allowed"
+                            : "bg-amber-500 text-white hover:bg-amber-600"
+                        }`}
+                      >
+                        {isQuerying ? "Sending..." : "Send Query"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {isDeleteModalOpen && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={closeDeleteModal}
+            />
+            <div className="fixed left-1/2 -translate-x-1/2 top-1/3 z-50 w-[95%] max-w-2xl">
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b flex items-center justify-between">
+                  <div className="text-sm font-semibold">Delete Item</div>
+                  <button
+                    onClick={closeDeleteModal}
+                    className="text-slate-500 hover:text-slate-700"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-6">
+                  <p className="text-sm text-slate-600 mb-3">
+                    Provide a reason for deleting this item:{" "}
+                    <span className="font-semibold">
+                      {deleteTargetItem?.name || deleteTargetItem?.itemId || ""}
+                    </span>
+                  </p>
+
+                  <textarea
+                    value={deleteReason}
+                    onChange={(e) => setDeleteReason(e.target.value)}
+                    rows={6}
+                    maxLength={1000}
+                    placeholder="Please explain why this item should be deleted..."
+                    className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  />
+
+                  <div className="flex items-center justify-between mt-3">
+                    <div className="text-xs text-slate-500">
+                      <span>{(deleteReason || "").length}</span>/1000
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={closeDeleteModal}
+                        className="px-4 py-2 bg-white border rounded-md text-sm text-slate-700 hover:bg-slate-50"
+                        disabled={isDeleting}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitDelete}
+                        disabled={
+                          isDeleting || (deleteReason || "").trim().length < 3
+                        }
+                        className={`px-4 py-2 rounded-md text-sm font-semibold ${
+                          isDeleting
+                            ? "bg-gray-300 text-slate-700 cursor-not-allowed"
+                            : "bg-red-50 text-red-600 hover:bg-red-100"
+                        }`}
+                      >
+                        {isDeleting ? "Deleting…" : "Delete Item"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Action Footer */}
+        {!isReadOnly &&
+          !isReadOnlyMode &&
+          (!isRejected // If not rejected, show as before
+            ? !isQueried ||
+              (queriedByRole && userRole.replace(/\s/g, "") === queriedByRole)
+            : canRecall) && ( // If rejected, only show for the user who rejected
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl px-6 md:px-8 py-6 shadow-lg sticky bottom-4">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p className="text-slate-600 text-sm">
+                  Review the request details and take action
+                </p>
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                  {allowedRejectRoles.includes(userRole) &&
+                    !isVesselManagerBlockedForActions &&
+                    !isRejected && (
+                      <button
+                        onClick={openRejectModal}
+                        disabled={actionLoading}
+                        className="w-full sm:w-auto px-6 h-12 bg-white border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:border-slate-400 hover:bg-slate-50 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <MdCancel className="text-lg" />
+                        Reject
+                      </button>
+                    )}
+                  {allowedQueryRoles.includes(userRole) &&
+                    !isVesselManagerBlockedForActions &&
+                    !isQueried &&
+                    !isRejected && (
+                      <button
+                        onClick={openQueryModal}
+                        disabled={actionLoading}
+                        className="w-full sm:w-auto px-6 h-12 bg-amber-500 text-white rounded-xl font-semibold hover:bg-amber-600 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-50"
+                      >
+                        <MdHelp className="text-lg" />
+                        Query
+                      </button>
+                    )}
+
+                  {userRole === "procurementmanager" ||
+                  userRole === "procurement manager" ? (
+                    // Commented out dropdown approve/send as mail
+                    // <div className="relative" ref={approveDropdownRef}>...</div>
                     <button
                       onClick={handleApproveClick}
                       disabled={actionLoading}
-                      className="w-full sm:w-auto px-6 h-12 rounded-l-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
+                      className="w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
                     >
                       <MdCheckCircle className="text-lg" />
                       {actionLoading ? "Processing..." : "Approve Request"}
                     </button>
+                  ) : (
                     <button
-                      onClick={() => setApproveDropdownOpen((prev) => !prev)}
+                      onClick={handleApproveClick}
                       disabled={actionLoading}
-                      className="h-12 px-3 rounded-r-xl font-semibold transition-all duration-200 flex items-center justify-center border-l border-white/30 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
-                      aria-label="Approval options"
+                      className="w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
                     >
-                      {" "}
-                      <svg
-                        className={`w-4 h-4 transition-transform ${
-                          approveDropdownOpen ? "rotate-180" : ""
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
+                      <MdCheckCircle className="text-lg" />
+                      {actionLoading ? "Processing..." : "Approve Request"}
                     </button>
-                  </div>
-                  {approveDropdownOpen && (
-                    <div
-                      className="absolute bottom-full mb-2 right-0 w-64 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden"
-                      style={{ zIndex: 9999 }}
-                    >
-                      <button
-                        onClick={() => {
-                          setApproveDropdownOpen(false);
-                          handleApproveClick();
-                        }}
-                        disabled={actionLoading}
-                        className="w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors"
-                      >
-                        <MdCheckCircle className="text-lg text-emerald-600" />
-                        Approve Request
-                      </button>
-                      <button
-                        onClick={() => {
-                          setApproveDropdownOpen(false);
-                          handleApproveClick();
-                        }}
-                        disabled={actionLoading}
-                        className="w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100 transition-colors"
-                      >
-                        <MdCheckCircle className="text-lg text-emerald-600" />
-                        Approve and Send Via Email
-                      </button>
-                    </div>
                   )}
                 </div>
-              ) : (
-                <button
-                  onClick={handleApproveClick}
-                  disabled={actionLoading}
-                  className="w-full sm:w-auto px-6 h-12 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 bg-gradient-to-r from-[#036173] to-emerald-600 text-white hover:shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50"
-                >
-                  <MdCheckCircle className="text-lg" />
-                  {actionLoading ? "Processing..." : "Approve Request"}
-                </button>
-              )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
+          )}
+        <button
+          onClick={onBack}
+          className="mt-10 mb-6 flex items-center gap-2 px-6 py-3 bg-[#036173] text-white hover:bg-[#024f57] rounded-xl font-bold "
+        >
+          <MdArrowBack className="text-2xl" />
+          Back to Requests
+        </button>
+      </div>
+    </>
   );
 };
 

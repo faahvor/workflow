@@ -12,6 +12,10 @@ import {
   MdDescription,
   MdOutlineLocalShipping,
   MdDoneAll,
+  MdNotificationsActive,
+  MdCancel,
+  MdChat,
+  MdOutlineSupportAgent,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -21,33 +25,43 @@ const RequesterSidebar = ({
   activeView,
   setActiveView,
   pendingCount = 0,
+  rejectedCount = 0,
+  notificationCount = 0,
   isRequester = true,
   selectedRequestOrigin = null,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [requestsExpanded, setRequestsExpanded] = useState(false); // default collapsed
+  const [requestsExpanded, setRequestsExpanded] = useState(true); // default open // default collapsed
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const requestsViews = ["createNew", "pending", "myrequests", "completed"];
-    // include merged only for users in the Freight department (case-insensitive)
-    const dept = (user?.department || "").toString().toLowerCase();
-    if (dept.includes("freight")) {
-      requestsViews.push("merged");
-    }
+  // useEffect(() => {
+  //   const requestsViews = [
+  //     "createNew",
+  //     "pending",
+  //     "myrequests",
+  //     "rejected",
+  //     "completed",
+  //   ];
+  //   // include merged only for users in the Freight department (case-insensitive)
+  //   const dept = (user?.department || "").toString().toLowerCase();
+  //   if (dept.includes("freight")) {
+  //     requestsViews.push("merged");
+  //   }
 
-    // Also expand if viewing detail from a request sub-view
-    const isDetailFromRequests =
-      activeView === "detail" &&
-      ["pending", "myrequests", "completed", "merged"].includes(selectedRequestOrigin);
+  //   // Also expand if viewing detail from a request sub-view
+  //   const isDetailFromRequests =
+  //     activeView === "detail" &&
+  //     ["pending", "myrequests", "completed", "merged"].includes(
+  //       selectedRequestOrigin
+  //     );
 
-    if (requestsViews.includes(activeView) || isDetailFromRequests) {
-      setRequestsExpanded(true);
-    } else {
-      setRequestsExpanded(false);
-    }
-  }, [activeView, user, selectedRequestOrigin]);
+  //   if (requestsViews.includes(activeView) || isDetailFromRequests) {
+  //     setRequestsExpanded(true);
+  //   } else {
+  //     setRequestsExpanded(false);
+  //   }
+  // }, [activeView, user, selectedRequestOrigin]);
 
   const handleLogout = () => {
     logout();
@@ -164,11 +178,29 @@ const RequesterSidebar = ({
                     <span className="text-sm">My Requests</span>
                   </div>
                 </button>
+                <button
+                  onClick={() => setActiveView("rejected")}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                    activeView === "rejected"
+                      ? "bg-gray-800/80 text-white"
+                      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <MdCancel className="text-lg" />
+                    <span className="text-sm">Rejected</span>
+                  </div>
+                  {rejectedCount > 0 && (
+                    <span className="bg-orange-500/20 text-orange-400 text-xs px-2 py-0.5 rounded-lg font-semibold">
+                      {rejectedCount}
+                    </span>
+                  )}
+                </button>
                 {(user?.department || "")
                   .toString()
                   .toLowerCase()
                   .includes("freight") && (
-                    <button
+                  <button
                     onClick={() => setActiveView("merged")}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
                       activeView === "merged" ||
@@ -201,10 +233,54 @@ const RequesterSidebar = ({
               </div>
             )}
           </div>
+          <button
+            onClick={() => setActiveView("notifications")}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              activeView === "notifications"
+                ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg"
+                : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+            }`}
+          >
+            <MdNotificationsActive className="text-xl" />
+            <span className="font-medium text-sm">Notifications</span>
+            {notificationCount > 0 && (
+              <span className="ml-auto bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
+                {notificationCount}
+              </span>
+            )}
+          </button>
 
           <button
+            onClick={() => {
+              setActiveView("chatRoom");
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              activeView === "chatRoom"
+                ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+            }`}
+          >
+            <MdChat className="text-xl shrink-0" />
+            <span className="font-medium text-sm">Chat Room</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveView("support");
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              activeView === "support"
+                ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+            }`}
+          >
+            <MdOutlineSupportAgent className="text-xl shrink-0" />
+            <span className="font-medium text-sm">Support</span>
+          </button>
+          <button
             onClick={() => setActiveView("signature")}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 text-sm ${
               activeView === "signature"
                 ? "bg-gray-800/80 text-white"
                 : "text-gray-300 hover:text-white hover:bg-gray-800/50"

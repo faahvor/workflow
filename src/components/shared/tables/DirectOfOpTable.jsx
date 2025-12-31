@@ -167,7 +167,7 @@ const DirectOfOpTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}

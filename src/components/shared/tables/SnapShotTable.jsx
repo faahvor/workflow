@@ -9,7 +9,8 @@ const SnapShotTable = ({
   const [needsScroll, setNeedsScroll] = useState(false);
 
   const tagLower = String(tag || "").toLowerCase();
-  const isPettyCash = (requestType || "").toString().toLowerCase() === "pettycash";
+  const isPettyCash =
+    (requestType || "").toString().toLowerCase() === "pettycash";
 
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
@@ -128,12 +129,14 @@ const SnapShotTable = ({
                   </th>
                 </>
               )}
+              {!isAnyItemInStock && (
 
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Discount (%)
               </th>
+              )}
 
-              {!isPettyCash && (
+              {!isPettyCash && !isAnyItemInStock && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   VAT Amount
                 </th>
@@ -169,7 +172,7 @@ const SnapShotTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}
@@ -212,10 +215,13 @@ const SnapShotTable = ({
                       {item.unitPrice ? (
                         <>
                           {item.currency || "NGN"}{" "}
-                          {parseFloat(item.unitPrice).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          {parseFloat(item.unitPrice).toLocaleString(
+                            undefined,
+                            {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }
+                          )}
                         </>
                       ) : (
                         "N/A"
@@ -225,18 +231,19 @@ const SnapShotTable = ({
                     {/* Total Price */}
                     <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
                       {item.currency || "NGN"}{" "}
-                      {Number(item.totalPrice || item.total || 0).toLocaleString(
-                        undefined,
-                        {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }
-                      )}
+                      {Number(
+                        item.totalPrice || item.total || 0
+                      ).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </td>
                   </>
                 )}
 
                 {/* Discount */}
+                              {!isAnyItemInStock && (
+
                 <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                   {item.discount !== "" &&
                   item.discount !== null &&
@@ -244,9 +251,10 @@ const SnapShotTable = ({
                     ? `${item.discount}%`
                     : "0%"}
                 </td>
+                              )}
 
                 {/* VAT Amount - Hide for pettyCash */}
-                {!isPettyCash && (
+                {!isPettyCash && !isAnyItemInStock && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.vatted ? (
                       <>
@@ -285,7 +293,9 @@ const SnapShotTable = ({
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById("snapshot-table-container");
+              const container = document.getElementById(
+                "snapshot-table-container"
+              );
               if (container) {
                 container.scrollLeft -= 100;
               }
@@ -296,7 +306,9 @@ const SnapShotTable = ({
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById("snapshot-table-container");
+              const container = document.getElementById(
+                "snapshot-table-container"
+              );
               if (container) {
                 container.scrollLeft += 100;
               }

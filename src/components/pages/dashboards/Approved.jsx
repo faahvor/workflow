@@ -6,7 +6,11 @@ import {
   MdAttachMoney,
   MdDirectionsBoat,
   MdArrowForward,
+  MdLocalShipping,
+  MdInventory,
 } from "react-icons/md";
+import { FaHouseFloodWaterCircleArrowRight } from "react-icons/fa6";
+import { HiClock } from "react-icons/hi";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -25,6 +29,7 @@ const Approved = ({
 
   const normalizedSearch = (searchQuery || "").trim().toLowerCase();
   const normalizedFilter = (filterType || "all").trim().toLowerCase();
+  const [approvedFlowMap, setApprovedFlowMap] = useState({});
 
   useEffect(() => {
     fetchVessels();
@@ -34,6 +39,35 @@ const Approved = ({
     fetchApprovedRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
+
+  useEffect(() => {
+    // Fetch flow for each request and store result in approvedFlowMap
+    const fetchAllFlows = async () => {
+      const token = getToken();
+      const map = {};
+      await Promise.all(
+        (requests || []).map(async (request) => {
+          try {
+            const resp = await axios.get(
+              `${API_BASE_URL}/requests/${request.requestId}/flow`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const flow = resp.data.data || [];
+            const procStep = flow.find(
+              (step) => step.state === "PENDING_PROCUREMENT_OFFICER_APPROVAL"
+            );
+            map[request.requestId] = procStep?.status === "completed";
+          } catch {
+            map[request.requestId] = false;
+          }
+        })
+      );
+      setApprovedFlowMap(map);
+    };
+
+    if (requests.length > 0) fetchAllFlows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests]);
 
   const fetchVessels = async () => {
     try {
@@ -71,64 +105,105 @@ const Approved = ({
     return v?.name || vesselId;
   };
 
-  const getTypeColor = (type) => {
-    switch (type) {
-      case "purchaseOrder":
-        return "bg-emerald-100 text-emerald-600 border-emerald-200";
-      case "quotation":
-        return "bg-teal-100 text-teal-600 border-teal-200";
-      default:
-        return "bg-slate-100 text-slate-600 border-slate-200";
-    }
-  };
+ const getTypeColor = (type) => {
+  switch (type) {
+    case "purchaseOrder":
+      return "bg-emerald-100 text-emerald-600 border-emerald-200";
+    case "pettyCash":
+      return "bg-teal-100 text-teal-600 border-teal-200";
+    case "inStock":
+      return "bg-blue-100 text-blue-600 border-blue-200"; // <-- Add this line
+    default:
+      return "bg-slate-100 text-slate-600 border-slate-200";
+  }
+};
 
-  const getTypeIcon = (type) => {
-    switch (type) {
-      case "purchaseOrder":
-        return <MdShoppingCart className="text-sm" />;
-      case "quotation":
-        return <MdAttachMoney className="text-sm" />;
-      default:
-        return null;
-    }
-  };
+const getTypeIcon = (type) => {
+  switch (type) {
+    case "purchaseOrder":
+      return <MdShoppingCart className="text-sm" />;
+    case "pettyCash":
+      return <MdAttachMoney className="text-sm" />;
+    case "inStock":
+      return <MdInventory className="text-sm" />; // <-- Add this line
+    default:
+      return null;
+  }
+};
 
   const getTypeLabel = (type) => {
     switch (type) {
       case "purchaseOrder":
         return "Purchase Order";
-      case "quotation":
-        return "Quotation";
+      case "pettyCash":
+        return "Petty Cash";
+         case "inStock":
+      return "INSTOCK";
       default:
         return type;
     }
   };
 
-  const filteredRequests = (requests || []).filter((req) => {
-    const matchesSearch =
-      !normalizedSearch ||
-      (req.requestId || "").toLowerCase().includes(normalizedSearch) ||
-      (req.requester?.displayName || "")
-        .toLowerCase()
-        .includes(normalizedSearch) ||
-      (req.department || "").toLowerCase().includes(normalizedSearch);
+    const getClearingColor = () => {
+    return "bg-purple-100 text-blue-700 border-purple-200";
+  };
 
-    const reqType = (req.requestType || "").toLowerCase();
-    const matchesFilter =
-      normalizedFilter === "all" ||
-      reqType === normalizedFilter ||
-      (normalizedFilter === "pettycash" && reqType.includes("petty")) ||
-      (normalizedFilter === "purchaseorder" && reqType.includes("purchase"));
+  const getClearingIcon = () => {
+    return <FaHouseFloodWaterCircleArrowRight className="text-sm" />;
+  };
 
-    return matchesSearch && matchesFilter;
-  });
+ // ...existing code...
+
+const filteredRequests = (requests || []).filter((req) => {
+  const matchesSearch =
+    req.requestId?.toLowerCase().includes(normalizedSearch) ||
+    req.offshoreReqNumber?.toLowerCase().includes(normalizedSearch) ||
+    req.jobNumber?.toLowerCase().includes(normalizedSearch) ||
+    req.requester?.displayName?.toLowerCase().includes(normalizedSearch) ||
+    req.department?.toLowerCase().includes(normalizedSearch);
+
+  const reqType = (req.requestType || "").toLowerCase();
+  const matchesFilter =
+    normalizedFilter === "all" ||
+    reqType === normalizedFilter ||
+    (normalizedFilter === "pettycash" && reqType.includes("petty")) ||
+    (normalizedFilter === "purchaseorder" && reqType.includes("purchase"));
+
+  return matchesSearch && matchesFilter;
+});
+
+// --- Add this sorting logic ---
+const sortedRequests = [
+  // High priority requests first
+  ...filteredRequests.filter((r) => r.priority === "high"),
+  // Then all others, sorted by requestId descending
+  ...filteredRequests
+    .filter((r) => r.priority !== "high")
+    .sort((a, b) => {
+      // If requestId is numeric, sort numerically
+      const numA = Number(String(a.requestId).replace(/\D/g, ""));
+      const numB = Number(String(b.requestId).replace(/\D/g, ""));
+      return numB - numA;
+    }),
+];
 
   const handleViewDetails = (request) => {
     if (typeof onOpenDetail === "function") onOpenDetail(request);
   };
+  function hasProcurementOfficerApproved(request) {
+    return (
+      Array.isArray(request.history) &&
+      request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      )
+    );
+  }
 
   return (
-    <div className="p-6 md:p-8">
+    <div >
       {loading && <p>Loading approved requests...</p>}
       {!loading && filteredRequests.length === 0 && (
         <p>No approved requests found.</p>
@@ -136,7 +211,7 @@ const Approved = ({
 
       {!loading && filteredRequests.length > 0 && (
         <div className="space-y-4">
-          {filteredRequests.map((request) => (
+          {sortedRequests.map((request) => (
             <div
               key={request.requestId}
               className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200"
@@ -147,14 +222,38 @@ const Approved = ({
                     <span className="text-slate-500 text-xs font-mono font-semibold">
                       {request.requestId}
                     </span>
-                    <span
-                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
-                        request.requestType
-                      )}`}
-                    >
-                      {getTypeIcon(request.requestType)}
-                      <span>{getTypeLabel(request.requestType)}</span>
-                    </span>
+                       {(request.tag?.includes?.("Shipping") ||
+                                            request.tag === "Shipping") && (
+                                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-blue-100 text-blue-700 border-blue-200">
+                                              <MdLocalShipping className="text-sm" />
+                                              <span>Shipping</span>
+                                            </span>
+                                          )}
+                                          {(request.tag?.includes?.("Clearing") ||
+                                            request.tag === "Clearing") && (
+                                            <span
+                                              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getClearingColor()}`}
+                                            >
+                                              {getClearingIcon()}
+                                              <span>Clearing</span>
+                                            </span>
+                                          )}
+                    {request.offshoreReqNumber && (
+                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                        <MdDirectionsBoat className="text-sm" />
+                        <span>{request.offshoreReqNumber}</span>
+                      </span>
+                    )}
+                    {hasProcurementOfficerApproved(request) && (
+                      <span
+                        className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
+                          request.requestType
+                        )}`}
+                      >
+                        {getTypeIcon(request.requestType)}
+                        <span>{getTypeLabel(request.requestType)}</span>
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-slate-600 text-sm mb-3">
@@ -185,10 +284,12 @@ const Approved = ({
                     )}
 
                     <div className="flex items-center gap-1.5 text-slate-600">
-                      <span className="text-xs md:text-sm font-medium">
-                        {new Date(request.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
+  <HiClock className="text-base" />
+  <span className="text-xs md:text-sm font-medium">
+    {new Date(request.createdAt).toLocaleDateString()}{" "}
+    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+  </span>
+</div>
                   </div>
                 </div>
 

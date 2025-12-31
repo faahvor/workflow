@@ -12,6 +12,7 @@ const RequesterTable = ({
   onEditItem = null,
   requestStatus = "",
   isQueried = false,
+  request,
 }) => {
   const [editedItems, setEditedItems] = useState(
     Array.isArray(items) ? items : []
@@ -180,7 +181,27 @@ const RequesterTable = ({
 const isAnyItemInStock = React.useMemo(() => {
     return (items || []).some((it) => !!it.inStock);
   }, [items]);
-
+  
+  function isProcurementOfficerApproved(request) {
+  return (
+    Array.isArray(request.history) &&
+    (
+      request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+      request.history.some(
+        (h) =>
+          h.action === "SPLIT" &&
+          h.role === "SYSTEM" &&
+          typeof h.info === "string" &&
+          h.info.includes("Petty Cash items moved to Petty Cash flow")
+      )
+    )
+  );
+}
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -257,9 +278,14 @@ const isAnyItemInStock = React.useMemo(() => {
                   {item.name || "N/A"}
                 </td>
 
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
-                </td>
+                <td
+  className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900"
+  style={{ minWidth: "100px" }}
+>
+ {isProcurementOfficerApproved(request)
+  ? (item.makersType || item.itemType || "N/A")
+  : "N/A"}
+</td>
 
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   {item.maker || "N/A"}

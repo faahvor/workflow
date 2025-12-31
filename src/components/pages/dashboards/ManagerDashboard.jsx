@@ -31,6 +31,10 @@ import ProcurementCreateRequest from "./ProcurementCreateRequest";
 import ProcurementMyRequests from "./ProcurementMyRequests";
 import OverviewDashboard from "./OverviewDashboard";
 import IncompleteDeliveryList from "./IncompleteDeliveryList";
+import Notification from "./Notification";
+import RejectedRequest from "./RejectedRequest";
+import ChatRoom from "./ChatRoom";
+import Support from "./Support";
 
 // ManagerDashboard component
 const ManagerDashboard = () => {
@@ -50,8 +54,52 @@ const ManagerDashboard = () => {
   const [detailReadOnly, setDetailReadOnly] = useState(false);
   const [completedRequests, setCompletedRequests] = useState([]);
   const [queriedCount, setQueriedCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [approvedTodayCount, setApprovedTodayCount] = useState(0);
+  const [pendingUnreadCount, setPendingUnreadCount] = useState(0);
+  const [queriedUnreadCount, setQueriedUnreadCount] = useState(0);
+  const [rejectedUnreadCount, setRejectedUnreadCount] = useState(0);
 
+  // ManagerDashboard.jsx
+
+  const fetchRejectedUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      // Fetch only 1 item, but get the total unread count from the API response
+      const resp = await axios.get(
+        `${API_BASE_URL}/requests/rejected?limit=1`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      // If your API returns unreadCount, use it; otherwise, count isUnread in data
+      const unread =
+        resp.data?.data?.filter?.((r) => r.isUnread).length ??
+        (Array.isArray(resp.data?.data) ? resp.data.data.length : 0);
+      setRejectedUnreadCount(unread);
+    } catch {
+      setRejectedUnreadCount(0);
+    }
+  };
+
+  const fetchQueriedUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const resp = await axios.get(`${API_BASE_URL}/requests/queried?limit=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // If your API returns unreadCount, use it; otherwise, count isUnread in data
+      const unread =
+        typeof resp.data.unreadCount === "number"
+          ? resp.data.unreadCount
+          : resp.data?.data?.filter?.((r) => r.isUnread).length ?? 0;
+      setQueriedUnreadCount(unread);
+    } catch {
+      setQueriedUnreadCount(0);
+    }
+  };
   // Replace request helper
   const replaceRequestIn = (setter) => (updatedReq) =>
     setter((prev = []) =>
@@ -114,6 +162,10 @@ const ManagerDashboard = () => {
       });
 
       setPendingRequests(response.data.data || []);
+      setPendingUnreadCount(
+        (response.data.data || []).filter((r) => r.isUnread).length
+      );
+
       setError(null);
     } catch (err) {
       console.error("❌ Error fetching pending requests:", err);
@@ -122,6 +174,24 @@ const ManagerDashboard = () => {
       setLoading(false);
     }
   };
+  const fetchUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const resp = await axios.get(
+        "https://hdp-backend-1vcl.onrender.com/api/notifications/unread-count",
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setUnreadCount(resp.data?.unreadCount || 0);
+    } catch (err) {
+      setUnreadCount(0);
+    }
+  };
+  useEffect(() => {
+    if (user) {
+      fetchUnreadCount();
+    }
+  }, [user]);
 
   const fetchQueriedCount = async () => {
     try {
@@ -167,6 +237,8 @@ const ManagerDashboard = () => {
       fetchVessels();
       fetchQueriedCount();
       fetchApprovedTodayCount();
+      fetchRejectedUnreadCount(); // <-- Add this
+      fetchQueriedUnreadCount();
     }
   }, [user]);
 
@@ -204,7 +276,18 @@ const ManagerDashboard = () => {
   // Approve a request
   // ...existing code...
   const handleApprove = async (requestId) => {
-    if (!window.confirm("Are you sure you want to approve this request?")) {
+    const req =
+      selectedRequest && selectedRequest.requestId === requestId
+        ? selectedRequest
+        : pendingRequests.find((r) => r.requestId === requestId);
+
+    const isQueried = req?.isQueried === true;
+
+    const confirmMsg = isQueried
+      ? "Confirm you want to approve this query request?"
+      : "Are you sure you want to approve this request?";
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
@@ -244,6 +327,7 @@ const ManagerDashboard = () => {
       setSelectedRequest(null);
       fetchPendingRequests();
       fetchApprovedTodayCount();
+      fetchQueriedCount();
     } catch (err) {
       console.error("❌ Error approving request:", err);
       alert(err.response?.data?.message || "Failed to approve request");
@@ -253,7 +337,12 @@ const ManagerDashboard = () => {
   };
   // ...existing code...
   // Reject a request
-  const handleReject = async (requestId) => {
+  const handleReject = async (requestId, comment) => {
+    if (!comment || comment.trim().length < 3) {
+      alert("A rejection comment is required.");
+      return;
+    }
+
     if (!window.confirm("Are you sure you want to reject this request?")) {
       return;
     }
@@ -264,7 +353,7 @@ const ManagerDashboard = () => {
 
       const response = await axios.post(
         `${API_BASE_URL}/requests/${requestId}/reject`,
-        {},
+        { comment }, // Send the comment in the body
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -275,6 +364,7 @@ const ManagerDashboard = () => {
       setView("list");
       setSelectedRequest(null);
       fetchPendingRequests();
+      fetchQueriedCount();
     } catch (err) {
       console.error("❌ Error rejecting request:", err);
       alert(err.response?.data?.message || "Failed to reject request");
@@ -283,47 +373,31 @@ const ManagerDashboard = () => {
     }
   };
 
-  // Query a request (send back to requester)
-  const handleQuery = async (requestId) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to query this request? It will be sent back to the requester."
-      )
-    ) {
-      return;
-    }
-
-    try {
-      setActionLoading(true);
-      const token = getToken();
-
-      const response = await axios.post(
-        `${API_BASE_URL}/requests/${requestId}/query`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      alert("Request queried and sent back to requester!");
-
-      setView("list");
-      setSelectedRequest(null);
-      fetchPendingRequests();
-    } catch (err) {
-      console.error("❌ Error querying request:", err);
-      alert(err.response?.data?.message || "Failed to query request");
-    } finally {
-      setActionLoading(false);
-    }
+  const handleQuery = (requestId) => {
+    setView("list");
+    fetchPendingRequests();
+    fetchQueriedCount();
   };
-
-  // View request details (opens detail view)
-  const handleViewDetails = async (request) => {
+  const handleViewDetails = async (request, cardType) => {
+    // Use cardType if provided, otherwise fallback to request.status
+    if (cardType === "approved") {
+      setActiveView("approved");
+    } else if (cardType === "queried") {
+      setActiveView("queried");
+    } else if (cardType === "pending") {
+      setActiveView("pending");
+    } else if (request.status === "APPROVED" || request.status === "approved") {
+      setActiveView("approved");
+    } else {
+      setActiveView("pending");
+    }
     const flow = await fetchRequestFlow(request.requestId);
     setSelectedRequest({ ...request, flow });
-    // set readOnly for both completed and approved views
-    setDetailReadOnly(activeView === "completed" || activeView === "approved");
+    setDetailReadOnly(
+      request.status === "APPROVED" ||
+        request.status === "approved" ||
+        activeView === "completed"
+    );
     setView("detail");
   };
 
@@ -333,7 +407,7 @@ const ManagerDashboard = () => {
       case "shipping":
         return "bg-teal-100 text-teal-600 border-teal-200";
       default:
-        return "bg-slate-100 text-slate-600 border-slate-200";
+        return "bg-purple-100 text-blue-700 border-purple-200";
     }
   };
 
@@ -352,8 +426,10 @@ const ManagerDashboard = () => {
     switch (type) {
       case "purchaseOrder":
         return "bg-emerald-100 text-emerald-600 border-emerald-200";
-      case "quotation":
+      case "pettyCash":
         return "bg-teal-100 text-teal-600 border-teal-200";
+      case "inStock":
+        return "bg-blue-100 text-blue-600 border-blue-200";
       default:
         return "bg-slate-100 text-slate-600 border-slate-200";
     }
@@ -364,8 +440,10 @@ const ManagerDashboard = () => {
     switch (type) {
       case "purchaseOrder":
         return <MdShoppingCart className="text-sm" />;
-      case "quotation":
+      case "pettyCash":
         return <MdAttachMoney className="text-sm" />;
+      case "inStock":
+        return <MdInventory className="text-sm" />;
       default:
         return null;
     }
@@ -376,8 +454,10 @@ const ManagerDashboard = () => {
     switch (type) {
       case "purchaseOrder":
         return "Purchase Order";
-      case "quotation":
-        return "Quotation";
+      case "pettyCash":
+        return "Petty Cash";
+      case "inStock":
+        return "INSTOCK";
       default:
         return type;
     }
@@ -396,17 +476,34 @@ const ManagerDashboard = () => {
     const vessel = vessels.find((v) => v.vesselId === vesselId);
     return vessel?.name || vesselId;
   };
-  const hasProcurementOfficerApproved = (request) => {
-    const path = request?.flow?.path || [];
-    const procurementStep = path.find(
-      (step) => step.state === "PENDING_PROCUREMENT_OFFICER_APPROVAL"
+  function hasProcurementOfficerApproved(request) {
+    return (
+      Array.isArray(request.history) &&
+      (request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+        request.history.some(
+          (h) =>
+            h.action === "SPLIT" &&
+            h.role === "SYSTEM" &&
+            typeof h.info === "string" &&
+            h.info.includes("Petty Cash items moved to Petty Cash flow")
+        ))
     );
-    return procurementStep?.status === "completed";
-  };
+  }
+  const displayRequests = pendingRequests;
+  const isLoading = loading;
 
-  const filteredRequests = pendingRequests.filter((req) => {
+  const filteredRequests = displayRequests.filter((req) => {
     const matchesSearch =
       req.requestId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.offshoreReqNumber
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      req.jobNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       req.requester?.displayName
         ?.toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
@@ -418,6 +515,21 @@ const ManagerDashboard = () => {
 
     return matchesSearch && matchesFilter;
   });
+
+  // Sort: high priority first, then by request number descending
+  const sortedRequests = [
+    // High priority requests first
+    ...filteredRequests.filter((r) => r.priority === "high"),
+    // Then all others, sorted by requestId descending
+    ...filteredRequests
+      .filter((r) => r.priority !== "high")
+      .sort((a, b) => {
+        // If requestId is numeric, sort numerically
+        const numA = Number(String(a.requestId).replace(/\D/g, ""));
+        const numB = Number(String(b.requestId).replace(/\D/g, ""));
+        return numB - numA;
+      }),
+  ];
 
   // Load pending requests on mount
   useEffect(() => {
@@ -433,6 +545,30 @@ const ManagerDashboard = () => {
       setSelectedRequest(null);
     }
   }, [activeView]);
+
+  const handleViewDetailsClick = async (request) => {
+    if (request.isUnread) {
+      try {
+        const token = getToken();
+        await axios.post(
+          `${API_BASE_URL}/requests/${request.requestId}/read`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setPendingRequests((prev) =>
+          prev.map((r) =>
+            r.requestId === request.requestId ? { ...r, isUnread: false } : r
+          )
+        );
+        setPendingUnreadCount((prev) => Math.max(0, prev - 1));
+        // Optionally, notify parent to update sidebar count
+        if (typeof onUnreadChange === "function") onUnreadChange(-1);
+      } catch (err) {
+        // Optionally handle error
+      }
+    }
+    handleOpenDetail(request); // <-- Use your actual handler here
+  };
 
   if (view === "detail" && selectedRequest) {
     return (
@@ -459,8 +595,10 @@ const ManagerDashboard = () => {
           <Sidebar
             activeView={activeView}
             setActiveView={setActiveView}
-            pendingCount={pendingRequests.length}
-            queriedCount={queriedCount}
+            pendingCount={pendingUnreadCount}
+            queriedCount={queriedUnreadCount}
+            rejectedCount={rejectedUnreadCount}
+            notificationCount={unreadCount}
             isRequester={false}
           />
 
@@ -504,9 +642,16 @@ const ManagerDashboard = () => {
         <Sidebar
           activeView={activeView}
           setActiveView={setActiveView}
-          pendingCount={pendingRequests.length}
+          pendingCount={pendingUnreadCount}
+          queriedCount={queriedUnreadCount}
+          rejectedCount={rejectedUnreadCount}
+          notificationCount={unreadCount}
           isRequester={false}
         />
+
+        {activeView === "chatRoom" && <ChatRoom />}
+                        {activeView === "support" && <Support />}
+
 
         <div className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
@@ -526,6 +671,8 @@ const ManagerDashboard = () => {
                   ? "Completed Requests"
                   : activeView === "queried"
                   ? "Queried Requests"
+                  : activeView === "rejected"
+                  ? "Rejected Requests"
                   : ""}
               </h1>
               <p className="text-sm md:text-base text-gray-600">
@@ -575,19 +722,19 @@ const ManagerDashboard = () => {
                 {activeView === "myRequests" && (
                   <ProcurementMyRequests onOpenDetail={handleOpenDetail} />
                 )}
-
                 {activeView === "overview" && (
                   <OverviewDashboard
                     user={user}
                     pendingRequests={pendingRequests}
                     approvedTodayCount={approvedTodayCount}
+                    queriedCount={queriedCount}
                     department={user?.department || ""}
                     destination={user?.destination || ""}
                     setActiveView={setActiveView}
                     onViewDetails={handleViewDetails}
+                    onPendingUnreadChange={setPendingUnreadCount} // <-- add this
                   />
                 )}
-
                 {activeView !== "signature" &&
                   activeView !== "vendorManagement" &&
                   activeView !== "inventoryManagement" &&
@@ -595,6 +742,9 @@ const ManagerDashboard = () => {
                   activeView !== "incompleteDelivery" &&
                   activeView !== "createNew" &&
                   activeView !== "myRequests" &&
+                  activeView !== "chatRoom" &&
+                  activeView !== "support" &&
+                  activeView !== "notifications" &&
                   activeView !== "overview" && (
                     <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6 shadow-lg">
                       <div className="flex flex-col md:flex-row gap-4">
@@ -608,25 +758,14 @@ const ManagerDashboard = () => {
                             className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
                           />
                         </div>
-                        <div className="relative">
-                          <select
-                            value={filterType}
-                            onChange={(e) => setFilterType(e.target.value)}
-                            className="h-12 pl-12 pr-10 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none cursor-pointer"
-                          >
-                            <option value="all">All Types</option>
-                            <option value="purchaseOrder">
-                              Purchase Orders
-                            </option>
-                            <option value="pettycash">PettyCash</option>
-                          </select>
-                          <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
-                          <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
-                        </div>
+                    
                       </div>
                     </div>
                   )}
                 {activeView === "signature" && <UsersSignature />}
+                {activeView === "notifications" && (
+                  <Notification onUnreadCountChange={fetchUnreadCount} />
+                )}{" "}
                 {activeView === "vendorManagement" && <VendorManagement />}
                 {activeView === "inventoryManagement" && (
                   <InventoryManagement />
@@ -638,7 +777,14 @@ const ManagerDashboard = () => {
                     onViewDetails={handleOpenDetail}
                   />
                 )}
-
+                {activeView === "rejected" && (
+                  <RejectedRequest
+                    searchQuery={searchQuery}
+                    onUnreadChange={setRejectedUnreadCount}
+                    filterType={filterType}
+                    onOpenDetail={handleOpenDetail}
+                  />
+                )}
                 {activeView === "completed" ? (
                   <CompletedRequests
                     searchQuery={searchQuery}
@@ -654,6 +800,7 @@ const ManagerDashboard = () => {
                 ) : activeView === "queried" ? (
                   <QueriedRequest
                     searchQuery={searchQuery}
+                    onUnreadChange={fetchQueriedUnreadCount}
                     filterType={filterType}
                     onOpenDetail={handleOpenDetail}
                   />
@@ -670,9 +817,13 @@ const ManagerDashboard = () => {
                   activeView !== "myRequests" &&
                   activeView !== "incompleteDelivery" &&
                   activeView !== "inventoryManagement" &&
+                  activeView !== "notifications" &&
+                  activeView !== "chatRoom" &&
+                  activeView !== "support" &&
+                  activeView !== "rejected" &&
                   activeView !== "overview" ? (
                   <div className="space-y-4">
-                    {filteredRequests.map((request) => (
+                    {sortedRequests.map((request) => (
                       <div
                         key={request.requestId}
                         className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200 cursor-pointer group"
@@ -705,7 +856,7 @@ const ManagerDashboard = () => {
                                   </span>
                                 </span>
                               )}
-                              {request.items &&
+                              {/* {request.items &&
                                 request.items.some(
                                   (it) => it && it.inStock
                                 ) && (
@@ -715,7 +866,7 @@ const ManagerDashboard = () => {
                                     {getInStockIcon()}
                                     <span>In Stock</span>
                                   </span>
-                                )}
+                                )} */}
 
                               {hasProcurementOfficerApproved(request) && (
                                 <span
@@ -774,7 +925,13 @@ const ManagerDashboard = () => {
                                 <span className="text-xs md:text-sm font-medium">
                                   {new Date(
                                     request.createdAt
-                                  ).toLocaleDateString()}
+                                  ).toLocaleDateString()}{" "}
+                                  {new Date(
+                                    request.createdAt
+                                  ).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
                                 </span>
                               </div>
                             </div>
@@ -782,7 +939,7 @@ const ManagerDashboard = () => {
 
                           <div className="flex items-center gap-3">
                             <button
-                              onClick={() => handleViewDetails(request)}
+                              onClick={() => handleViewDetailsClick(request)}
                               className="w-full lg:w-auto px-6 py-3 bg-gradient-to-r from-[#036173] to-emerald-600 text-white text-sm font-bold rounded-lg hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-200"
                             >
                               View Details

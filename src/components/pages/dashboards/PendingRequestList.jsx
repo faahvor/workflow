@@ -10,6 +10,7 @@ import {
   MdPendingActions,
   MdInventory,
   MdLocalShipping,
+  MdHelpOutline,
 } from "react-icons/md";
 import { HiClock } from "react-icons/hi";
 import axios from "axios";
@@ -23,6 +24,7 @@ const PendingRequestsList = ({
   onViewDetails = () => {},
   requests = null, // If provided, use these instead of fetching
   externalLoading = false,
+   onUnreadChange,
 }) => {
   const { getToken } = useAuth();
   const [pendingRequests, setPendingRequests] = useState([]);
@@ -30,6 +32,14 @@ const PendingRequestsList = ({
   const [vessels, setVessels] = useState([]);
   const [error, setError] = useState(null);
   // Fetch pending requests (only if not provided externally)
+   const getQueriedColor = () => {
+    return "bg-yellow-100 text-yellow-700 border-yellow-200";
+  };
+
+
+    const getQueriedIcon = () => {
+    return <MdHelpOutline className="text-sm" />;
+  };
   const fetchPendingRequests = async () => {
     try {
       setLoading(true);
@@ -90,26 +100,44 @@ const PendingRequestsList = ({
     fetchPendingRequests();
     fetchVessels();
   }, []);
+  
 
   // Use external requests if provided
   const displayRequests = requests !== null ? requests : pendingRequests;
   const isLoading = requests !== null ? externalLoading : loading;
 
   // Filter requests
-  const filteredRequests = displayRequests.filter((req) => {
-    const matchesSearch =
-      req.requestId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      req.requester?.displayName
-        ?.toLowerCase()
-        .includes(searchQuery.toLowerCase()) ||
-      req.department?.toLowerCase().includes(searchQuery.toLowerCase());
+const filteredRequests = displayRequests.filter((req) => {
+  const matchesSearch =
+    req.requestId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    req.offshoreReqNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    req.jobNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    req.requester?.displayName
+      ?.toLowerCase()
+      .includes(searchQuery.toLowerCase()) ||
+    req.department?.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesFilter =
-      filterType === "all" ||
-      req.requestType?.toLowerCase() === filterType.toLowerCase();
+  const matchesFilter =
+    filterType === "all" ||
+    req.requestType?.toLowerCase() === filterType.toLowerCase();
 
-    return matchesSearch && matchesFilter;
-  });
+  return matchesSearch && matchesFilter;
+});
+
+// Sort: high priority first, then by request number descending
+const sortedRequests = [
+  // High priority requests first
+  ...filteredRequests.filter((r) => r.priority === "high"),
+  // Then all others, sorted by requestId descending
+  ...filteredRequests
+    .filter((r) => r.priority !== "high")
+    .sort((a, b) => {
+      // If requestId is numeric, sort numerically
+      const numA = Number(String(a.requestId).replace(/\D/g, ""));
+      const numB = Number(String(b.requestId).replace(/\D/g, ""));
+      return numB - numA;
+    }),
+];
 
   // Get CSS color classes for tag
   const getTagColor = (tag) => {
@@ -118,7 +146,7 @@ const PendingRequestsList = ({
       case "shipping":
         return "bg-teal-100 text-teal-600 border-teal-200";
       default:
-        return "bg-slate-100 text-slate-600 border-slate-200";
+        return "bg-purple-100 text-blue-700 border-purple-200";
     }
   };
 
@@ -134,36 +162,41 @@ const PendingRequestsList = ({
   };
 
   // Get CSS color classes for request type
-  const getTypeColor = (type) => {
-    switch (type) {
-      case "purchaseOrder":
-        return "bg-emerald-100 text-emerald-600 border-emerald-200";
-      case "quotation":
-        return "bg-teal-100 text-teal-600 border-teal-200";
-      default:
-        return "bg-slate-100 text-slate-600 border-slate-200";
-    }
-  };
+const getTypeColor = (type) => {
+  switch (type) {
+    case "purchaseOrder":
+      return "bg-emerald-100 text-emerald-600 border-emerald-200";
+    case "pettyCash":
+      return "bg-teal-100 text-teal-600 border-teal-200";
+    case "inStock":
+      return "bg-blue-100 text-blue-600 border-blue-200"; // <-- Add this line
+    default:
+      return "bg-slate-100 text-slate-600 border-slate-200";
+  }
+};
 
-  // Get icon for request type
-  const getTypeIcon = (type) => {
-    switch (type) {
-      case "purchaseOrder":
-        return <MdShoppingCart className="text-sm" />;
-      case "quotation":
-        return <MdAttachMoney className="text-sm" />;
-      default:
-        return null;
-    }
-  };
+const getTypeIcon = (type) => {
+  switch (type) {
+    case "purchaseOrder":
+      return <MdShoppingCart className="text-sm" />;
+    case "pettyCash":
+      return <MdAttachMoney className="text-sm" />;
+    case "inStock":
+      return <MdInventory className="text-sm" />; // <-- Add this line
+    default:
+      return null;
+  }
+};
 
   // Get label for request type
-  const getTypeLabel = (type) => {
+   const getTypeLabel = (type) => {
     switch (type) {
       case "purchaseOrder":
         return "Purchase Order";
-      case "quotation":
-        return "Quotation";
+       case "pettyCash":
+      return "Petty Cash";
+       case "inStock":
+      return "INSTOCK";
       default:
         return type;
     }
@@ -193,14 +226,26 @@ const PendingRequestsList = ({
       </div>
     );
   }
-  const hasProcurementOfficerApproved = (request) => {
-    const path = request?.flow?.path || [];
-    const procurementStep = path.find(
-      (step) => step.state === "PENDING_PROCUREMENT_OFFICER_APPROVAL"
-    );
-    return procurementStep?.status === "completed";
-  };
-
+   function hasProcurementOfficerApproved(request) {
+  return (
+    Array.isArray(request.history) &&
+    (
+      request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+      request.history.some(
+        (h) =>
+          h.action === "SPLIT" &&
+          h.role === "SYSTEM" &&
+          typeof h.info === "string" &&
+          h.info.includes("Petty Cash items moved to Petty Cash flow")
+      )
+    )
+  );
+}
   if (filteredRequests.length === 0) {
     return (
       <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-12 text-center shadow-lg">
@@ -217,13 +262,37 @@ const PendingRequestsList = ({
     );
   }
 
+const handleViewDetailsClick = async (request) => {
+  if (request.isUnread) {
+    try {
+      const token = getToken();
+      await axios.post(
+        `${API_BASE_URL}/requests/${request.requestId}/read`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setPendingRequests((prev) =>
+        prev.map((r) =>
+          r.requestId === request.requestId ? { ...r, isUnread: false } : r
+        )
+      );
+      // Immediately update the unread count in the parent
+      if (typeof onUnreadChange === "function") onUnreadChange((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      // Optionally handle error
+    }
+  }
+  onViewDetails(request);
+};
+
   return (
     <div className="space-y-4">
-      {filteredRequests.map((request) => (
+      {sortedRequests.map((request) => (
         <div
           key={request.requestId}
-          className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200 cursor-pointer group"
-        >
+className={`bg-white/90 backdrop-blur-xl border-2 rounded-2xl p-4 md:p-6 shadow-lg transition-all duration-200 cursor-pointer group
+    ${request.isUnread ? "border-emerald-400 ring-2 ring-emerald-200" : "border-slate-200 hover:border-slate-300"}
+  `}        >
           <div className="flex flex-col lg:flex-row lg:items-center gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -251,7 +320,7 @@ const PendingRequestsList = ({
                     </span>
                   </span>
                 )}
-                {request.items &&
+                {/* {request.items &&
                   request.items.some((it) => it && it.inStock) && (
                     <span
                       className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getInStockColor()}`}
@@ -259,7 +328,7 @@ const PendingRequestsList = ({
                       {getInStockIcon()}
                       <span>In Stock</span>
                     </span>
-                  )}
+                  )} */}
 
                 {hasProcurementOfficerApproved(request) && (
                   <span
@@ -277,6 +346,14 @@ const PendingRequestsList = ({
                     <span>{request.offshoreReqNumber}</span>
                   </span>
                 )}
+                  {request.isQueried && (
+                        <span
+                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${getQueriedColor()}`}
+                        >
+                          {getQueriedIcon()}
+                          <span>Queried</span>
+                        </span>
+                      )}
 
                 {request.priority === "high" && (
                   <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">
@@ -312,17 +389,18 @@ const PendingRequestsList = ({
                   </div>
                 )}
                 <div className="flex items-center gap-1.5 text-slate-600">
-                  <HiClock className="text-base" />
-                  <span className="text-xs md:text-sm font-medium">
-                    {new Date(request.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
+  <HiClock className="text-base" />
+  <span className="text-xs md:text-sm font-medium">
+    {new Date(request.createdAt).toLocaleDateString()}{" "}
+    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+  </span>
+</div>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => onViewDetails(request)}
+                onClick={() => handleViewDetailsClick(request)}
                 className="w-full lg:w-auto px-6 py-3 bg-gradient-to-r from-[#036173] to-emerald-600 text-white text-sm font-bold rounded-lg hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-200"
               >
                 View Details

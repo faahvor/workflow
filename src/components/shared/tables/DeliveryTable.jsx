@@ -227,13 +227,13 @@ const DeliveryTable = ({
                   </td>
 
                   {/* Description */}
-                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
+                  <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                     {item.name || "N/A"}
                   </td>
 
                   {/* Item Type */}
                   <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                    {item.itemType || item.makersType || "N/A"}
+                    {item.makersType || "N/A"}
                   </td>
 
                   {/* Maker */}

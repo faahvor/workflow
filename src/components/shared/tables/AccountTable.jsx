@@ -25,7 +25,7 @@ const AccountTable = ({
   const hidePrices = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
-
+const showShippingFee = request?.logisticsType === "international";
   React.useEffect(() => {
     setEditedItems(
       items.map((item) => {
@@ -394,7 +394,17 @@ const AccountTable = ({
       </div>
     );
   }
-
+    const calculateVatAmount = (item) => {
+    if (!item.vatted || !item.total) return 0;
+    // Assuming VAT is included in total, extract it
+    // If total includes VAT, VAT = total - (total / (1 + vatRate))
+    // For now, using a standard 7.5% VAT rate
+    const vatRate = 0.075;
+    return (item.total / (1 + vatRate)) * vatRate;
+  };
+const shouldHideSaveButton =
+  (requestType === "pettyCash" &&
+    currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL");
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -428,12 +438,16 @@ const AccountTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
-                 {hidePrices && (
-              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                Shipping Qty
-              </th>
-            )}
-
+              {hidePrices && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Shipping Qty
+                </th>
+              )}
+{showShippingFee && (
+      <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+        Shipping Fee
+      </th>
+    )}
               {!hidePrices ? (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Unit Price
@@ -460,9 +474,17 @@ const AccountTable = ({
                 </>
               )}
               {showPaymentStatus && (
+                <>
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                      Discount (%)
+                    </th>
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Total Price
                 </th>
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                      VAT Amount
+                    </th>
+                </>
               )}
               {requestType !== "pettyCash" && (
                 <>
@@ -494,7 +516,7 @@ const AccountTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}
@@ -541,14 +563,25 @@ const AccountTable = ({
                     </span>
                   )}
                 </td>
-                   {hidePrices && (
-                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                  <span className="font-semibold text-slate-900">
-                    {item.shippingQuantity ?? 0}
-                  </span>
-                </td>
-              )}
-
+                {hidePrices && (
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">
+                      {item.shippingQuantity ?? 0}
+                    </span>
+                  </td>
+                )}
+ {showShippingFee && (
+      <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+        {item.shippingFee ? (
+          <>
+            {item.currency || "NGN"}{" "}
+            {parseFloat(item.shippingFee).toFixed(2)}
+          </>
+        ) : (
+          "N/A"
+        )}
+      </td>
+    )}
                 {!hidePrices ? (
                   <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                     {item.unitPrice ? (
@@ -667,6 +700,14 @@ const AccountTable = ({
                   </>
                 )}
 
+
+
+              {showPaymentStatus && (
+<>
+
+ <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                        {item.discount ? `${item.discount}%` : "0%"}
+                      </td>
                 {/* Total Price - Calculated */}
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700">
                   {hidePrices ? (
@@ -694,6 +735,25 @@ const AccountTable = ({
                     "N/A"
                   )}
                 </td>
+                 <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                        {item.vatted ? (
+                          <span>
+                            {item.currency || "NGN"}{" "}
+                            {Number(calculateVatAmount(item)).toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">N/A</span>
+                        )}
+                      </td>
+                </>
+              )}
+
 
                 {requestType !== "pettyCash" && (
                   <>
@@ -728,19 +788,21 @@ const AccountTable = ({
           >
             ◄
           </button>
-          <div className="flex items-center justify-center">
-            <button
-              onClick={handleSaveAll}
-              disabled={isSaving}
-              className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
-                isSaving
-                  ? "bg-gray-300 text-gray-700 cursor-not-allowed"
-                  : "bg-[#036173] text-white hover:bg-[#024f57]"
-              }`}
-            >
-              {isSaving ? "Saving..." : "Save Changes"}
-            </button>
-          </div>
+            <div className="flex items-center justify-center">
+      {!shouldHideSaveButton && (
+        <button
+          onClick={handleSaveAll}
+          disabled={isSaving}
+          className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
+            isSaving
+              ? "bg-gray-300 text-gray-700 cursor-not-allowed"
+              : "bg-[#036173] text-white hover:bg-[#024f57]"
+          }`}
+        >
+          {isSaving ? "Saving..." : "Save Changes"}
+        </button>
+      )}
+    </div>
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {

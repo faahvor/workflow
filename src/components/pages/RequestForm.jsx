@@ -18,9 +18,10 @@ const demo = {
 
 const RequestForm = () => (
   <div
-    className="bg-white p-8 rounded-xl shadow max-w-2xl mx-auto border border-slate-300"
+    className="bg-white p-8 rounded-xl shadow max-w-4xl mx-auto border border-slate-300"
     style={{ fontFamily: "Arial, sans-serif" }}
   >
+    
     {/* Header */}
     <div className="flex justify-between items-start mb-2">
       <div>
@@ -54,19 +55,86 @@ const RequestForm = () => (
       </div>
     </div>
     {/* Vendor and PO info */}
-    <div className="flex justify-between items-center mt-4 mb-2">
-      <div className="text-xs">
-        Vendor Name: <span className="font-semibold">{demo.vendor}</span>
+    <div className="flex justify-between items-start mt-4 mb-2 gap-4">
+      {/* Vendor Name box */}
+      <div className="border border-slate-400 rounded-sm p-2 flex-1 max-w-[60%]">
+        <div
+          className="text-[11px] text-slate-700 mb-1"
+          style={{ lineHeight: 4 }}
+        >
+          Vendor Name:
+        </div>
+        <div
+          className="text-[13px] font-medium"
+          style={{
+            fontFamily: "cursive",
+            borderBottom: "1px solid #bbb",
+            minHeight: 22,
+            paddingBottom: 2,
+            color: "#444",
+          }}
+        >
+          {demo.vendor}
+        </div>
       </div>
-      <div className="flex gap-6 text-xs">
-        <div>
-          P.O No.: <span className="font-semibold">{demo.poNo}</span>
+      {/* PO/Reg/Date box */}
+      <div className="border border-slate-400 rounded-sm p-2 flex flex-col min-w-[210px]">
+        <div
+          className="flex items-center text-[11px] text-slate-700 mb-1"
+          style={{ lineHeight: 1 }}
+        >
+          <span className="mr-2">P.O No.:</span>
+          <span
+            className="text-[13px] font-medium flex-1"
+            style={{
+              fontFamily: "cursive",
+              borderBottom: "1px solid #bbb",
+              minWidth: 40,
+              minHeight: 20,
+              paddingBottom: 2,
+              color: "#444",
+            }}
+          >
+            {demo.poNo}
+          </span>
         </div>
-        <div>
-          Reg No.: <span className="font-semibold">{demo.regNo}</span>
+        <div
+          className="flex items-center text-[11px] text-slate-700 mb-1"
+          style={{ lineHeight: 1 }}
+        >
+          <span className="mr-2">Reg No.:</span>
+          <span
+            className="text-[13px] font-medium flex-1"
+            style={{
+              fontFamily: "cursive",
+              borderBottom: "1px solid #bbb",
+              minWidth: 60,
+              minHeight: 20,
+              paddingBottom: 2,
+              color: "#444",
+            }}
+          >
+            {demo.regNo}
+          </span>
         </div>
-        <div>
-          Date: <span className="font-semibold">{demo.date}</span>
+        <div
+          className="flex items-center text-[11px] text-slate-700"
+          style={{ lineHeight: 1 }}
+        >
+          <span className="mr-2">Date:</span>
+          <span
+            className="text-[13px] font-medium flex-1"
+            style={{
+              fontFamily: "cursive",
+              borderBottom: "1px solid #bbb",
+              minWidth: 60,
+              minHeight: 20,
+              paddingBottom: 2,
+              color: "#444",
+            }}
+          >
+            {demo.date}
+          </span>
         </div>
       </div>
     </div>
@@ -98,7 +166,7 @@ const RequestForm = () => (
           </tr>
         ))}
         {/* Add 20 empty rows */}
-        {Array.from({ length: 20 }).map((_, idx) => (
+        {Array.from({ length: 10 }).map((_, idx) => (
           <tr key={`empty-${idx}`}>
             <td className="border border-slate-400 px-2 py-4 text-center">
               {idx + 3}
@@ -130,32 +198,135 @@ const RequestForm = () => (
       </tbody>
     </table>
     {/* Footer */}
-    <div className="flex flex-wrap justify-between items-end gap-4 mt-8 text-xs">
+    <div className="grid grid-cols-2 gap-[4rem] mt-8 text-xs">
+      {/* Left: Approved by */}
       <div>
-        <div>
-          Approved by: <span className="font-semibold">{demo.approvedBy}</span>
-        </div>
-      </div>
-      <div>
-        <div>
-          Received by: <span className="font-semibold">{demo.receivedBy}</span>
-        </div>
-        <div className="mt-2">
-          Signed:
-          <span
-            className="inline-block align-middle ml-2"
+        <div className="mb-4">
+          <div className="mb-1 text-slate-700">Approved by:</div>
+          <div
+            className="text-[15px]"
             style={{
               fontFamily: "cursive",
-              fontSize: 18,
-              color: "#036173",
+              borderBottom: "1px solid #bbb",
+              minHeight: 22,
+              paddingBottom: 2,
+              color: "#444",
+              width: "80%",
             }}
           >
-            {/* Simulated signature */}
-            Osi Ojo
-          </span>
+            {demo.approvedBy}
+          </div>
+        </div>
+        <div className="mb-4">
+          <div className="mb-1 text-slate-700">Signed:</div>
+          <div
+            style={{
+              borderBottom: "1px solid #bbb",
+              minHeight: 22,
+              paddingBottom: 2,
+              width: "80%",
+            }}
+          >
+            {/* Simulated signature scribble */}
+            <svg width="80" height="28" style={{ display: "block" }}>
+              <path
+                d="M5 20 Q20 5 35 20 Q50 35 75 10"
+                stroke="#036173"
+                strokeWidth="2"
+                fill="none"
+              />
+              <text
+                x="40"
+                y="25"
+                fontSize="10"
+                fill="#036173"
+                fontFamily="cursive"
+              >
+                U.S.
+              </text>
+            </svg>
+          </div>
         </div>
         <div>
-          Date: <span className="font-semibold">{demo.signDate}</span>
+          <div className="mb-1 text-slate-700">Date:</div>
+          <div
+            className="text-[15px]"
+            style={{
+              fontFamily: "cursive",
+              borderBottom: "1px solid #bbb",
+              minHeight: 22,
+              paddingBottom: 2,
+              color: "#444",
+              width: "80%",
+            }}
+          >
+            {demo.signDate}
+          </div>
+        </div>
+      </div>
+      {/* Right: Received by */}
+      <div>
+        <div className="mb-4">
+          <div className="mb-1 text-slate-700">Received by:</div>
+          <div
+            className="text-[15px]"
+            style={{
+              fontFamily: "cursive",
+              borderBottom: "1px solid #bbb",
+              minHeight: 22,
+              paddingBottom: 2,
+              color: "#444",
+              width: "80%",
+            }}
+          >
+            {demo.receivedBy}
+          </div>
+        </div>
+        <div className="mb-4">
+          <div className="mb-1 text-slate-700">Signed:</div>
+          <div
+            style={{
+              borderBottom: "1px solid #bbb",
+              minHeight: 22,
+              paddingBottom: 2,
+              width: "80%",
+            }}
+          >
+            {/* Simulated signature scribble */}
+            <svg width="80" height="28" style={{ display: "block" }}>
+              <path
+                d="M10 18 Q30 2 50 18 Q60 28 75 5"
+                stroke="#036173"
+                strokeWidth="2"
+                fill="none"
+              />
+              <text
+                x="45"
+                y="25"
+                fontSize="10"
+                fill="#036173"
+                fontFamily="cursive"
+              >
+                O.O.
+              </text>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-slate-700">Date:</div>
+          <div
+            className="text-[15px]"
+            style={{
+              fontFamily: "cursive",
+              borderBottom: "1px solid #bbb",
+              minHeight: 22,
+              paddingBottom: 2,
+              color: "#444",
+              width: "80%",
+            }}
+          >
+            {demo.signDate}
+          </div>
         </div>
       </div>
     </div>

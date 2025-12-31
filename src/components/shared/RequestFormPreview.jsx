@@ -43,6 +43,7 @@ const RequestFormPreview = forwardRef(
       requestId = null,
       token = null,
       apiBase = "https://hdp-backend-1vcl.onrender.com/api",
+      hideSignatures = false,
     },
     ref
   ) => {
@@ -51,14 +52,25 @@ const RequestFormPreview = forwardRef(
     const [vendorInfo, setVendorInfo] = useState(null);
     const [signaturesPrepared, setSignaturesPrepared] = useState([]);
     const [loading, setLoading] = useState(false);
-        const [vessels, setVessels] = useState([]);
+    const [vessels, setVessels] = useState([]);
 
+    function isProcurementOfficerApproved(req) {
+      const history = req?.history || [];
+      return history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      );
+    }
 
-        useEffect(() => {
+    useEffect(() => {
       const fetchVessels = async () => {
         try {
           const headers = token ? { Authorization: `Bearer ${token}` } : {};
-          const resp = await axios.get(`${apiBase}/vessels?limit=100`, { headers });
+          const resp = await axios.get(`${apiBase}/vessels?limit=100`, {
+            headers,
+          });
           setVessels(resp.data?.data || []);
         } catch (err) {
           setVessels([]);
@@ -73,7 +85,6 @@ const RequestFormPreview = forwardRef(
       const vessel = vessels.find((v) => v.vesselId === vesselId);
       return vessel?.name || vesselId || "";
     };
-
 
     const arrayBufferToBase64 = (buffer) => {
       let binary = "";
@@ -221,15 +232,15 @@ const RequestFormPreview = forwardRef(
       req.requiredDate ||
       new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString();
     const reference = req.reference || "N/A";
- const grandTotal = usedItems.reduce((s, it) => {
-  const total =
-    it.totalPrice !== undefined
-      ? Number(it.totalPrice)
-      : it.total !== undefined
-      ? Number(it.total)
-      : Number(it.unitPrice || 0) * Number(it.quantity || 0);
-  return s + (isNaN(total) ? 0 : total);
-}, 0);
+    const grandTotal = usedItems.reduce((s, it) => {
+      const total =
+        it.totalPrice !== undefined
+          ? Number(it.totalPrice)
+          : it.total !== undefined
+          ? Number(it.total)
+          : Number(it.unitPrice || 0) * Number(it.quantity || 0);
+      return s + (isNaN(total) ? 0 : total);
+    }, 0);
 
     const vendorNameLine = vendorInfo
       ? getVendorDisplayName(vendorInfo)
@@ -252,8 +263,6 @@ const RequestFormPreview = forwardRef(
     const isClearingTag = tagLower === "clearing";
     const showFeeColumns = isShippingTag || isClearingTag;
 
-  // ...existing code...
-
     // Get current state robustly
     const currentState =
       req.currentState ||
@@ -261,18 +270,18 @@ const RequestFormPreview = forwardRef(
       req.status ||
       "";
 
-    const showPriceColumns =
-      [
-        "PENDING_PROCUREMENT_OFFICER_APPROVAL",
-        "PENDING_PROCUREMENT_MANAGER_APPROVAL",
-        "PENDING_FINANCE_APPROVAL",
-        "PENDING_MD_APPROVAL",
-        "COMPLETED",
-        "APPROVED",
-        "REJECTED"
-      ].includes(currentState);
+    const showPriceColumns = [
+      "PENDING_PROCUREMENT_OFFICER_APPROVAL",
+      "PENDING_PROCUREMENT_MANAGER_APPROVAL",
+      "PENDING_FINANCE_APPROVAL",
+      "PENDING_MD_APPROVAL",
+      "COMPLETED",
+      "APPROVED",
+      "REJECTED",
+    ].includes(currentState);
 
-// ...existing code...
+    const isInStock = req.requestType === "inStock";
+
     return (
       <div
         ref={ref}
@@ -356,22 +365,29 @@ const RequestFormPreview = forwardRef(
               </p>
             </div>
 
-       <div className="px-4 py-3 border-b border-r border-slate-200">
-  <p className="text-xs text-slate-500 font-medium mb-0.5">
-    Vessel
-  </p>
-  <p className="text-sm text-slate-900 font-semibold">
-    {vessels.length > 0
-      ? getVesselName(req.vesselId) || "N/A"
-      : ""}
-  </p>
-</div>
-
             <div className="px-4 py-3 border-b border-r border-slate-200">
               <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Submitted Date
+                Vessel
               </p>
-              <p className="text-sm text-slate-900 font-semibold">{dateStr}</p>
+              <p className="text-sm text-slate-900 font-semibold">
+                {vessels.length > 0 ? getVesselName(req.vesselId) || "N/A" : ""}
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5 t">
+                Submitted Date/Time
+              </p>
+              <div className="text-sm text-slate-900 font-semibold flex gap-2 ">
+                <p> {createdAt.toLocaleDateString()} </p>
+                <p>
+                  {" "}
+                  {createdAt.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
             </div>
             <div className="px-4 py-3 border-b border-r border-slate-200">
               <p className="text-xs text-slate-500 font-medium mb-0.5">
@@ -379,10 +395,16 @@ const RequestFormPreview = forwardRef(
               </p>
               <p className="text-sm font-semibold">
                 <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                  {req.requestType === "purchaseOrder" ||
-                  req.type === "purchase-order"
-                    ? "Purchase Order"
-                    : "Petty Cash"}
+                  {isProcurementOfficerApproved(req)
+                    ? req.requestType === "purchaseOrder" ||
+                      req.type === "purchase-order"
+                      ? "Purchase Order"
+                      : req.requestType === "pettyCash"
+                      ? "Petty Cash"
+                      : req.requestType === "inStock"
+                      ? "INSTOCK"
+                      : req.requestType || "N/A"
+                    : "N/A"}
                 </span>
               </p>
             </div>
@@ -396,16 +418,12 @@ const RequestFormPreview = forwardRef(
             </div>
 
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
+              <p className="text-xs text-slate-500 font-medium ">
                 Priority
               </p>
-              <p className="text-sm font-semibold">
+              <p className="text-sm font-semibold text-left">
                 <span
-                  className={`inline-block px-2 py-0.5 rounded text-xs capitalize ${
-                    String(req.priority || "").toLowerCase() === "urgent"
-                      ? "bg-red-100 text-red-700"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
+                  className={`inline-block   rounded text-xs capitalize `}
                 >
                   {String(req.priority || "").toLowerCase() === "urgent"
                     ? "URGENT"
@@ -421,13 +439,13 @@ const RequestFormPreview = forwardRef(
                 {req.logisticsType || "N/A"}
               </p>
             </div>
-             {String(req.destination || "").toLowerCase() === "marine" ? (
+            {String(req.destination || "").toLowerCase() === "marine" ? (
               <div className="px-4 py-3 border-r border-b  border-slate-200">
                 <p className="text-xs text-slate-500 font-medium mb-0.5">
                   OffShore Number
                 </p>
                 <p className="text-sm font-semibold">
-                  <span className="inline-block px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                  <span className="inline-block  py-0.5 rounded text-xs bg-blue-100 text-blue-700">
                     {req.offshoreReqNumber || "N/A"}
                   </span>
                 </p>
@@ -462,29 +480,27 @@ const RequestFormPreview = forwardRef(
                     <th className="px-3 py-2">Qty</th>
 
                     {/* ✅ Shipping Qty - only for shipping/clearing */}
-                    {showFeeColumns && (
+                    {/* {showFeeColumns && (
                       <th className="px-3 py-2 text-center">Shipping Qty</th>
-                    )}
+                    )} */}
 
                     {/* ✅ Shipping Fee - only for shipping/clearing */}
-                    {showFeeColumns && (
+                    {/* {showFeeColumns && (
                       <th className="px-3 py-2 text-right">Shipping Fee</th>
-                    )}
+                    )} */}
 
                     {/* ✅ Clearing Fee - only for clearing */}
-                    {isClearingTag && (
+                    {/* {isClearingTag && (
                       <th className="px-3 py-2 text-right">Clearing Fee</th>
-                    )}
+                    )} */}
 
-                     {/* ✅ Unit Price - hide for shipping/clearing and before procurement */}
-                    {!showFeeColumns && showPriceColumns && (
+                    {/* ✅ Unit Price - hide for shipping/clearing and before procurement */}
+                    {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                       <th className="px-3 py-2 text-right">Unit Price</th>
                     )}
-
-                    {/* ✅ Total - hide for shipping/clearing and before procurement */}
-                    {!showFeeColumns && showPriceColumns && (
+                    {!showFeeColumns && showPriceColumns && !isInStock && (
                       <th className="px-3 py-2 text-right">Total</th>
-                    )}
+                    )} */}
                   </tr>
                 </thead>
                 <tbody>
@@ -507,129 +523,148 @@ const RequestFormPreview = forwardRef(
                       )}
 
                       {/* ✅ Shipping Fee - only for shipping/clearing */}
-                      {showFeeColumns && (
-                        <td className="px-3 py-2 align-top text-right text-slate-700">
-                          {formatCurrency(
-                            it.shippingFee || 0,
-                            it.currency || req.currency
-                          )}
-                        </td>
-                      )}
+                   {/* {showFeeColumns && (
+  <td className="py-3 text-right text-slate-700">
+    {formatCurrency(
+      isClearingTag
+        ? req.shippingFee || 0 
+        : it.shippingFee || 0, 
+      it.currency || req.currency
+    )}
+  </td>
+)} */}
 
                       {/* ✅ Clearing Fee - only for clearing */}
-                      {isClearingTag && (
+                      {/* {isClearingTag && (
                         <td className="px-3 py-2 align-top text-right text-slate-700">
                           {formatCurrency(
                             it.clearingFee || 0,
                             it.currency || req.currency
                           )}
                         </td>
-                      )}
+                      )} */}
 
                       {/* ✅ Unit Price - hide for shipping/clearing and before procurement */}
-                      {!showFeeColumns && showPriceColumns && (
+                      {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                         <td className="px-3 py-2 align-top text-right text-slate-700">
                           {formatCurrency(
                             it.unitPrice,
                             it.currency || req.currency
                           )}
                         </td>
-                      )}
+                      )} */}
 
                       {/* ✅ Total - hide for shipping/clearing and before procurement */}
-                      {!showFeeColumns && showPriceColumns && (
+                      {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                         <td className="px-3 py-2 align-top text-right font-semibold text-slate-900">
-                       {formatCurrency(
-  it.totalPrice !== undefined
-    ? it.totalPrice
-    : it.total !== undefined
-    ? it.total
-    : Number(it.unitPrice || 0) * Number(it.quantity || 0),
-  it.currency || req.currency
-)}
+                          {formatCurrency(
+                            it.totalPrice !== undefined
+                              ? it.totalPrice
+                              : it.total !== undefined
+                              ? it.total
+                              : Number(it.unitPrice || 0) *
+                                Number(it.quantity || 0),
+                            it.currency || req.currency
+                          )}
                         </td>
-                      )}
+                      )} */}
                     </tr>
                   ))}
                 </tbody>
-                  {/* ✅ Grand Total - only show if price columns are visible */}
-                {!showFeeColumns && showPriceColumns && (
+                {/* ✅ Grand Total - only show if price columns are visible */}
+                {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                   <tfoot>
                     <tr>
-                      <td colSpan={6} className="pt-4 text-right font-bold">Grand Total</td>
-                      <td className="pt-4 text-right text-xl font-bold">
+                      <td colSpan={6} className="pt-4 text-right font-bold">
+                        Grand Total
+                      </td>
+                      <td className="pt-4 text-right text-xl font-bold pb-4">
                         {formatCurrency(grandTotal, req.currency)}
                       </td>
                     </tr>
                   </tfoot>
-                )}
+                )} */}
               </table>
             </div>
           </div>
         </div>
+        {!hideSignatures && (
+          <div className="pt-6 border-t">
+            <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
+              <div className="flex-1">
+                <p className="text-xs text-slate-500 mb-2">Approved by</p>
 
-        <div className="pt-6 border-t">
-          <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
-            <div className="flex-1">
-              <p className="text-xs text-slate-500 mb-2">Approved by</p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {loading ? (
-                  <div className="text-sm text-slate-500">
-                    Loading signatures…
-                  </div>
-                ) : signaturesPrepared.length === 0 ? (
-                  <div className="text-sm text-slate-500">
-                    No signatures yet
-                  </div>
-                ) : (
-                  signaturesPrepared.map((s, idx) => {
-                    const ts = s.timestamp
-                      ? new Date(s.timestamp).toLocaleString()
-                      : "";
-                    return (
-                      <div
-                        key={s.userId || idx}
-                        className="bg-white p-3 rounded-xl border border-slate-100"
-                      >
-                        {s.imageData ? (
-                          <div style={{ height: 40 }}>
-                            <img
-                              src={s.imageData}
-                              alt={s.name}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4  gap-4">
+                  {" "}
+                  {loading ? (
+                    <div className="text-sm text-slate-500">
+                      Loading signatures…
+                    </div>
+                  ) : signaturesPrepared.length === 0 ? (
+                    <div className="text-sm text-slate-500">
+                      No signatures yet
+                    </div>
+                  ) : (
+                    signaturesPrepared.map((s, idx) => {
+                      const ts = s.timestamp
+                        ? new Date(s.timestamp).toLocaleString()
+                        : "";
+                      return (
+                        <div
+                          key={s.userId || idx}
+                          className="bg-white p-2 rounded-xl border border-slate-100 w-full text-center"
+                        >
+                          {s.imageData ? (
+                            <div
                               style={{
-                                maxWidth: 160,
-                                height: 36,
-                                objectFit: "contain",
+                                height: 40,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
                               }}
-                            />
+                            >
+                              <img
+                                src={s.imageData}
+                                alt={s.name}
+                                style={{
+                                  maxWidth: 160,
+                                  height: 36,
+                                  objectFit: "contain",
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div
+                              style={{
+                                height: 25,
+                                fontFamily:
+                                  "Brush Script MT, Lucida Handwriting, cursive",
+                                fontSize: 15,
+                                color: "#036173",
+                                marginBottom: "1rem",
+                              }}
+                            >
+                              {s.name}
+                            </div>
+                          )}
+                          <div className="mt-2">
+                            <div className="text-sm font-semibold">
+                              {s.name}
+                            </div>
+                            <div className="text-xs text-slate-500 ">
+                              {s.role}
+                            </div>
+                            <div className="text-xs text-slate-400">{ts}</div>
                           </div>
-                        ) : (
-                          <div
-                            style={{
-                              height: 36,
-                              fontFamily:
-                                "Brush Script MT, Lucida Handwriting, cursive",
-                              fontSize: 20,
-                              color: "#036173",
-                            }}
-                          >
-                            {s.name}
-                          </div>
-                        )}
-                        <div className="mt-2">
-                          <div className="text-sm font-semibold">{s.name}</div>
-                          <div className="text-xs text-slate-500">{s.role}</div>
-                          <div className="text-xs text-slate-400">{ts}</div>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {loading && (
           <div className="text-xs text-slate-500 mt-2">Refreshing preview…</div>

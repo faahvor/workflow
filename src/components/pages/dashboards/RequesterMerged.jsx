@@ -141,7 +141,7 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
                 className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl"
               />
             </div>
-            <div className="relative">
+            {/* <div className="relative">
               <select
                 value={localFilter}
                 onChange={(e) => setLocalFilter(e.target.value)}
@@ -153,7 +153,7 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
               </select>
               <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
               <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
-            </div>
+            </div> */}
           </div>
         </div>
       )}

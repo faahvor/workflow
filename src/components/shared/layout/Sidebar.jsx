@@ -14,6 +14,10 @@ import {
   MdDoneAll,
   MdExpandLess,
   MdExpandMore,
+  MdNotificationsActive,
+  MdCancel,
+  MdChat,
+  MdOutlineSupportAgent,
 } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -25,17 +29,25 @@ const Sidebar = ({
   setActiveView,
   pendingCount = 0,
   queriedCount = 0,
+  rejectedCount = 0,
+  notificationCount = 0,
   isRequester = false,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [requestsExpanded, setRequestsExpanded] = useState(false);
+  const [requestsExpanded, setRequestsExpanded] = useState(true); // expanded by default
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  
+
   const roleLower = String(user?.role || "").toLowerCase();
-  const isProcurement = roleLower === "procurement manager" || roleLower === "procurement officer";
-  const isProcurementManager = String(user?.role || "") === "Procurement Manager";
-  const isAccountingLead = ["accountingofficer", "accounting officer", "account officer"].includes(roleLower);
+  const isProcurement =
+    roleLower === "procurement manager" || roleLower === "procurement officer";
+  const isProcurementManager =
+    String(user?.role || "") === "Procurement Manager";
+  const isAccountingLead = [
+    "accountingofficer",
+    "accounting officer",
+    "account officer",
+  ].includes(roleLower);
 
   const isDeliveryRole =
     roleLower === "deliverybase" ||
@@ -149,214 +161,268 @@ const Sidebar = ({
             )}
 
             {/* ✅ Requests submenu for Procurement roles */}
-            {isProcurement ? (
-              <div>
-                <button
-                  onClick={toggleRequests}
-                  aria-expanded={requestsExpanded}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                    requestsExpanded ||
-                    activeView === "pending" ||
-                    activeView === "createNew" ||
-                    activeView === "myRequests"
-                      ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                  }`}
-                >
-                  <MdPendingActions className="text-xl shrink-0" />
-                  <span className="font-medium text-sm">Requests</span>
-                  {pendingCount > 0 && (
-                    <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
-                      {pendingCount}
-                    </span>
-                  )}
-                  <span className="ml-auto">
-                    {requestsExpanded ? <MdExpandLess /> : <MdExpandMore />}
-                  </span>
-                </button>
 
-                {/* Sub-list */}
-                {requestsExpanded && (
-                  <div className="mt-2 pl-4 space-y-1">
-                    {/* Create Request */}
-                    <button
-                      onClick={() => {
-                        setActiveView("createNew");
-                        setIsSidebarOpen(false);
-                      }}
-                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                        activeView === "createNew"
-                          ? "bg-gray-800/80 text-white"
-                          : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                      }`}
-                    >
-                      <MdAdd className="text-lg" />
-                      <span className="text-sm">Create Request</span>
-                    </button>
-
-                    {/* Pending Requests (default) */}
-                    <button
-                      onClick={() => {
-                        setActiveView("pending");
-                        setIsSidebarOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                        activeView === "pending"
-                          ? "bg-gray-800/80 text-white"
-                          : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <MdPendingActions className="text-lg" />
-                        <span className="text-sm">Pending Requests</span>
-                      </div>
-                      {pendingCount > 0 && (
-                        <span className="bg-orange-500/20 text-orange-400 text-xs px-2 py-0.5 rounded-lg font-semibold">
-                          {pendingCount}
-                        </span>
-                      )}
-                    </button>
-
-                    {/* My Requests */}
-                    <button
-                      onClick={() => {
-                        setActiveView("myRequests");
-                        setIsSidebarOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                        activeView === "myRequests"
-                          ? "bg-gray-800/80 text-white"
-                          : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <MdDescription className="text-lg" />
-                        <span className="text-sm">My Requests</span>
-                      </div>
-                    </button>
-                  </div>
-                )}
-              </div>
-                ) : (
-              /* Non-procurement roles: flat Pending Requests button */
+            <div>
               <button
-                onClick={() => {
-                  setActiveView("pending");
-                  setIsSidebarOpen(false);
-                }}
+                onClick={toggleRequests}
+                aria-expanded={requestsExpanded}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                  activeView === "pending"
+                  requestsExpanded ||
+                  [
+                    "pending",
+                    "approved",
+                    "merged",
+                    "incompleteDelivery",
+                    "rejected",
+                    "queried",
+                    "completed",
+                    "myRequests",
+                    "createNew",
+                  ].includes(activeView)
                     ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
                     : "text-gray-400 hover:text-white hover:bg-gray-800/50"
                 }`}
               >
                 <MdPendingActions className="text-xl shrink-0" />
-                <span className="font-medium text-sm">
-                  {isRequester
-                    ? "My Requests"
-                    : isDeliveryRole
-                    ? "Pending  Approval"
-                    : "Pending Requests"}
-                </span>
-                {pendingCount > 0 && (
-                  <span className="ml-auto bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
-                    {pendingCount}
+                <span className="font-medium text-sm">Requests</span>
+                {pendingCount + queriedCount > 0 && (
+                  <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
+                    {pendingCount + queriedCount}
                   </span>
                 )}
+                <span className="ml-auto">
+                  {requestsExpanded ? <MdExpandLess /> : <MdExpandMore />}
+                </span>
               </button>
-            )}
 
-            {/* Approved */}
-             <button
-              onClick={() => {
-                setActiveView("approved");
-                setIsSidebarOpen(false);
-              }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                activeView === "approved"
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-              }`}
-            >
-              <MdVerified className="text-xl shrink-0" />
-              <span className="font-medium text-sm">
-                {isDeliveryRole ? "Delivered Requests" : "Approved"}
-              </span>
-            </button>
-            {isAccountingLead && (
-              <button
-                onClick={() => {
-                  setActiveView("merged");
-                  setIsSidebarOpen(false);
-                }}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
-                  activeView === "merged"
-                    ? "bg-gray-800/80 text-white"
-                    : "text-gray-300 hover:text-white hover:bg-gray-800/50"
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <IoAttach className="text-xl shrink-0" />
-                  <span className="font-medium text-sm">Merged</span>
+              {/* Sub-list */}
+              {requestsExpanded && (
+                <div className="mt-2 pl-4 space-y-1">
+                  {/* For Procurement roles only: Create New & My Requests */}
+                  {isProcurement && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setActiveView("createNew");
+                          setIsSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                          activeView === "createNew"
+                            ? "bg-gray-800/80 text-white"
+                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                        }`}
+                      >
+                        <MdAdd className="text-lg" />
+                        <span className="text-sm">Create Request</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveView("myRequests");
+                          setIsSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                          activeView === "myRequests"
+                            ? "bg-gray-800/80 text-white"
+                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                        }`}
+                      >
+                        <MdDescription className="text-lg" />
+                        <span className="text-sm">My Requests</span>
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setActiveView("pending");
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                      activeView === "pending"
+                         ? "bg-gray-800/80 text-white"
+                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <MdPendingActions className="text-lg " />
+                    <span className=" text-sm">
+                      {isRequester
+                        ? "My Requests"
+                        : isDeliveryRole
+                        ? "Pending  Approval"
+                        : "Pending Requests"}
+                    </span>
+                    {pendingCount > 0 && (
+                      <span className="ml-auto bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Approved */}
+                  <button
+                    onClick={() => {
+                      setActiveView("approved");
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                      activeView === "approved"
+                         ? "bg-gray-800/80 text-white"
+                            : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <MdVerified className="text-lg shrink-0" />
+                    <span className="text-sm">
+                      {isDeliveryRole ? "Delivered Requests" : "Approved Requests"}
+                    </span>
+                  </button>
+
+                  {isAccountingLead && (
+                    <button
+                      onClick={() => {
+                        setActiveView("merged");
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                        activeView === "merged"
+                          ? "bg-gray-800/80 text-white"
+                          : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <IoAttach className="text-lg shrink-0" />
+                        <span className="text-sm">Merged Requests</span>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Incomplete Delivery */}
+                  <button
+                    onClick={() => {
+                      setActiveView("incompleteDelivery");
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                      activeView === "incompleteDelivery"
+                        ? "bg-gray-800/80 text-white"
+                        : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <MdInventory className="text-lg" />
+                    <span className="text-sm">Incomplete Delivery</span>
+                  </button>
+
+                  {/* Rejected Requests */}
+                  <button
+  onClick={() => {
+    setActiveView("rejected");
+    setIsSidebarOpen(false);
+  }}
+  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+    activeView === "rejected"
+      ? "bg-gray-800/80 text-white"
+      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+  }`}
+>
+  <MdCancel className="text-lg" />
+  <span className="text-sm">Rejected Requests</span>
+  {rejectedCount > 0 && (
+    <span className="ml-auto bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
+      {rejectedCount}
+    </span>
+  )}
+</button>
+
+                  {/* Queried Requests */}
+                  <button
+                    onClick={() => {
+                      setActiveView("queried");
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                      activeView === "queried"
+                        ? "bg-gray-800/80 text-white"
+                        : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <MdHelp className="text-lg" />
+                      <span className="text-sm">Queried Requests</span>
+                    </div>
+                    {queriedCount > 0 && (
+                      <span className="bg-orange-500/20 text-orange-400 text-xs px-2 py-0.5 rounded-lg font-semibold">
+                        {queriedCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Completed */}
+                  <button
+                    onClick={() => {
+                      setActiveView("completed");
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                      activeView === "completed"
+                        ? "bg-gray-800/80 text-white"
+                        : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <MdDoneAll className="text-lg" />
+                    <span className="text-sm">Completed</span>
+                  </button>
                 </div>
-              </button>
-            )}
-            {(isProcurement || isDeliveryRole) && (
-  <button
-    onClick={() => {
-      setActiveView("incompleteDelivery");
-      setIsSidebarOpen(false);
-    }}
-    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-      activeView === "incompleteDelivery"
-        ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
-        : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-    }`}
-  >
-    <MdInventory className="text-xl shrink-0" />
-    <span className="font-medium text-sm">Incomplete Delivery</span>
-  </button>
-)}
+              )}
+            </div>
 
-            {/* Queried Requests */}
+            {/* Notifications (newly added) */}
             <button
               onClick={() => {
-                setActiveView("queried");
+                setActiveView("notifications");
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                activeView === "queried"
+                activeView === "notifications"
                   ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
                   : "text-gray-400 hover:text-white hover:bg-gray-800/50"
               }`}
             >
-              <MdHelp className="text-xl shrink-0" />
-              <span className="font-medium text-sm">Queried Requests</span>
-              {queriedCount > 0 && (
-                <span className="ml-auto bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs font-semibold">
-                  {queriedCount}
+              <MdNotificationsActive className="text-xl shrink-0" />
+              <span className="font-medium text-sm">Notifications</span>
+              {notificationCount > 0 && (
+                <span className="ml-auto bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
+                  {notificationCount}
                 </span>
               )}
             </button>
 
-            {/* Completed Requests */}
-               <button
+              <button
               onClick={() => {
-                setActiveView("completed");
+                setActiveView("chatRoom");
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                activeView === "completed"
+                activeView === "chatRoom"
                   ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
                   : "text-gray-400 hover:text-white hover:bg-gray-800/50"
               }`}
             >
-              <MdDoneAll className="text-xl shrink-0" />
-              <span className="font-medium text-sm">
-                {isDeliveryRole ? "Completed Deliveries" : "Completed"}
-              </span>
+              <MdChat className="text-xl shrink-0" />
+              <span className="font-medium text-sm">Chat Room</span>
             </button>
-
+              <button
+              onClick={() => {
+                setActiveView("support");
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                activeView === "support"
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+              }`}
+            >
+              <MdOutlineSupportAgent className="text-xl shrink-0" />
+              <span className="font-medium text-sm">Support</span>
+            </button>
             <button
               onClick={() => {
                 setActiveView("signature");
@@ -402,7 +468,9 @@ const Sidebar = ({
                 }`}
               >
                 <MdInventory className="text-xl shrink-0" />
-                <span className="font-medium text-sm">Inventory Management</span>
+                <span className="font-medium text-sm">
+                  Inventory Management
+                </span>
               </button>
             )}
           </div>

@@ -45,7 +45,7 @@ const MovedTable = ({ items = [], requestType = "" }) => {
                 Maker's Part No
               </th>
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-               Destination Request
+                Destination Request
               </th>
               {!isPettyCash && (
                 <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
@@ -103,11 +103,11 @@ const MovedTable = ({ items = [], requestType = "" }) => {
                   <td className="border border-slate-300 px-4 py-3 text-center text-sm font-medium">
                     {index + 1}
                   </td>
-                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
+                  <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                     {item.name || item.description || "N/A"}
                   </td>
                   <td className="border border-slate-300 px-4 py-3 text-sm">
-                    {item.itemType || item.makersType || "N/A"}
+                    {item.makersType || "N/A"}
                   </td>
                   <td className="border border-slate-300 px-4 py-3 text-sm">
                     {item.maker || "N/A"}

@@ -12,8 +12,11 @@ import {
   MdLocalShipping,
   MdInventory,
   MdHelpOutline,
+  MdShoppingCart,
+  MdAttachMoney,
 } from "react-icons/md";
 import { FaHouseFloodWaterCircleArrowRight } from "react-icons/fa6";
+import { HiClock } from "react-icons/hi";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -21,6 +24,8 @@ const RequesterPending = ({
   searchQuery = "",
   filterType = "all",
   onOpenDetail = () => {},
+  onUnreadChange,
+  setPendingUnreadCount,
 }) => {
   const { getToken } = useAuth();
   const [requests, setRequests] = useState([]);
@@ -33,6 +38,29 @@ const RequesterPending = ({
 
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [localFilter, setLocalFilter] = useState(filterType);
+  const [vessels, setVessels] = useState([]);
+
+  const fetchVessels = async () => {
+  try {
+    const token = getToken();
+    const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setVessels(response.data.data || []);
+  } catch (err) {
+    console.error("❌ Error fetching vessels:", err);
+  }
+};
+
+useEffect(() => {
+  fetchVessels();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+const getVesselName = (vesselId) => {
+  const vessel = vessels.find((v) => v.vesselId === vesselId);
+  return vessel?.name || vesselId;
+};
 
   const getInStockColor = () => {
     return "bg-green-100 text-green-700 border-green-200";
@@ -102,9 +130,106 @@ const RequesterPending = ({
     return matchesSearch && matchesFilter;
   });
 
-  const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+const sortedRequests = [
+  ...filtered.filter((r) => r.priority === "high"),
+  ...filtered
+    .filter((r) => r.priority !== "high")
+    .sort((a, b) => {
+      // If requestId is numeric, sort numerically
+      const numA = Number(String(a.requestId).replace(/\D/g, ""));
+      const numB = Number(String(b.requestId).replace(/\D/g, ""));
+      return numB - numA;
+    }),
+];
+
+const total = sortedRequests.length;
+const pages = Math.max(1, Math.ceil(total / pageSize));
+const paged = sortedRequests.slice((page - 1) * pageSize, page * pageSize);
+
+
+  const handleViewDetailsClick = async (request) => {
+    if (request.isUnread) {
+      try {
+        const token = getToken();
+        await axios.post(
+          `${API_BASE_URL}/requests/${request.requestId}/read`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setRequests((prev) =>
+          prev.map((r) =>
+            r.requestId === request.requestId ? { ...r, isUnread: false } : r
+          )
+        );
+        // Immediately fetch the latest unread count from backend for sidebar
+        if (typeof onUnreadChange === "function") {
+          onUnreadChange();
+        }
+      } catch (err) {
+        console.error("Failed to mark as read", err);
+      }
+    }
+    onOpenDetail(request);
+  };
+  // Get CSS color classes for request type
+  const getTypeColor = (type) => {
+    switch (type) {
+      case "purchaseOrder":
+        return "bg-emerald-100 text-emerald-600 border-emerald-200";
+      case "pettyCash":
+        return "bg-teal-100 text-teal-600 border-teal-200";
+      case "inStock":
+        return "bg-blue-100 text-blue-600 border-blue-200"; // <-- Add this line
+      default:
+        return "bg-slate-100 text-slate-600 border-slate-200";
+    }
+  };
+
+  const getTypeIcon = (type) => {
+    switch (type) {
+      case "purchaseOrder":
+        return <MdShoppingCart className="text-sm" />;
+      case "pettyCash":
+        return <MdAttachMoney className="text-sm" />;
+      case "inStock":
+        return <MdInventory className="text-sm" />; // <-- Add this line
+      default:
+        return null;
+    }
+  };
+
+  // Get label for request type
+  const getTypeLabel = (type) => {
+    switch (type) {
+      case "purchaseOrder":
+        return "Purchase Order";
+      case "pettyCash":
+        return "Petty Cash";
+      case "inStock":
+        return "INSTOCK";
+      default:
+        return type;
+    }
+  };
+
+  function hasProcurementOfficerApproved(request) {
+    return (
+      Array.isArray(request.history) &&
+      (request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+        request.history.some(
+          (h) =>
+            h.action === "SPLIT" &&
+            h.role === "SYSTEM" &&
+            typeof h.info === "string" &&
+            h.info.includes("Petty Cash items moved to Petty Cash flow")
+        ))
+    );
+  }
 
   return (
     <div>
@@ -118,19 +243,6 @@ const RequesterPending = ({
               placeholder="Search by request ID, requester, or department..."
               className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl"
             />
-          </div>
-          <div className="relative">
-            <select
-              value={localFilter}
-              onChange={(e) => setLocalFilter(e.target.value)}
-              className="h-12 pl-12 pr-10 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none"
-            >
-              <option value="all">All Types</option>
-              <option value="purchaseOrder">Purchase Orders</option>
-              <option value="pettycash">Petty Cash</option>
-            </select>
-            <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
-            <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
           </div>
         </div>
       </div>
@@ -150,7 +262,13 @@ const RequesterPending = ({
             {paged.map((request) => (
               <div
                 key={request.requestId || request.id}
-                className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer"
+                className={`bg-white/90 backdrop-blur-xl border-2 rounded-2xl p-4 md:p-6 shadow-lg transition-all duration-200 cursor-pointer group
+    ${
+      request.isUnread
+        ? "border-emerald-400 ring-2 ring-emerald-200"
+        : "border-slate-200 hover:border-slate-300"
+    }
+  `}
                 onClick={() => onOpenDetail(request)}
               >
                 <div className="flex flex-col lg:flex-row lg:items-center gap-4">
@@ -190,30 +308,24 @@ const RequesterPending = ({
                           <span>Clearing</span>
                         </span>
                       )}
-                       {request.offshoreReqNumber && (
-                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
-                    <MdDirectionsBoat className="text-sm" />
-                    <span>{request.offshoreReqNumber}</span>
+                       {hasProcurementOfficerApproved(request) && (
+                  <span
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+                      request.requestType
+                    )}`}
+                  >
+                    {getTypeIcon(request.requestType)}
+                    <span>{getTypeLabel(request.requestType)}</span>
                   </span>
                 )}
-                      {request.items &&
-                        request.items.some((it) => it && it.inStock) && (
-                          <span
-                            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getInStockColor()}`}
-                          >
-                            {getInStockIcon()}
-                            <span>In Stock</span>
-                          </span>
-                        )}
-
-                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-100 text-emerald-700">
-                        <MdPendingActions className="text-sm" />
-                        <span>
-                          {request.requestType === "purchaseOrder"
-                            ? "Purchase Order"
-                            : "Petty Cash"}
+                      {request.offshoreReqNumber && (
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                          <MdDirectionsBoat className="text-sm" />
+                          <span>{request.offshoreReqNumber}</span>
                         </span>
-                      </span>
+                      )}
+                    
+
                     </div>
 
                     <p className="text-slate-600 text-sm mb-3">
@@ -237,19 +349,19 @@ const RequesterPending = ({
                       {request.vesselId && (
                         <div className="flex items-center gap-1.5 text-slate-600">
                           <MdDirectionsBoat className="text-base" />
-                          <span className="text-xs md:text-sm font-medium">
-                            {request.vesselId}
-                          </span>
+                        <span className="text-xs md:text-sm font-medium">
+  {getVesselName(request.vesselId)}
+</span>
                         </div>
                       )}
 
                       <div className="flex items-center gap-1.5 text-slate-600">
-                        <span className="text-xs md:text-sm font-medium">
-                          {request.createdAt
-                            ? new Date(request.createdAt).toLocaleDateString()
-                            : ""}
-                        </span>
-                      </div>
+  <HiClock className="text-base" />
+  <span className="text-xs md:text-sm font-medium">
+    {new Date(request.createdAt).toLocaleDateString()}{" "}
+    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+  </span>
+</div>
                     </div>
                   </div>
 
@@ -257,7 +369,7 @@ const RequesterPending = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onOpenDetail(request);
+                        handleViewDetailsClick(request); // <-- use the new handler
                       }}
                       className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-sm font-bold rounded-lg hover:shadow-xl transition-all duration-200"
                     >

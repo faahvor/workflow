@@ -11,6 +11,7 @@ const MDTable = ({
   requestType = "",
   tag = "",
   clearingFee,
+  request,
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
@@ -23,16 +24,18 @@ const MDTable = ({
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
-
-const getFeeValue = (item) => {
-  if (!item) return 0;
-  const v = item[feeFieldName];
-  // If clearingFee is not on item, fallback to request.clearingFee
-  if (feeFieldName === "clearingFee" && (v === undefined || v === null)) {
-    return typeof clearingFee === "number" ? clearingFee : Number(clearingFee || 0);
-  }
-  return typeof v === "number" ? v : Number(v || 0);
-};
+  const showShippingFee = request?.logisticsType === "international";
+  const getFeeValue = (item) => {
+    if (!item) return 0;
+    const v = item[feeFieldName];
+    // If clearingFee is not on item, fallback to request.clearingFee
+    if (feeFieldName === "clearingFee" && (v === undefined || v === null)) {
+      return typeof clearingFee === "number"
+        ? clearingFee
+        : Number(clearingFee || 0);
+    }
+    return typeof v === "number" ? v : Number(v || 0);
+  };
 
   React.useEffect(() => {
     const checkScroll = () => {
@@ -200,16 +203,26 @@ const getFeeValue = (item) => {
                   {feeLabel}
                 </th>
               )}
+              {showShippingFee && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Shipping Fee
+                </th>
+              )}
+
               {!hidePrices && (
                 <>
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Unit Price
                   </th>
-                  <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                    Total Price
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                    Discount (%)
                   </th>
+
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     VAT Amount
+                  </th>
+                  <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                    Total Price
                   </th>
                 </>
               )}
@@ -236,7 +249,7 @@ const getFeeValue = (item) => {
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}
@@ -288,7 +301,26 @@ const getFeeValue = (item) => {
                     })}
                   </td>
                 )}
-
+              {showShippingFee && (
+  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+    {tagLower === "clearing" ? (
+      request?.shippingFee ? (
+        <>
+          {request.currency || "NGN"}{" "}
+          {parseFloat(request.shippingFee).toFixed(2)}
+        </>
+      ) : (
+        "N/A"
+      )
+    ) : item.shippingFee ? (
+      <>
+        {item.currency || "NGN"} {parseFloat(item.shippingFee).toFixed(2)}
+      </>
+    ) : (
+      "N/A"
+    )}
+  </td>
+)}
                 {!hidePrices && (
                   <>
                     {/* Unit Price - Read Only */}
@@ -303,17 +335,9 @@ const getFeeValue = (item) => {
                       )}
                     </td>
 
-                    {/* Total Price - Calculated */}
-                    <td className="border border-slate-200 px-4 py-3 text-right text-sm  text-slate-700">
-                      <span className="font-semibold">
-                        {item.currency || "NGN"}{" "}
-                        {Number(
-                          item.totalPrice || item.total || 0
-                        ).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
+                    {/* Add Discount cell here */}
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      {item.discount ? `${item.discount}%` : "0%"}
                     </td>
 
                     <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
@@ -331,6 +355,18 @@ const getFeeValue = (item) => {
                       ) : (
                         <span className="text-slate-400">N/A</span>
                       )}
+                    </td>
+                    {/* Total Price - Calculated */}
+                    <td className="border border-slate-200 px-4 py-3 text-right text-sm  text-slate-700">
+                      <span className="font-semibold">
+                        {item.currency || "NGN"}{" "}
+                        {Number(
+                          item.totalPrice || item.total || 0
+                        ).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                     </td>
                   </>
                 )}

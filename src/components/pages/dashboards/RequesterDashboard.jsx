@@ -23,6 +23,160 @@ import RequesterMerged from "./RequesterMerged";
 
 import RequesterHistory from "./RequesterHistory";
 import UsersSignature from "./UsersSignature";
+import Notification from "./Notification";
+import RejectedRequest from "./RejectedRequest";
+import ChatRoom from "./ChatRoom";
+import Support from "./Support";
+
+// --- Place above the RequesterDashboard component ---
+
+function ServiceTable({ rows, setRows }) {
+  const handleChange = (idx, field, value) => {
+    const updated = [...rows];
+    updated[idx][field] = value;
+    setRows(updated);
+  };
+  const handleRemove = (idx) => {
+    setRows(rows.filter((_, i) => i !== idx));
+  };
+  const handleAdd = () => {
+    setRows([...rows, { description: "", amount: "" }]);
+  };
+  return (
+    <div className="mb-6">
+      <div className="bg-gradient-to-r from-[#036173] to-teal-600 text-white font-bold px-4 py-2 rounded-t-lg">
+        SERVICE AND LABOR DESCRIPTION
+      </div>
+      <table className="w-full border border-[#036173] bg-[#f0f4ff]">
+        <thead>
+          <tr className="">
+            <th className="p-2 border border-[#036173] text-left">
+              Description
+            </th>
+            <th className="p-2 border border-[#036173] text-left">Amount</th>
+            <th className="p-2 border border-[#036173]"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => (
+            <tr key={idx}>
+              <td className="p-2 border border-[#036173]">
+                <input
+                  type="text"
+                  value={row.description}
+                  onChange={(e) =>
+                    handleChange(idx, "description", e.target.value)
+                  }
+                  className="w-full bg-transparent"
+                />
+              </td>
+              <td className="p-2 border border-[#036173]">
+                <input
+                  type="number"
+                  value={row.amount}
+                  onChange={(e) => handleChange(idx, "amount", e.target.value)}
+                  className="w-full bg-transparent"
+                />
+              </td>
+              <td className="p-2 border border-[#036173] text-center">
+                <button
+                  type="button"
+                  onClick={() => handleRemove(idx)}
+                  className="text-red-600 font-bold"
+                  title="Remove"
+                >
+                  ×
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button
+        type="button"
+        onClick={handleAdd}
+        className="mt-2 px-4 py-2 bg-[#036173] text-white rounded"
+      >
+        + Add Service Row
+      </button>
+    </div>
+  );
+}
+
+function MaterialTable({ rows, setRows }) {
+  const handleChange = (idx, field, value) => {
+    const updated = [...rows];
+    updated[idx][field] = value;
+    setRows(updated);
+  };
+  const handleRemove = (idx) => {
+    setRows(rows.filter((_, i) => i !== idx));
+  };
+  const handleAdd = () => {
+    setRows([...rows, { description: "", quantity: "" }]);
+  };
+  return (
+    <div className="mb-6">
+      <div className="bg-gradient-to-r from-[#036173] to-teal-600 text-white font-bold px-4 py-2 rounded-t-lg">
+        PARTS AND MATERIALS DESCRIPTION
+      </div>
+      <table className="w-full border border-[#036173] bg-[#f0f4ff]">
+        <thead>
+          <tr>
+            <th className="p-2 border border-[#036173] text-left">
+              Description
+            </th>
+            <th className="p-2 border border-[#036173] text-left">Quantity</th>
+            <th className="p-2 border border-[#036173]"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => (
+            <tr key={idx}>
+              <td className="p-2 border border-[#036173]">
+                <input
+                  type="text"
+                  value={row.description}
+                  onChange={(e) =>
+                    handleChange(idx, "description", e.target.value)
+                  }
+                  className="w-full bg-transparent"
+                />
+              </td>
+              <td className="p-2 border border-[#036173]">
+                <input
+                  type="number"
+                  value={row.quantity}
+                  onChange={(e) =>
+                    handleChange(idx, "quantity", e.target.value)
+                  }
+                  className="w-full bg-transparent"
+                />
+              </td>
+              <td className="p-2 border border-[#036173] text-center">
+                <button
+                  type="button"
+                  onClick={() => handleRemove(idx)}
+                  className="text-red-600 font-bold"
+                  title="Remove"
+                >
+                  ×
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button
+        type="button"
+        onClick={handleAdd}
+        className="mt-2 px-4 py-2 bg-[#036173] text-white rounded"
+      >
+        + Add Material Row
+      </button>
+    </div>
+  );
+}
 
 const RequesterDashboard = () => {
   const { user, getToken } = useAuth();
@@ -85,6 +239,18 @@ const RequesterDashboard = () => {
   const [creatingInventory, setCreatingInventory] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [mySubmittedRequests, setMySubmittedRequests] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [requestType, setRequestType] = useState("inventory"); // "inventory" or "services"
+  const [pendingUnreadCount, setPendingUnreadCount] = useState(0);
+  const [rejectedUnreadCount, setRejectedUnreadCount] = useState(0); // Service Table State
+
+  const [serviceRows, setServiceRows] = useState([
+    { description: "", amount: "" },
+  ]);
+  const [materialRows, setMaterialRows] = useState([
+    { description: "", quantity: "" },
+  ]);
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -102,6 +268,95 @@ const RequesterDashboard = () => {
     { name: "HR" },
     { name: "Admin" },
   ];
+
+  const fetchSidebarPendingUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+
+      // Fetch pending unread
+      const pendingResp = await axios.get(
+        `${API_BASE_URL}/requests/pending?limit=1`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const pendingUnread =
+        typeof pendingResp.data.unreadCount === "number"
+          ? pendingResp.data.unreadCount
+          : pendingResp.data?.data?.filter?.((r) => r.isUnread).length ?? 0;
+
+      // Fetch queried unread
+      const queriedResp = await axios.get(
+        `${API_BASE_URL}/requests/queried?limit=1`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const queriedUnread =
+        typeof queriedResp.data.unreadCount === "number"
+          ? queriedResp.data.unreadCount
+          : queriedResp.data?.data?.filter?.((r) => r.isUnread).length ?? 0;
+
+      // Combine both
+      const totalUnread = pendingUnread + queriedUnread;
+      setPendingUnreadCount(totalUnread);
+    } catch (err) {
+      setPendingUnreadCount(0);
+    }
+  };
+  const fetchRejectedUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      // Fetch only 1 item, but get the total unread count from the API response
+      const resp = await axios.get(
+        `${API_BASE_URL}/requests/rejected?limit=1`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      // If your API returns unreadCount, use it; otherwise, count isUnread in data
+      const unread =
+        resp.data?.data?.filter?.((r) => r.isUnread).length ??
+        (Array.isArray(resp.data?.data) ? resp.data.data.length : 0);
+      setRejectedUnreadCount(unread);
+    } catch {
+      setRejectedUnreadCount(0);
+    }
+  };
+  useEffect(() => {
+    if (user) {
+      fetchSidebarPendingUnreadCount();
+      fetchRejectedUnreadCount();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      fetchSidebarPendingUnreadCount();
+    }, 3000); // every 3 seconds
+    return () => clearInterval(interval);
+  }, [user]);
+  const fetchUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const resp = await axios.get(
+        "https://hdp-backend-1vcl.onrender.com/api/notifications/unread-count",
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setUnreadCount(resp.data?.unreadCount || 0);
+    } catch (err) {
+      setUnreadCount(0);
+    }
+  };
+  useEffect(() => {
+    if (user) {
+      fetchUnreadCount();
+    }
+  }, [user]);
 
   const fetchMySubmittedRequests = async () => {
     try {
@@ -701,7 +956,7 @@ const RequesterDashboard = () => {
       setOffShoreNumber("");
 
       // Switch to My Requests view
-      setActiveView("pending");
+      setActiveView("myrequests");
     } catch (err) {
       console.error("❌ Error creating request:", err);
       alert(err.response?.data?.message || "Failed to create request");
@@ -825,10 +1080,32 @@ const RequesterDashboard = () => {
       setActionLoading(false);
     }
   };
+  // ...existing code...
 
-  const pendingCount = myRequests.filter(
-    (r) => String(r.status).toLowerCase() === "pending"
-  ).length;
+  const fetchPendingCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const pendingRequests = resp.data.data || [];
+      setPendingCount(pendingRequests.length);
+      setMyRequests(pendingRequests); // keep myRequests in sync if needed
+    } catch (err) {
+      setPendingCount(0);
+      setMyRequests([]);
+    }
+  };
+
+  useEffect(() => {
+    if (user && (activeView === "pending" || activeView === "overview")) {
+      fetchPendingCount();
+    }
+  }, [user, activeView]);
+
+  // ...use pendingCount everywhere you need the count...
+
   const totalRequestsCount = mySubmittedRequestsTotal;
   const approvedCount = myRequests.filter(
     (r) => String(r.status).toLowerCase() === "approved"
@@ -991,6 +1268,13 @@ const RequesterDashboard = () => {
       return prev.filter((p) => p.id !== id);
     });
   };
+  const handleItemFieldChange = (index, field, value) => {
+    setSelectedItems((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100">
@@ -1016,13 +1300,19 @@ const RequesterDashboard = () => {
 
       <div className="relative z-10 flex h-full">
         {/* Sidebar */}
+
         <RequesterSidebar
           activeView={activeView}
           setActiveView={setActiveView}
-          pendingCount={myRequests.length}
+          pendingCount={pendingUnreadCount} // <-- for sidebar badge
+          rejectedCount={rejectedUnreadCount}
           isRequester={true}
           selectedRequestOrigin={selectedRequest?.origin}
+          notificationCount={unreadCount}
         />
+
+        {activeView === "chatRoom" && <ChatRoom />}
+        {activeView === "support" && <Support />}
 
         {/* Main Content */}
         <div className="flex-1 overflow-auto">
@@ -1040,6 +1330,8 @@ const RequesterDashboard = () => {
                   ? "Completed Requests"
                   : activeView === "overview"
                   ? "Overview"
+                  : activeView === "rejected"
+                  ? "Rejected Requests"
                   : activeView === "shipping"
                   ? "Shipping Request"
                   : activeView === "detail"
@@ -1203,6 +1495,39 @@ const RequesterDashboard = () => {
                       </div>
                     </div>
                   )}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                      Request Type
+                    </label>
+                    <div className="flex gap-6">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="requestType"
+                          value="inventory"
+                          checked={requestType === "inventory"}
+                          onChange={() => setRequestType("inventory")}
+                          className="w-5 h-5 text-emerald-500 border-2 border-slate-300 focus:ring-emerald-400"
+                        />
+                        <span className="text-sm font-medium text-slate-700">
+                          Inventory
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="requestType"
+                          value="services"
+                          checked={requestType === "services"}
+                          onChange={() => setRequestType("services")}
+                          className="w-5 h-5 text-emerald-500 border-2 border-slate-300 focus:ring-emerald-400"
+                        />
+                        <span className="text-sm font-medium text-slate-700">
+                          Services
+                        </span>
+                      </label>
+                    </div>
+                  </div>
 
                   {/* Row 2: Company & Vessel */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1339,152 +1664,192 @@ const RequesterDashboard = () => {
                       />
                     </div>
                   </div>
+                  {requestType === "inventory" && (
+                    <>
+                      {/* Items from Inventory */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                          Items from Inventory
+                        </label>
 
-                  {/* Items from Inventory */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                      Items from Inventory
-                    </label>
+                        {/* Add Item Button with Dropdown */}
+                        <div className="relative" ref={dropdownRef}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowInventoryDropdown(!showInventoryDropdown)
+                            }
+                            className="w-full px-4 py-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-emerald-600 font-semibold hover:bg-emerald-100 transition-all duration-200 flex items-center justify-center gap-2"
+                          >
+                            <MdAdd className="text-xl" />
+                            Add Item from Inventory
+                          </button>
 
-                    {/* Add Item Button with Dropdown */}
-                    <div className="relative" ref={dropdownRef}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowInventoryDropdown(!showInventoryDropdown)
-                        }
-                        className="w-full px-4 py-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-emerald-600 font-semibold hover:bg-emerald-100 transition-all duration-200 flex items-center justify-center gap-2"
-                      >
-                        <MdAdd className="text-xl" />
-                        Add Item from Inventory
-                      </button>
-
-                      {/* Dropdown */}
-                      {/* Dropdown */}
-                      {showInventoryDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col overflow-x-hidden">
-                          {/* Search */}
-                          <div className="p-3 border-b border-slate-200">
-                            <input
-                              type="text"
-                              value={searchTerm}
-                              onChange={(e) => setSearchTerm(e.target.value)}
-                              placeholder="Search items..."
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-400 text-sm"
-                            />
-                          </div>
-
-                          {/* Items List (scrollable) */}
-                          <div className="overflow-y-auto flex-1">
-                            {loadingInventory ? (
-                              <div className="p-4 text-center text-slate-500">
-                                Loading...
-                              </div>
-                            ) : filteredInventory.length === 0 ? (
-                              <div className="p-4 text-center text-slate-500">
-                                No items found
-                              </div>
-                            ) : (
-                              filteredInventory.map((item, index) => {
-                                // Helper to insert line breaks every 40 characters
-                                const wrapText = (text, maxChars = 40) => {
-                                  if (!text) return "";
-                                  const str = String(text);
-                                  const lines = [];
-                                  for (
-                                    let i = 0;
-                                    i < str.length;
-                                    i += maxChars
-                                  ) {
-                                    lines.push(str.slice(i, i + maxChars));
+                          {/* Dropdown */}
+                          {/* Dropdown */}
+                          {showInventoryDropdown && (
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col overflow-x-hidden">
+                              {/* Search */}
+                              <div className="p-3 border-b border-slate-200">
+                                <input
+                                  type="text"
+                                  value={searchTerm}
+                                  onChange={(e) =>
+                                    setSearchTerm(e.target.value)
                                   }
-                                  return lines.join("\n");
-                                };
+                                  placeholder="Search items..."
+                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-400 text-sm"
+                                />
+                              </div>
 
-                                return (
-                                  <button
-                                    key={`${
-                                      item._id || item.inventoryId || index
-                                    }`}
-                                    type="button"
-                                    onClick={() => handleAddInventoryItem(item)}
-                                    className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0 overflow-hidden"
-                                  >
-                                    <p className="font-medium text-slate-900 text-sm whitespace-pre-wrap">
-                                      {wrapText(item.name, 40)}
-                                    </p>
-                                    <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">
-                                      {wrapText(
-                                        `${
-                                          item.itemType || item.makersType || ""
-                                        } • ${item.maker || ""} • ${
-                                          item.makersPartNo || ""
-                                        }`,
-                                        40
-                                      )}
-                                    </p>
-                                  </button>
-                                );
-                              })
-                            )}
-                          </div>
+                              {/* Items List (scrollable) */}
+                              <div className="overflow-y-auto flex-1">
+                                {loadingInventory ? (
+                                  <div className="p-4 text-center text-slate-500">
+                                    Loading...
+                                  </div>
+                                ) : filteredInventory.length === 0 ? (
+                                  <div className="p-4 text-center text-slate-500">
+                                    No items found
+                                  </div>
+                                ) : (
+                                  filteredInventory.map((item, index) => {
+                                    // Helper to insert line breaks every 40 characters
+                                    const wrapText = (text, maxChars = 40) => {
+                                      if (!text) return "";
+                                      const str = String(text);
+                                      const lines = [];
+                                      for (
+                                        let i = 0;
+                                        i < str.length;
+                                        i += maxChars
+                                      ) {
+                                        lines.push(str.slice(i, i + maxChars));
+                                      }
+                                      return lines.join("\n");
+                                    };
 
-                          {/* Sticky footer: Add to inventory */}
-                          <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex items-center justify-center">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                openAddInventoryModal();
-                              }}
-                              className="w-full max-w-md px-4 py-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-emerald-600 font-semibold hover:bg-emerald-100 transition-all duration-200 flex items-center justify-center gap-2"
-                            >
-                              <MdAdd className="text-xl" />
-                              Add Item
-                            </button>
-                          </div>
+                                    return (
+                                      <button
+                                        key={`${
+                                          item._id || item.inventoryId || index
+                                        }`}
+                                        type="button"
+                                        onClick={() =>
+                                          handleAddInventoryItem(item)
+                                        }
+                                        className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0 overflow-hidden"
+                                      >
+                                        <p className="font-medium text-slate-900 text-sm whitespace-pre-wrap">
+                                          {wrapText(item.name, 40)}
+                                        </p>
+                                        <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">
+                                          {wrapText(
+                                            `${
+                                              item.itemType ||
+                                              item.makersType ||
+                                              ""
+                                            } • ${item.maker || ""} • ${
+                                              item.makersPartNo || ""
+                                            }`,
+                                            40
+                                          )}
+                                        </p>
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+
+                              {/* Sticky footer: Add to inventory */}
+                              <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Add a new empty editable row
+                                    setSelectedItems((prev) => [
+                                      ...prev,
+                                      {
+                                        name: "",
+                                        itemType: "",
+                                        maker: "",
+                                        makersPartNo: "",
+                                        quantity: 1,
+                                        unitPrice: 0,
+                                        currency: "NGN",
+                                        totalPrice: 0,
+                                        uniqueId: `new-${Date.now()}`,
+                                        isNew: true, // mark as new
+                                      },
+                                    ]);
+                                    setShowInventoryDropdown(false);
+                                    setSearchTerm("");
+                                  }}
+                                  className="w-full max-w-md px-4 py-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-emerald-600 font-semibold hover:bg-emerald-100 transition-all duration-200 flex items-center justify-center gap-2"
+                                >
+                                  <MdAdd className="text-xl" />
+                                  Add Item
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
+
+                        {/* Selected Items Table */}
+                      </div>
+
+                      {selectedItems.length > 0 && (
+                        <ItemSelectionTable
+                          items={selectedItems}
+                          onQuantityChange={handleQuantityChange}
+                          onRemoveItem={handleRemoveItem}
+                          onUnitPriceChange={handleUnitPriceChange}
+                          onCurrencyChange={handleCurrencyChange}
+                          onFieldChange={handleItemFieldChange} // <-- pass this
+                          currencies={currencies}
+                        />
                       )}
-                    </div>
 
-                    {/* Selected Items Table */}
-                    {selectedItems.length > 0 && (
-                      <ItemSelectionTable
-                        items={selectedItems}
-                        onQuantityChange={handleQuantityChange}
-                        onRemoveItem={handleRemoveItem}
-                        onUnitPriceChange={handleUnitPriceChange}
-                        onCurrencyChange={handleCurrencyChange}
-                        currencies={currencies}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                          Purpose for Items
+                        </label>
+                        <textarea
+                          name="purpose"
+                          value={formData.purpose}
+                          onChange={handleInputChange}
+                          placeholder="Describe the purpose of this request"
+                          rows={3}
+                          className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm resize-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                          Additional Information
+                        </label>
+                        <input
+                          type="text"
+                          name="additionalInformation"
+                          value={formData.additionalInformation}
+                          onChange={handleInputChange}
+                          placeholder="Optional additional information"
+                          className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+                  {requestType === "services" && (
+                    <>
+                      <ServiceTable
+                        rows={serviceRows}
+                        setRows={setServiceRows}
                       />
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                      Purpose for Items
-                    </label>
-                    <textarea
-                      name="purpose"
-                      value={formData.purpose}
-                      onChange={handleInputChange}
-                      placeholder="Describe the purpose of this request"
-                      rows={3}
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm resize-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                      Additional Information
-                    </label>
-                    <input
-                      type="text"
-                      name="additionalInformation"
-                      value={formData.additionalInformation}
-                      onChange={handleInputChange}
-                      placeholder="Optional additional information"
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
-                    />
-                  </div>
+                      <MaterialTable
+                        rows={materialRows}
+                        setRows={setMaterialRows}
+                      />
+                    </>
+                  )}
 
                   {/* Request Images Upload (for purchaseOrder & pettyCash) */}
                   {formData.destination && (
@@ -1494,17 +1859,9 @@ const RequesterDashboard = () => {
                       </label>
 
                       <div
-                        onDrop={handleImageDrop}
-                        onDragOver={handleImageDragOver}
-                        onDragLeave={handleImageDragLeave}
-                        onClick={handleImageBrowseClick}
-                        role="button"
-                        tabIndex={0}
-                        className={`w-full cursor-pointer rounded-2xl p-4 flex items-center justify-between gap-4 transition-all duration-200 ${
-                          imageDragActive
-                            ? "border-2 border-emerald-400 bg-emerald-50"
-                            : "border-2 border-dashed border-slate-200 bg-white/50"
-                        }`}
+                        className="w-full rounded-2xl p-4 flex items-center justify-between gap-4 border-2 border-dashed border-slate-200 bg-white/50"
+                        // Removed all drag/drop/click handlers here
+                        style={{ cursor: "default" }}
                       >
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
@@ -1514,7 +1871,7 @@ const RequesterDashboard = () => {
                             <p className="text-sm font-semibold text-slate-900">
                               {requestImages.length > 0
                                 ? `${requestImages.length} image(s) selected`
-                                : "Drag & drop request image(s) here, or click to browse"}
+                                : "Click 'Add Images' to select request image(s)"}
                             </p>
                           </div>
                         </div>
@@ -1624,6 +1981,9 @@ const RequesterDashboard = () => {
                 </div>
               </form>
             )}
+            {activeView === "notifications" && (
+              <Notification onUnreadCountChange={fetchUnreadCount} />
+            )}
             {activeView === "detail" && selectedRequest && (
               <RequestDetailView
                 request={selectedRequest}
@@ -1641,7 +2001,7 @@ const RequesterDashboard = () => {
                 actionLoading={actionLoading}
               />
             )}
-            {activeView === "completed" && (
+            {(activeView === "completed" || activeView === "rejected") && (
               <>
                 <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6">
                   <div className="flex flex-col md:flex-row gap-4">
@@ -1655,32 +2015,32 @@ const RequesterDashboard = () => {
                         className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
                       />
                     </div>
-                    <div className="relative">
-                      <select
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value)}
-                        className="h-12 pl-12 pr-10 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 appearance-none cursor-pointer"
-                      >
-                        <option value="all">All Types</option>
-                        <option value="purchaseOrder">Purchase Orders</option>
-                        <option value="pettycash">Petty Cash</option>
-                      </select>
-                      <MdFilterList className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none" />
-                      <MdExpandMore className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xl" />
-                    </div>
                   </div>
                 </div>
 
-                <CompletedRequests
-                  searchQuery={searchQuery}
-                  filterType={filterType}
-                  onOpenDetail={(req) =>
-                    handleOpenDetail(req, {
-                      readOnly: true,
-                      origin: "completed",
-                    })
-                  }
-                />
+                {activeView === "completed" && (
+                  <CompletedRequests
+                    searchQuery={searchQuery}
+                    filterType={filterType}
+                    onOpenDetail={(req) =>
+                      handleOpenDetail(req, {
+                        readOnly: true,
+                        origin: "completed",
+                      })
+                    }
+                  />
+                )}
+
+                {activeView === "rejected" && (
+                  <RejectedRequest
+                    searchQuery={searchQuery}
+                    filterType={filterType}
+                    onOpenDetail={(req, opts = {}) => {
+                      handleOpenDetail(req, { ...opts, origin: "rejected" });
+                    }}
+                    onUnreadChange={setRejectedUnreadCount}
+                  />
+                )}
               </>
             )}
             {activeView === "myrequests" && (
@@ -1706,6 +2066,8 @@ const RequesterDashboard = () => {
                 onOpenDetail={(req, opts = {}) => {
                   handleOpenDetail(req, { ...opts, origin: "pending" });
                 }}
+                onUnreadChange={fetchSidebarPendingUnreadCount} // <-- pass this
+                setPendingUnreadCount={setPendingUnreadCount}
               />
             )}
 

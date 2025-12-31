@@ -15,6 +15,7 @@ const VesselManagerTable = ({
   vendors = [],
   tag = "", // ✅ ADD THIS PROP
   clearingFee,
+  request,
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
@@ -25,6 +26,7 @@ const VesselManagerTable = ({
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
+  const showShippingFee = request?.logisticsType === "international";
 
 const getFeeValue = (item) => {
   if (!item) return 0;
@@ -211,7 +213,27 @@ const getFeeValue = (item) => {
 
     return () => window.removeEventListener("resize", checkScroll);
   }, [editedItems, isSecondApproval]);
-
+  
+  function isProcurementOfficerApproved(request) {
+  return (
+    Array.isArray(request.history) &&
+    (
+      request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+      request.history.some(
+        (h) =>
+          h.action === "SPLIT" &&
+          h.role === "SYSTEM" &&
+          typeof h.info === "string" &&
+          h.info.includes("Petty Cash items moved to Petty Cash flow")
+      )
+    )
+  );
+}
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -258,6 +280,12 @@ const getFeeValue = (item) => {
                       Vendor
                     </th>
                   )}
+{showShippingFee && (
+      <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+        Shipping Fee
+      </th>
+    )}
+
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Unit Price
                   </th>
@@ -309,9 +337,14 @@ const getFeeValue = (item) => {
                 </td>
 
                 {/* Item Type */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
-                </td>
+               <td
+  className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900"
+  style={{ minWidth: "100px" }}
+>
+ {isProcurementOfficerApproved(request)
+  ? (item.makersType || item.itemType || "N/A")
+  : "N/A"}
+</td>
 
                 {/* Maker */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
@@ -372,6 +405,19 @@ const getFeeValue = (item) => {
                         {resolveVendorName(item.vendor)}
                       </td>
                     )}
+
+                     {showShippingFee && (
+      <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+        {item.shippingFee ? (
+          <>
+            {item.currency || "NGN"}{" "}
+            {parseFloat(item.shippingFee).toFixed(2)}
+          </>
+        ) : (
+          "N/A"
+        )}
+      </td>
+    )}
                     {/* Unit Price */}
                     <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                       {item.currency || "NGN"}{" "}

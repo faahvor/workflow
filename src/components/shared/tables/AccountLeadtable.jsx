@@ -285,8 +285,6 @@ const AccountLeadTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                 Total Price
               </th>
-
-          
             </tr>
           </thead>
           <tbody>
@@ -307,7 +305,7 @@ const AccountLeadTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}
@@ -355,7 +353,6 @@ const AccountLeadTable = ({
                     "N/A"
                   )}
                 </td>
-            
 
                 {/* Total Price - Calculated */}
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700">
@@ -367,8 +364,6 @@ const AccountLeadTable = ({
                     "N/A"
                   )}
                 </td>
-
-            
               </tr>
             ))}
           </tbody>

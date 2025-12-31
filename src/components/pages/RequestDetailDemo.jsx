@@ -1331,7 +1331,7 @@ const RequestDetailDemo = () => {
                     <span className="text-2xl">📄</span>
                   </div>
                   <p className="text-sm font-semibold text-slate-900 mb-1 group-hover:text-emerald-600">
-                    Request Form.pdf
+                    GRN.pdf
                   </p>
                   <p className="text-xs text-slate-500">245 KB</p>
                 </div>
@@ -1363,14 +1363,14 @@ const RequestDetailDemo = () => {
                       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
                         {/* NEW: wrap RequestForm so we can place the Send button top-left */}
                         <div className="relative">
-                          <div className="absolute left-4 top-4 z-20">
+                          {/* <div className="absolute left-4 top-4 z-20">
                             <button
                               onClick={handleSendAsMailFromPreview}
                               className="px-3 py-2 bg-emerald-500 text-white rounded-lg shadow-md hover:bg-emerald-600 transition text-sm flex items-center gap-2"
                             >
                               ✉️ Send as Mail
                             </button>
-                          </div>
+                          </div> */}
                           <RequestForm request={request} items={items} />
                         </div>
                       </div>

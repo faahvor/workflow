@@ -13,6 +13,7 @@ const ItemSelectionTable = ({
   items = [],
   onQuantityChange = () => {},
   onRemoveItem = () => {},
+    onFieldChange = () => {},
   onUnitPriceChange = () => {},
   onCurrencyChange = () => {},
   currencies = [],
@@ -27,7 +28,7 @@ const ItemSelectionTable = ({
             <th className="border border-slate-200 p-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider min-w-[50px]">
               SN
             </th>
-           <th className="border border-slate-200 p-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[200px] md:w-[300px]">
+            <th className="border border-slate-200 p-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[200px] md:w-[300px]">
               Description
             </th>
             <th className="border border-slate-200 p-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider min-w-[120px]">
@@ -61,18 +62,72 @@ const ItemSelectionTable = ({
                 <td className="border border-slate-200 p-3 text-center text-sm font-medium text-slate-900">
                   {index + 1}
                 </td>
-               <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
-                  {item.name || "N/A"}
+                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
+                  {item.isNew ? (
+                    <input
+                      type="text"
+                      value={item.name}
+                      onChange={(e) =>
+                        onFieldChange &&
+                        onFieldChange(index, "name", e.target.value)
+                      }
+                      placeholder="Description"
+                      className="w-full px-2 py-1 border border-slate-300 rounded-md"
+                      required
+                    />
+                  ) : (
+                    item.name || "N/A"
+                  )}
                 </td>
                 <td className="border border-slate-200 p-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.isNew ? (
+                    <input
+                      type="text"
+                      value={item.itemType}
+                      onChange={(e) =>
+                        onFieldChange &&
+                        onFieldChange(index, "itemType", e.target.value)
+                      }
+                      placeholder="Item Type"
+                      className="w-full px-2 py-1 border border-slate-300 rounded-md"
+                    />
+                  ) : (
+                    item.itemType || item.makersType || "N/A"
+                  )}
                 </td>
                 <td className="border border-slate-200 p-3 text-sm text-slate-700">
-                  {item.maker || "N/A"}
+                  {item.isNew ? (
+                    <input
+                      type="text"
+                      value={item.maker}
+                      onChange={(e) =>
+                        onFieldChange &&
+                        onFieldChange(index, "maker", e.target.value)
+                      }
+                      placeholder="Maker"
+                      className="w-full px-2 py-1 border border-slate-300 rounded-md"
+                    />
+                  ) : (
+                    item.maker || "N/A"
+                  )}
                 </td>
                 <td className="border border-slate-200 p-3 text-sm text-slate-700">
-                  {item.makersPartNo || "N/A"}
+                  {item.isNew ? (
+                    <input
+                      type="text"
+                      value={item.makersPartNo}
+                      onChange={(e) =>
+                        onFieldChange &&
+                        onFieldChange(index, "makersPartNo", e.target.value)
+                      }
+                      placeholder="Maker's Part No"
+                      className="w-full px-2 py-1 border border-slate-300 rounded-md"
+                    />
+                  ) : (
+                    item.makersPartNo || "N/A"
+                  )}
                 </td>
+
                 <td className="border border-slate-200 p-3 text-center">
                   <input
                     type="number"

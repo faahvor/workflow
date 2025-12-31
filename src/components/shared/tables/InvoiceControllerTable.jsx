@@ -23,14 +23,16 @@ const InvoiceControllerTable = ({
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
 
   const getFeeValue = (item) => {
-  if (!item) return 0;
-  const v = item[feeFieldName];
-  // If clearingFee is not on item, fallback to request.clearingFee
-  if (feeFieldName === "clearingFee" && (v === undefined || v === null)) {
-    return typeof clearingFee === "number" ? clearingFee : Number(clearingFee || 0);
-  }
-  return typeof v === "number" ? v : Number(v || 0);
-};
+    if (!item) return 0;
+    const v = item[feeFieldName];
+    // If clearingFee is not on item, fallback to request.clearingFee
+    if (feeFieldName === "clearingFee" && (v === undefined || v === null)) {
+      return typeof clearingFee === "number"
+        ? clearingFee
+        : Number(clearingFee || 0);
+    }
+    return typeof v === "number" ? v : Number(v || 0);
+  };
 
   const vendorsById = React.useMemo(() => {
     const map = new Map();
@@ -59,7 +61,12 @@ const InvoiceControllerTable = ({
       }
       const scrollW = container.scrollWidth;
       const clientW = container.clientWidth;
-      console.log("invoice-table: scrollWidth", scrollW, "clientWidth", clientW);
+      console.log(
+        "invoice-table: scrollWidth",
+        scrollW,
+        "clientWidth",
+        clientW
+      );
       // small tolerance to avoid off-by-one layout reports
       setNeedsScroll(scrollW > clientW + 1);
     };
@@ -230,7 +237,7 @@ const InvoiceControllerTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}

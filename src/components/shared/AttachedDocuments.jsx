@@ -8,6 +8,7 @@ import EmailComposer from "../pages/EmailComposer";
 
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import GRNPreview from "./GRNPreview";
 
 const formatBytes = (bytes) => {
   if (!bytes) return "";
@@ -59,7 +60,20 @@ const AttachedDocuments = ({
 
   const [showEmailComposer, setShowEmailComposer] = useState(false);
   const [emailInitialAttachments, setEmailInitialAttachments] = useState([]);
+  const [hideSignaturesForPdf, setHideSignaturesForPdf] = useState(false);
   const [preparingEmailPdf, setPreparingEmailPdf] = useState(false);
+  const [manualSignature, setManualSignature] = useState(null);
+  const [preparingPOEmailPdf, setPreparingPOEmailPdf] = useState(false);
+  const [poEmailInitialAttachments, setPoEmailInitialAttachments] = useState(
+    []
+  );
+
+const handleGenerateStoreGrn = () => {
+  setStoreGrnGenerated(true);
+  alert("GRN has been generated and added to Attached Documents.");
+  // Do NOT call onFilesChanged here, or else state is reset
+};
+  const [storeGrnGenerated, setStoreGrnGenerated] = useState(false);
   function isAtOrPastProcurementManager(request) {
     const states = [
       "PENDING_PROCUREMENT_MANAGER_APPROVAL",
@@ -173,12 +187,16 @@ const AttachedDocuments = ({
             vendorId: g.vendorId,
             vendorName: g.vendorName,
             items:
-              requestData &&
-              Array.isArray(requestData.originalItemsSnapshot) &&
-              requestData.originalItemsSnapshot.length > 0 &&
-              isAtOrPastProcurementManager(requestData)
-                ? requestData.originalItemsSnapshot
-                : g.items,
+  requestData?.doVendorSplit
+    ? g.items
+    : (
+        requestData &&
+        Array.isArray(requestData.originalItemsSnapshot) &&
+        requestData.originalItemsSnapshot.length > 0 &&
+        isAtOrPastProcurementManager(requestData)
+      )
+      ? requestData.originalItemsSnapshot
+      : g.items,
           });
         });
       }
@@ -200,44 +218,56 @@ const AttachedDocuments = ({
     }
 
     // Requisition(s)
-    if (requestData?.doVendorSplit) {
-      if (vendorGroups && vendorGroups.length > 0) {
-        vendorGroups.forEach((g) => {
-          docs.push({
-            type: "requisition",
-            name: `${g.vendorName} Requisition Preview`,
-            displayName: `${g.vendorName} Requisition Preview`,
-            vendorId: g.vendorId,
-            vendorName: g.vendorName,
-            items:
-              requestData &&
-              Array.isArray(requestData.originalItemsSnapshot) &&
-              requestData.originalItemsSnapshot.length > 0 &&
-              isAtOrPastProcurementManager(requestData)
-                ? requestData.originalItemsSnapshot
-                : g.items,
+    if (
+      requestData?.isInStockFlow !== true &&
+      String(requestData?.requestType).toLowerCase() !== "pettycash"
+    ) {
+      if (requestData?.doVendorSplit) {
+        if (vendorGroups && vendorGroups.length > 0) {
+          vendorGroups.forEach((g) => {
+            docs.push({
+              type: "requisition",
+              name: `${g.vendorName} Requisition Preview`,
+              displayName: `${g.vendorName} Requisition Preview`,
+              vendorId: g.vendorId,
+              vendorName: g.vendorName,
+              items:
+                requestData &&
+                Array.isArray(requestData.originalItemsSnapshot) &&
+                requestData.originalItemsSnapshot.length > 0 &&
+                isAtOrPastProcurementManager(requestData)
+                  ? requestData.originalItemsSnapshot
+                  : g.items,
+            });
           });
+        }
+      } else if (vendorGroups && vendorGroups.length > 0) {
+        docs.push({
+          type: "requisition",
+          name: " Requisition File",
+          displayName: " Requisition File",
+          vendorId: null,
+          vendorName: "Multiple Vendors",
+          items:
+            requestData &&
+            Array.isArray(requestData.originalItemsSnapshot) &&
+            requestData.originalItemsSnapshot.length > 0 &&
+            isAtOrPastProcurementManager(requestData)
+              ? requestData.originalItemsSnapshot
+              : vendorGroups.flatMap((g) => g.items),
         });
       }
-    } else if (vendorGroups && vendorGroups.length > 0) {
-      docs.push({
-        type: "requisition",
-        name: " Requisition File",
-        displayName: " Requisition File",
-        vendorId: null,
-        vendorName: "Multiple Vendors",
-        items:
-          requestData &&
-          Array.isArray(requestData.originalItemsSnapshot) &&
-          requestData.originalItemsSnapshot.length > 0 &&
-          isAtOrPastProcurementManager(requestData)
-            ? requestData.originalItemsSnapshot
-            : vendorGroups.flatMap((g) => g.items),
-      });
     }
 
     // Purchase Order(s)
-    if (showPurchaseOrder && vendorGroups && vendorGroups.length > 0) {
+    // Purchase Order(s)
+    if (
+      showPurchaseOrder &&
+      vendorGroups &&
+      vendorGroups.length > 0 &&
+      requestData?.isInStockFlow !== true &&
+      String(requestData?.requestType).toLowerCase() !== "pettycash"
+    ) {
       vendorGroups.forEach((g) => {
         docs.push({
           type: "purchaseOrder",
@@ -249,13 +279,67 @@ const AttachedDocuments = ({
         });
       });
     }
+   if (
+  Array.isArray(requestData?.jobCompletionCertificateFiles) &&
+  requestData.jobCompletionCertificateFiles.length > 0
+) {
+  docs.push({
+    type: "grn",
+    name: "Goods Received Note",
+    displayName: "Goods Received Note",
+    items: requestData?.items || requestItems || [],
+  });
+}
+
+// Show GRN for all roles if request is completed
+const completedStates = ["completed", "approved"];
+const currentState =
+  requestData?.currentState ||
+  requestData?.flow?.currentState ||
+  requestData?.status ||
+  "";
+if (
+  completedStates.includes(String(currentState).toLowerCase()) &&
+  !docs.some((d) => d.type === "grn")
+) {
+  docs.push({
+    type: "grn",
+    name: "Goods Received Note",
+    displayName: "Goods Received Note",
+    items: requestData?.items || requestItems || [],
+  });
+}
 
     // Other files (quotations, payment advice, invoices, images, etc.)
     fileMeta.forEach((f) => {
       docs.push({ ...f });
     });
 
-    return docs;
+    const deliveryRoles = [
+      "delivery base",
+      "delivery jetty",
+      "delivery vessel",
+    ];
+    const userRoleLower = (user?.role || "").toLowerCase();
+
+    let filteredDocs = docs;
+    if (deliveryRoles.includes(userRoleLower)) {
+      filteredDocs = docs.filter(
+        (d) => d.type !== "requestForm" && d.type !== "requisition"
+      );
+    }
+if (
+  storeGrnGenerated &&
+  !docs.some((d) => d.type === "grn")
+) {
+  docs.push({
+    type: "grn",
+    name: "Goods Received Note",
+    displayName: "Goods Received Note",
+    items: requestData?.items || requestItems || [],
+  });
+}
+    return filteredDocs;
   }, [
     requestData,
     requestItems,
@@ -264,7 +348,7 @@ const AttachedDocuments = ({
     showPurchaseOrder,
     fileMeta,
   ]);
-
+const hasGrnDoc = folderDocs.some((doc) => doc.type === "grn");
   // Keyboard navigation for folder modal
   useEffect(() => {
     if (!active || !active.folder) return;
@@ -769,9 +853,11 @@ const AttachedDocuments = ({
       const paymentAdviceFiles = Array.isArray(requestData.paymentAdviceFiles)
         ? requestData.paymentAdviceFiles
         : [];
-        const jobCompletionFiles = Array.isArray(requestData.jobCompletionCertificateFiles)
-  ? requestData.jobCompletionCertificateFiles
-  : [];
+      const jobCompletionFiles = Array.isArray(
+        requestData.jobCompletionCertificateFiles
+      )
+        ? requestData.jobCompletionCertificateFiles
+        : [];
       const requestImages = Array.isArray(requestData.requestImages)
         ? requestData.requestImages
         : [];
@@ -822,7 +908,7 @@ const AttachedDocuments = ({
         ...rawPaymentAdvice,
         ...rawInvoices,
         ...rawRequestImages,
-        ...rawJobCompletion, 
+        ...rawJobCompletion,
       ];
 
       if (!mounted) return;
@@ -894,9 +980,8 @@ const AttachedDocuments = ({
       } else if (m.type === "invoice") {
         display = "Invoice";
       } else if (m.type === "jobCompletion") {
-  display = "Waybill ";
-}
-      else if (m.type === "requestImage") {
+        display = "Waybill ";
+      } else if (m.type === "requestImage") {
         // ✅ ADD: Display name for request images
         // Count how many requestImages we've seen so far
         const imageIndex = fileMeta
@@ -1113,8 +1198,21 @@ const AttachedDocuments = ({
     <>
       <div className="mb-8">
         <h3 className="text-lg font-bold text-slate-900 mb-4">
-          Attached Documents
-        </h3>
+  Attached Documents
+</h3>
+{["store base", "store jetty", "store vessel"].includes((user?.role || "").toLowerCase()) && (
+  <button
+    type="button"
+    className={`text-emerald-700 underline text-sm font-semibold mb-4 ml-2 ${hasGrnDoc || storeGrnGenerated ? "opacity-50 cursor-not-allowed" : ""}`}
+    onClick={() => {
+      if (!hasGrnDoc && !storeGrnGenerated) handleGenerateStoreGrn();
+    }}
+    disabled={hasGrnDoc || storeGrnGenerated}
+    style={{ background: "none", border: "none", cursor: hasGrnDoc || storeGrnGenerated ? "not-allowed" : "pointer" }}
+  >
+    Generate GRN
+  </button>
+)}
 
         {loadingRequest ? (
           <div className="p-6 flex items-center justify-center">
@@ -1457,6 +1555,7 @@ const AttachedDocuments = ({
                     }
                     token={getToken ? getToken() : null}
                     apiBase={API_BASE_URL}
+                    hideSignatures={hideSignaturesForPdf}
                   />
                 </div>
               </div>
@@ -1561,6 +1660,52 @@ const AttachedDocuments = ({
                 </div>
 
                 <div className="flex items-center gap-3">
+                  {/* Send as Mail only for Procurement Manager */}
+                  {(user?.role || "").toLowerCase().replace(/\s/g, "") ===
+                    "procurementmanager" && (
+                    <button
+                      onClick={async () => {
+                        if (!livePreviewRef.current) {
+                          alert("Preview content not found");
+                          return;
+                        }
+                        setPreparingPOEmailPdf(true);
+                        try {
+                          await new Promise((r) => setTimeout(r, 100)); // Let React update DOM
+                          const reqId =
+                            requestData?.requestId ||
+                            requestData?.id ||
+                            requestId ||
+                            "REQ-XXXX";
+                          const filename = `Purchase_Order_${reqId}.pdf`;
+                          const pdfFile = await generatePdfFromElement(
+                            livePreviewRef.current,
+                            filename
+                          );
+                          setPoEmailInitialAttachments([pdfFile]);
+                          setActive(null);
+                          setTimeout(() => setShowEmailComposer(true), 120);
+                        } catch (err) {
+                          console.error(
+                            "Failed to generate PDF for email:",
+                            err
+                          );
+                          alert("Failed to generate PDF. Please try again.");
+                        } finally {
+                          setPreparingPOEmailPdf(false);
+                        }
+                      }}
+                      disabled={preparingPOEmailPdf}
+                      className={`px-3 py-2 rounded-lg shadow-md transition text-sm flex items-center gap-2 ${
+                        preparingPOEmailPdf
+                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                          : "bg-emerald-500 text-white hover:bg-emerald-600"
+                      }`}
+                    >
+                      ✉️{" "}
+                      {preparingPOEmailPdf ? "Preparing PDF…" : "Send as Mail"}
+                    </button>
+                  )}{" "}
                   <button
                     onClick={handlePrintLive}
                     className="px-3 py-2 bg-white border rounded-md text-sm"
@@ -1683,7 +1828,7 @@ const AttachedDocuments = ({
             onClick={closePreview}
             tabIndex={-1}
           />
-          <div className="fixed left-1/2 transform -translate-x-1/2 top-12 z-50 w-[95%] md:w-[90%] lg:w-[80%] max-h-[85vh] overflow-auto">
+          <div className="fixed left-1/2 transform -translate-x-1/2 top-12 z-50 w-[95%] md:w-[90%] lg:w-[50%] max-h-[85vh] overflow-auto">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <div className="flex items-center gap-3">
@@ -1697,6 +1842,151 @@ const AttachedDocuments = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
+                  {/* Show Send as Mail only for requestForm and procurement officer */}
+                  {folderDocs[active.index]?.type === "requestForm" &&
+                    (user?.role || "").toLowerCase().replace(/\s/g, "") ===
+                      "procurementofficer" && (
+                      <button
+                        onClick={async () => {
+                          if (!livePreviewRef.current) {
+                            alert("Preview content not found");
+                            return;
+                          }
+                          setPreparingEmailPdf(true);
+                          setHideSignaturesForPdf(true); // <-- Hide signatures
+                          try {
+                            await new Promise((r) => setTimeout(r, 100)); // Let React update DOM
+                            const reqId =
+                              requestData?.requestId ||
+                              requestData?.id ||
+                              requestId ||
+                              "REQ-XXXX";
+                            const filename = `Request_Form_${reqId}.pdf`;
+                            const pdfFile = await generatePdfFromElement(
+                              livePreviewRef.current,
+                              filename
+                            );
+                            setEmailInitialAttachments([pdfFile]);
+                            setActive(null);
+                            setTimeout(() => setShowEmailComposer(true), 120);
+                          } catch (err) {
+                            console.error(
+                              "Failed to generate PDF for email:",
+                              err
+                            );
+                            alert("Failed to generate PDF. Please try again.");
+                          } finally {
+                            setHideSignaturesForPdf(false); // <-- Restore signatures for normal preview
+                            setPreparingEmailPdf(false);
+                          }
+                        }}
+                        disabled={preparingEmailPdf}
+                        className={`px-3 py-2 rounded-lg shadow-md transition text-sm flex items-center gap-2 ${
+                          preparingEmailPdf
+                            ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                            : "bg-emerald-500 text-white hover:bg-emerald-600"
+                        }`}
+                      >
+                        ✉️{" "}
+                        {preparingEmailPdf ? "Preparing PDF…" : "Send as Mail"}
+                      </button>
+                    )}
+                  {folderDocs[active.index]?.type === "purchaseOrder" &&
+                    (user?.role || "").toLowerCase().replace(/\s/g, "") ===
+                      "procurementmanager" && (
+                      <button
+                        onClick={async () => {
+                          if (!livePreviewRef.current) {
+                            alert("Preview content not found");
+                            return;
+                          }
+                          setPreparingPOEmailPdf(true);
+
+                          // Fetch user profile for signature if no signatures in request
+                          let signatureObj = null;
+                          try {
+                            if (
+                              !requestData?.signatures ||
+                              !Array.isArray(requestData.signatures) ||
+                              requestData.signatures.length === 0
+                            ) {
+                              const token = getToken ? getToken() : null;
+                              const headers = token
+                                ? { Authorization: `Bearer ${token}` }
+                                : {};
+                              const resp = await axios.get(
+                                "https://hdp-backend-1vcl.onrender.com/api/user/profile",
+                                { headers }
+                              );
+                              const profile = resp.data || {};
+                              signatureObj = {
+                                name:
+                                  profile.displayName || profile.username || "",
+                                role: profile.role || "",
+                                signatureUrl: profile.signatureUrl || "",
+                              };
+                              setManualSignature(signatureObj);
+                            } else {
+                              setManualSignature(null);
+                            }
+                          } catch (err) {
+                            setManualSignature(null);
+                          }
+
+                          try {
+                            await new Promise((r) => setTimeout(r, 100));
+                            const reqId =
+                              requestData?.requestId ||
+                              requestData?.id ||
+                              requestId ||
+                              "REQ-XXXX";
+                            const filename = `Purchase_Order_${reqId}.pdf`;
+                            const pdfFile = await generatePdfFromElement(
+                              livePreviewRef.current,
+                              filename
+                            );
+                            setPoEmailInitialAttachments([pdfFile]);
+                            setActive(null);
+                            setTimeout(() => setShowEmailComposer(true), 120);
+                          } catch (err) {
+                            console.error(
+                              "Failed to generate PDF for email:",
+                              err
+                            );
+                            alert("Failed to generate PDF. Please try again.");
+                          } finally {
+                            setPreparingPOEmailPdf(false);
+                          }
+                        }}
+                        disabled={preparingPOEmailPdf}
+                        className={`px-3 py-2 rounded-lg shadow-md transition text-sm flex items-center gap-2 ${
+                          preparingPOEmailPdf
+                            ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                            : "bg-emerald-500 text-white hover:bg-emerald-600"
+                        }`}
+                      >
+                        ✉️{" "}
+                        {preparingPOEmailPdf
+                          ? "Preparing PDF…"
+                          : "Send as Mail"}
+                      </button>
+                    )}
+
+                  <button
+                    onClick={handlePrintLive}
+                    className="px-3 py-2 bg-white border rounded-md text-sm"
+                    title="Print preview"
+                  >
+                    Print
+                  </button>
+                  <button
+                    onClick={handleDownloadLive}
+                    disabled={downloadingPreview}
+                    className="px-3 py-2 bg-white border rounded-md text-sm"
+                    title="Download PDF"
+                  >
+                    {downloadingPreview ? "Preparing…" : "Download PDF"}
+                  </button>
                   <button
                     onClick={closePreview}
                     className="px-3 py-2 bg-red-50 text-red-600 rounded-md text-sm"
@@ -1745,41 +2035,57 @@ const AttachedDocuments = ({
                         No document
                       </div>
                     );
-                  if (doc.type === "requestForm") {
+                  if (
+                    [
+                      "requestForm",
+                      "requisition",
+                      "purchaseOrder",
+                      "grn",
+                    ].includes(doc.type)
+                  ) {
                     return (
-                      <RequestFormPreview
-                        request={requestData || {}}
-                        items={doc.items}
-                        requestId={null}
-                        token={getToken ? getToken() : null}
-                        apiBase={API_BASE_URL}
-                      />
+                      <div ref={livePreviewRef}>
+                        {doc.type === "requestForm" && (
+                          <RequestFormPreview
+                            request={requestData || {}}
+                            items={doc.items}
+                            requestId={null}
+                            token={getToken ? getToken() : null}
+                            apiBase={API_BASE_URL}
+                            hideSignatures={hideSignaturesForPdf}
+                          />
+                        )}
+                        {doc.type === "requisition" && (
+                          <RequisitionPreview
+                            doVendorSplit={requestData?.doVendorSplit}
+                            request={requestData || {}}
+                            items={doc.items}
+                            requestId={null}
+                            token={getToken ? getToken() : null}
+                            apiBase={API_BASE_URL}
+                          />
+                        )}
+                        {doc.type === "purchaseOrder" && (
+                          <PurchaseOrderPreview
+                            request={requestData || {}}
+                            items={doc.items}
+                            requestId={null}
+                            token={getToken ? getToken() : null}
+                            apiBase={API_BASE_URL}
+                          />
+                        )}
+                        {doc.type === "grn" && (
+                          <GRNPreview
+                            request={requestData || {}}
+                            items={doc.items}
+                            requestId={requestId}
+                            token={getToken ? getToken() : null}
+                            apiBase={API_BASE_URL}
+                          />
+                        )}
+                      </div>
                     );
                   }
-                  if (doc.type === "requisition") {
-                    return (
-                      <RequisitionPreview
-                        doVendorSplit={requestData?.doVendorSplit}
-                        request={requestData || {}}
-                        items={doc.items}
-                        requestId={null}
-                        token={getToken ? getToken() : null}
-                        apiBase={API_BASE_URL}
-                      />
-                    );
-                  }
-                  if (doc.type === "purchaseOrder") {
-                    return (
-                      <PurchaseOrderPreview
-                        request={requestData || {}}
-                        items={doc.items}
-                        requestId={null}
-                        token={getToken ? getToken() : null}
-                        apiBase={API_BASE_URL}
-                      />
-                    );
-                  }
-                  // For files (pdf, images, etc.)
                   if (doc.ext === "pdf") {
                     return (
                       <iframe
@@ -1821,14 +2127,34 @@ const AttachedDocuments = ({
       {/* NEW: Email Composer modal */}
       {showEmailComposer && (
         <EmailComposer
-          initialAttachments={emailInitialAttachments}
-          subject={`Request Form ${
+          initialAttachments={
+            poEmailInitialAttachments.length > 0
+              ? poEmailInitialAttachments
+              : emailInitialAttachments
+          }
+          subject={`${
+            poEmailInitialAttachments.length > 0
+              ? "Purchase Order"
+              : "Request Form"
+          } ${
             requestData?.requestId || requestData?.id || requestId || "REQ-XXXX"
           }`}
-          onClose={() => setShowEmailComposer(false)}
+          userEmail={user?.email || ""}
+          token={getToken ? getToken() : ""}
+          docType={
+            poEmailInitialAttachments.length > 0
+              ? "purchaseOrder"
+              : "requestForm"
+          }
+          userRole={(user?.role || "").toLowerCase().replace(/\s/g, "")}
+          onClose={() => {
+            setShowEmailComposer(false);
+            setPoEmailInitialAttachments([]);
+          }}
           onSent={() => {
             setShowEmailComposer(false);
-            alert("Demo email sent (simulated).");
+            setPoEmailInitialAttachments([]);
+            alert("Email sent!");
           }}
         />
       )}

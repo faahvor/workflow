@@ -2,25 +2,24 @@
 
 import React, { useState } from "react";
 
-const CompletedTable = ({ 
-  items = [], 
-  userRole = ""
-}) => {
+const CompletedTable = ({ items = [], userRole = "" , requestType = "" }) => {
   const [needsScroll, setNeedsScroll] = useState(false);
+    const isInStock = String(requestType).toLowerCase() === "instock";
+
 
   // Check if table needs horizontal scrolling
   React.useEffect(() => {
     const checkScroll = () => {
-      const container = document.getElementById('completed-table-container');
+      const container = document.getElementById("completed-table-container");
       if (container) {
         setNeedsScroll(container.scrollWidth > container.clientWidth);
       }
     };
 
     checkScroll();
-    window.addEventListener('resize', checkScroll);
-    
-    return () => window.removeEventListener('resize', checkScroll);
+    window.addEventListener("resize", checkScroll);
+
+    return () => window.removeEventListener("resize", checkScroll);
   }, [items]);
 
   if (!items || items.length === 0) {
@@ -59,24 +58,28 @@ const CompletedTable = ({
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                 Quantity
               </th>
-              <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                Unit Price
-              </th>
-              <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                Total Price
-              </th>
-              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
-                PRN
-              </th>
-              <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
-                PON
-              </th>
+              {!isInStock && (
+                <>
+                  <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                    Unit Price
+                  </th>
+                  <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                    Total Price
+                  </th>
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                    PRN
+                  </th>
+                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                    PON
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {items.map((item, index) => (
-              <tr 
-                key={item.itemId || index} 
+              <tr
+                key={item.itemId || index}
                 className="hover:bg-emerald-50 transition-colors duration-150"
               >
                 {/* Serial Number */}
@@ -91,7 +94,7 @@ const CompletedTable = ({
 
                 {/* Item Type */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.itemType || item.makersType || "N/A"}
+                  {item.makersType || "N/A"}
                 </td>
 
                 {/* Maker */}
@@ -111,45 +114,44 @@ const CompletedTable = ({
 
                 {/* Quantity */}
                 <td className="border border-slate-200 px-4 py-3 text-center">
-                  <span className="font-semibold text-slate-900">{item.quantity}</span>
+                  <span className="font-semibold text-slate-900">
+                    {item.quantity}
+                  </span>
                 </td>
 
-                {/* Unit Price */}
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                  {item.unitPrice ? (
-                    <>
-                      {item.currency || "NGN"}{" "}
-                      {parseFloat(item.unitPrice).toFixed(2)}
-                    </>
-                  ) : (
-                    "N/A"
-                  )}
-                </td>
-
-                {/* Total Price */}
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                  {item.total ? (
-                    <>
-                      {item.currency || "NGN"}{" "}
-                      {Number(item.total).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </>
-                  ) : (
-                    "N/A"
-                  )}
-                </td>
-
-                {/* PRN */}
-                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                  {item.purchaseReqNumber || "N/A"}
-                </td>
-
-                {/* PON */}
-                <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                  {item.purchaseOrderNumber || "N/A"}
-                </td>
+                 {!isInStock && (
+                  <>
+                    <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                      {item.unitPrice ? (
+                        <>
+                          {item.currency || "NGN"}{" "}
+                          {parseFloat(item.unitPrice).toFixed(2)}
+                        </>
+                      ) : (
+                        "N/A"
+                      )}
+                    </td>
+                    <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
+                      {item.total ? (
+                        <>
+                          {item.currency || "NGN"}{" "}
+                          {Number(item.total).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </>
+                      ) : (
+                        "N/A"
+                      )}
+                    </td>
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      {item.purchaseReqNumber || "N/A"}
+                    </td>
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      {item.purchaseOrderNumber || "N/A"}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -162,7 +164,9 @@ const CompletedTable = ({
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById('completed-table-container');
+              const container = document.getElementById(
+                "completed-table-container"
+              );
               if (container) {
                 container.scrollLeft -= 100;
               }
@@ -173,7 +177,9 @@ const CompletedTable = ({
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById('completed-table-container');
+              const container = document.getElementById(
+                "completed-table-container"
+              );
               if (container) {
                 container.scrollLeft += 100;
               }
