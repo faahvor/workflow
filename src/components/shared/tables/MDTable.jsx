@@ -164,6 +164,11 @@ const MDTable = ({
     return (item.totalPrice / (1 + vatRate)) * vatRate;
   };
 
+  const showSrcReqId = React.useMemo(
+  () => (items || []).some((it) => it.movedFromRequestId),
+  [items]
+);
+
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -186,6 +191,11 @@ const MDTable = ({
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Maker's Part No
               </th>
+              {showSrcReqId && (
+  <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+    Src Req ID
+  </th>
+)}
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Vendor
               </th>
@@ -261,7 +271,11 @@ const MDTable = ({
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   {item.makersPartNo || "N/A"}
                 </td>
-
+{showSrcReqId && (
+  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700 font-mono">
+    {item.movedFromRequestId || ""}
+  </td>
+)}
                 {/* ✅ Vendor Column */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   {resolveVendorName(item.vendor)}
@@ -301,26 +315,18 @@ const MDTable = ({
                     })}
                   </td>
                 )}
-              {showShippingFee && (
-  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-    {tagLower === "clearing" ? (
-      request?.shippingFee ? (
-        <>
-          {request.currency || "NGN"}{" "}
-          {parseFloat(request.shippingFee).toFixed(2)}
-        </>
-      ) : (
-        "N/A"
-      )
-    ) : item.shippingFee ? (
-      <>
-        {item.currency || "NGN"} {parseFloat(item.shippingFee).toFixed(2)}
-      </>
-    ) : (
-      "N/A"
-    )}
-  </td>
-)}
+                {showShippingFee && (
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                    {request?.shippingFee ? (
+                      <>
+                        {item.currency || "NGN"}{" "}
+                        {parseFloat(request.shippingFee).toFixed(2)}
+                      </>
+                    ) : (
+                      "N/A"
+                    )}
+                  </td>
+                )}
                 {!hidePrices && (
                   <>
                     {/* Unit Price - Read Only */}

@@ -12,6 +12,7 @@ function flattenComments(comments, parentCommentId = null) {
   for (const c of comments) {
     flat.push({
       id: c._id || c.id,
+      userId: c.userId?._id || c.userId?.id || c.userId || c.authorId || null, // <-- Add this line
       author:
         (c.userId && (c.userId.displayName || c.userId.name)) ||
         c.author ||
@@ -62,9 +63,16 @@ function CommentThread({ requestId, user, getToken }) {
         : Array.isArray(resp?.data)
         ? resp.data
         : [];
-      setComments(flattenComments(data));
+      const flat = flattenComments(data);
+      setComments(flat);
+      if (typeof onCommentsLoaded === "function") {
+        onCommentsLoaded(flat); // <-- This line is crucial!
+      }
     } catch (err) {
       setComments([]);
+      if (typeof onCommentsLoaded === "function") {
+        onCommentsLoaded([]);
+      }
     } finally {
       setCommentsLoading(false);
     }
@@ -76,7 +84,7 @@ function CommentThread({ requestId, user, getToken }) {
   }, [requestId]);
 
   // Post comment or reply
-  const handlePostComment = async (text, parentCommentId = null) => {
+ const handlePostComment = async (text, parentCommentId = null) => {
     if (!text.trim()) return;
     setPostingComment(true);
     try {
@@ -90,6 +98,9 @@ function CommentThread({ requestId, user, getToken }) {
       setReplyText("");
       setReplyingTo(null);
       await fetchComments();
+      if (typeof onCommentPosted === "function") {
+        onCommentPosted(); // <-- call the callback
+      }
     } catch (err) {
       alert("Failed to post comment");
     } finally {

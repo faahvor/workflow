@@ -16,6 +16,7 @@ import {
   MdCheckCircle,
   MdInventory,
   MdLocalShipping,
+  MdHelpOutline,
 } from "react-icons/md";
 import { HiClock } from "react-icons/hi";
 import Sidebar from "../../shared/layout/Sidebar";
@@ -59,6 +60,35 @@ const ManagerDashboard = () => {
   const [pendingUnreadCount, setPendingUnreadCount] = useState(0);
   const [queriedUnreadCount, setQueriedUnreadCount] = useState(0);
   const [rejectedUnreadCount, setRejectedUnreadCount] = useState(0);
+
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("sidebarCollapsed") === "true";
+  }
+  return false;
+});
+  const fetchChatUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const resp = await axios.get(
+        "https://hdp-backend-1vcl.onrender.com/api/chat/unread-count",
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setChatUnreadCount(resp.data?.unreadCount || 0);
+    } catch (err) {
+      setChatUnreadCount(0);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchChatUnreadCount();
+      const interval = setInterval(fetchChatUnreadCount, 3000); // every 3 seconds
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   // ManagerDashboard.jsx
 
@@ -137,13 +167,17 @@ const ManagerDashboard = () => {
   };
 
   // Open request detail and fetch flow
-  const handleOpenDetail = async (request) => {
+  const handleOpenDetail = async (request,opts={}) => {
     const flow = await fetchRequestFlow(request.requestId);
     setSelectedRequest({ ...request, flow });
     // set readOnly for both completed and approved views
-    setDetailReadOnly(activeView === "completed" || activeView === "approved");
-    setView("detail");
-  };
+     if (opts.readOnly) {
+    setDetailReadOnly(true);
+  } else {
+    setDetailReadOnly(activeView === "completed" || activeView === "approved" || activeView === "myrequests");
+  }
+  setView("detail");
+};
 
   // Fetch pending requests
   const fetchPendingRequests = async () => {
@@ -463,6 +497,9 @@ const ManagerDashboard = () => {
     }
   };
 
+  const isServiceRequest = (request) =>
+  request?.isService === true;
+
   const getInStockColor = () => {
     return "bg-green-100 text-green-700 border-green-200";
   };
@@ -517,19 +554,22 @@ const ManagerDashboard = () => {
   });
 
   // Sort: high priority first, then by request number descending
-  const sortedRequests = [
-    // High priority requests first
-    ...filteredRequests.filter((r) => r.priority === "high"),
-    // Then all others, sorted by requestId descending
-    ...filteredRequests
-      .filter((r) => r.priority !== "high")
-      .sort((a, b) => {
-        // If requestId is numeric, sort numerically
-        const numA = Number(String(a.requestId).replace(/\D/g, ""));
-        const numB = Number(String(b.requestId).replace(/\D/g, ""));
-        return numB - numA;
-      }),
-  ];
+  const highPriority = filteredRequests
+    .filter((r) => r.priority === "high")
+    .sort((a, b) => {
+      const numA = Number(String(a.requestId).replace(/\D/g, ""));
+      const numB = Number(String(b.requestId).replace(/\D/g, ""));
+      return numB - numA;
+    });
+  const others = filteredRequests
+    .filter((r) => r.priority !== "high")
+    .sort((a, b) => {
+      const numA = Number(String(a.requestId).replace(/\D/g, ""));
+      const numB = Number(String(b.requestId).replace(/\D/g, ""));
+      return numB - numA;
+    });
+
+  const sortedRequests = [...highPriority, ...others];
 
   // Load pending requests on mount
   useEffect(() => {
@@ -597,9 +637,12 @@ const ManagerDashboard = () => {
             setActiveView={setActiveView}
             pendingCount={pendingUnreadCount}
             queriedCount={queriedUnreadCount}
+            chatUnreadCount={chatUnreadCount}
             rejectedCount={rejectedUnreadCount}
             notificationCount={unreadCount}
             isRequester={false}
+              setCollapsed={setSidebarCollapsed}
+
           />
 
           <div className="flex-1 overflow-auto">
@@ -645,13 +688,15 @@ const ManagerDashboard = () => {
           pendingCount={pendingUnreadCount}
           queriedCount={queriedUnreadCount}
           rejectedCount={rejectedUnreadCount}
+          chatUnreadCount={chatUnreadCount}
           notificationCount={unreadCount}
           isRequester={false}
+            setCollapsed={setSidebarCollapsed}
+
         />
 
         {activeView === "chatRoom" && <ChatRoom />}
-                        {activeView === "support" && <Support />}
-
+        {activeView === "support" && <Support />}
 
         <div className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
@@ -713,7 +758,7 @@ const ManagerDashboard = () => {
                   <ProcurementCreateRequest
                     onRequestCreated={() => {
                       // After creating, switch to pending view and refresh
-                      setActiveView("pending");
+                      setActiveView("myRequests");
                       fetchPendingRequests();
                     }}
                   />
@@ -758,7 +803,6 @@ const ManagerDashboard = () => {
                             className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200"
                           />
                         </div>
-                    
                       </div>
                     </div>
                   )}
@@ -826,7 +870,13 @@ const ManagerDashboard = () => {
                     {sortedRequests.map((request) => (
                       <div
                         key={request.requestId}
-                        className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl hover:border-slate-300 transition-all duration-200 cursor-pointer group"
+                        className={`bg-white/90 backdrop-blur-xl border-2 rounded-2xl p-4 md:p-6 shadow-lg transition-all duration-200 cursor-pointer group
+    ${
+      request.isUnread
+        ? "border-emerald-400 ring-2 ring-emerald-200"
+        : "border-slate-200 hover:border-slate-300"
+    }
+  `}
                       >
                         <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                           <div className="flex-1 min-w-0">
@@ -856,30 +906,26 @@ const ManagerDashboard = () => {
                                   </span>
                                 </span>
                               )}
-                              {/* {request.items &&
-                                request.items.some(
-                                  (it) => it && it.inStock
-                                ) && (
-                                  <span
-                                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getInStockColor()}`}
-                                  >
-                                    {getInStockIcon()}
-                                    <span>In Stock</span>
-                                  </span>
-                                )} */}
+                             {request.isService === true && (
+  <span
+    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 ml-1"
+    style={{ marginLeft: 4 }}
+  >
+    <MdHelpOutline className="text-sm" />
+    <span>Services</span>
+  </span>
+)}
 
-                              {hasProcurementOfficerApproved(request) && (
-                                <span
-                                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
-                                    request.requestType
-                                  )}`}
-                                >
-                                  {getTypeIcon(request.requestType)}
-                                  <span>
-                                    {getTypeLabel(request.requestType)}
-                                  </span>
-                                </span>
-                              )}
+                            {request.requestType === "inStock" || hasProcurementOfficerApproved(request) ? (
+  <span
+    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+      request.requestType
+    )}`}
+  >
+    {getTypeIcon(request.requestType)}
+    <span>{getTypeLabel(request.requestType)}</span>
+  </span>
+) : null}
                               {request.offshoreReqNumber && (
                                 <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
                                   <MdDirectionsBoat className="text-sm" />

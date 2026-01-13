@@ -43,6 +43,9 @@ const AttachedDocuments = ({
   files = [],
   filesRefreshCounter = 0,
   onFilesChanged = () => {},
+    isReadOnly = false,      
+  isReadOnlyMode = false, 
+    onGrnStatusChange = () => {},
 }) => {
   const failedHeadUrlsRef = useRef(new Set());
   const { getToken, user } = useAuth();
@@ -232,12 +235,16 @@ const handleGenerateStoreGrn = () => {
               vendorId: g.vendorId,
               vendorName: g.vendorName,
               items:
-                requestData &&
-                Array.isArray(requestData.originalItemsSnapshot) &&
-                requestData.originalItemsSnapshot.length > 0 &&
-                isAtOrPastProcurementManager(requestData)
-                  ? requestData.originalItemsSnapshot
-                  : g.items,
+  requestData?.doVendorSplit
+    ? g.items // Always use items for vendor split
+    : (
+        requestData &&
+        Array.isArray(requestData.originalItemsSnapshot) &&
+        requestData.originalItemsSnapshot.length > 0 &&
+        isAtOrPastProcurementManager(requestData)
+      )
+      ? requestData.originalItemsSnapshot
+      : g.items,
             });
           });
         }
@@ -291,24 +298,49 @@ const handleGenerateStoreGrn = () => {
   });
 }
 
-// Show GRN for all roles if request is completed
-const completedStates = ["completed", "approved"];
+  // --- BEGIN: GRN logic update ---
+const grnRoles = ["store base", "store jetty", "store vessel", "requester"];
+const userRoleLower = (user?.role || "").toLowerCase();
+// Add all states where GRN should show
+const completedStates = [
+  "completed",
+  "approved",
+  "pending",
+  "pending_requester_delivery_confirmation", // <-- add this
+  "pending_store_base_approval", // <-- add this
+  "pendingstorebaseapproval",     // <-- add this for safety
+  "pendingrequesterdeliveryconfirmation"     // <-- add this for safety
+];
 const currentState =
-  requestData?.currentState ||
-  requestData?.flow?.currentState ||
-  requestData?.status ||
-  "";
-if (
-  completedStates.includes(String(currentState).toLowerCase()) &&
-  !docs.some((d) => d.type === "grn")
-) {
-  docs.push({
-    type: "grn",
-    name: "Goods Received Note",
-    displayName: "Goods Received Note",
-    items: requestData?.items || requestItems || [],
-  });
+  (requestData?.currentState || requestData?.flow?.currentState || requestData?.status || "").toLowerCase();
+
+if (grnRoles.includes(userRoleLower)) {
+  if (
+    completedStates.includes(currentState) &&
+    !docs.some((d) => d.type === "grn") &&
+    !requestData?.isService
+  ) {
+    docs.push({
+      type: "grn",
+      name: "Goods Received Note",
+      displayName: "Goods Received Note",
+      items: requestData?.items || requestItems || [],
+    });
+  }
+  if (
+    storeGrnGenerated &&
+    !docs.some((d) => d.type === "grn") &&
+    !requestData?.isService
+  ) {
+    docs.push({
+      type: "grn",
+      name: "Goods Received Note",
+      displayName: "Goods Received Note",
+      items: requestData?.items || requestItems || [],
+    });
+  }
 }
+  // --- END: GRN logic update ---
 
     // Other files (quotations, payment advice, invoices, images, etc.)
     fileMeta.forEach((f) => {
@@ -320,7 +352,6 @@ if (
       "delivery jetty",
       "delivery vessel",
     ];
-    const userRoleLower = (user?.role || "").toLowerCase();
 
     let filteredDocs = docs;
     if (deliveryRoles.includes(userRoleLower)) {
@@ -347,9 +378,16 @@ if (
     vendorGroups,
     showPurchaseOrder,
     fileMeta,
+        storeGrnGenerated, 
   ]);
-const hasGrnDoc = folderDocs.some((doc) => doc.type === "grn");
-  // Keyboard navigation for folder modal
+  const hasGrnDoc = folderDocs.some((doc) => doc.type === "grn");
+
+  // Notify parent when hasGrnDoc changes
+  useEffect(() => {
+    if (typeof onGrnStatusChange === "function") {
+      onGrnStatusChange(hasGrnDoc);
+    }
+  }, [hasGrnDoc, onGrnStatusChange]);  // Keyboard navigation for folder modal
   useEffect(() => {
     if (!active || !active.folder) return;
     const onKeyDown = (e) => {
@@ -1194,24 +1232,29 @@ const hasGrnDoc = folderDocs.some((doc) => doc.type === "grn");
     }
   };
 
+
+  
+
   return (
     <>
       <div className="mb-8">
         <h3 className="text-lg font-bold text-slate-900 mb-4">
   Attached Documents
 </h3>
-{["store base", "store jetty", "store vessel"].includes((user?.role || "").toLowerCase()) && (
-  <button
-    type="button"
-    className={`text-emerald-700 underline text-sm font-semibold mb-4 ml-2 ${hasGrnDoc || storeGrnGenerated ? "opacity-50 cursor-not-allowed" : ""}`}
-    onClick={() => {
-      if (!hasGrnDoc && !storeGrnGenerated) handleGenerateStoreGrn();
-    }}
-    disabled={hasGrnDoc || storeGrnGenerated}
-    style={{ background: "none", border: "none", cursor: hasGrnDoc || storeGrnGenerated ? "not-allowed" : "pointer" }}
-  >
-    Generate GRN
-  </button>
+{["store base", "store jetty", "store vessel"].includes((user?.role || "").toLowerCase()) &&
+  // Hide Generate GRN if read-only or read-only mode
+  !isReadOnly && !isReadOnlyMode && (
+    <button
+      type="button"
+      className={`text-emerald-700 underline text-sm font-semibold mb-4 ml-2 ${hasGrnDoc || storeGrnGenerated ? "opacity-50 cursor-not-allowed" : ""}`}
+      onClick={() => {
+        if (!hasGrnDoc && !storeGrnGenerated) handleGenerateStoreGrn();
+      }}
+      disabled={hasGrnDoc || storeGrnGenerated}
+      style={{ background: "none", border: "none", cursor: hasGrnDoc || storeGrnGenerated ? "not-allowed" : "pointer" }}
+    >
+      Generate GRN
+    </button>
 )}
 
         {loadingRequest ? (

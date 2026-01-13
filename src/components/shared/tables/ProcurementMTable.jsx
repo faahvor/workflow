@@ -286,6 +286,10 @@ const ProcurementMTable = ({
     return (items || []).some((it) => !!it.inStock);
   }, [items]);
 
+  const showSrcReqId = React.useMemo(
+  () => (items || []).some((it) => it.movedFromRequestId),
+  [items]
+);
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -308,7 +312,11 @@ const ProcurementMTable = ({
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Maker's Part No
               </th>
-
+{showSrcReqId && (
+  <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+    Src Req ID
+  </th>
+)}
               {!isAnyItemInStock && (
                 <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                   Vendor
@@ -330,11 +338,11 @@ const ProcurementMTable = ({
               )}
               {!isAnyItemInStock && !showFeeColumns && (
                 <>
-                {showShippingFee && (
-      <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-        Shipping Fee
-      </th>
-    )}
+                  {showShippingFee && (
+                    <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                      Shipping Fee
+                    </th>
+                  )}
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Unit Price
                   </th>
@@ -397,7 +405,11 @@ const ProcurementMTable = ({
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   {item.makersPartNo || "N/A"}
                 </td>
-
+{showSrcReqId && (
+  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700 font-mono">
+    {item.movedFromRequestId || "N/A"}
+  </td>
+)}
                 {/* ✅ Vendor Column */}
                 {!isAnyItemInStock && (
                   <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
@@ -453,18 +465,18 @@ const ProcurementMTable = ({
                 {/* Unit Price - Read Only */}
                 {!isAnyItemInStock && !showFeeColumns && (
                   <>
-                   {showShippingFee && (
-      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-        {item.shippingFee ? (
-          <>
-            {item.currency || "NGN"}{" "}
-            {parseFloat(item.shippingFee).toFixed(2)}
-          </>
-        ) : (
-          "N/A"
-        )}
-      </td>
-    )}
+                    {showShippingFee && (
+                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                        {request?.shippingFee ? (
+                          <>
+                            {item.currency || "NGN"}{" "}
+                            {parseFloat(request.shippingFee).toFixed(2)}
+                          </>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                    )}
                     <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                       {item.unitPrice ? (
                         <>
@@ -505,19 +517,10 @@ const ProcurementMTable = ({
                 {/* VAT Amount Column - Only show when isIncompleteDelivery */}
                 {!isPettyCash && !isAnyItemInStock && !showFeeColumns && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                    {item.vatted ? (
-                      <>
-                        {item.currency || "NGN"}{" "}
-                        {Number(
-                          calculateItemTotal(item).vatAmount || 0
-                        ).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </>
-                    ) : (
-                      "N/A"
-                    )}
+                    <>
+                      {item.currency || "NGN"}{" "}
+                      {item.vatAmount ? `${item.vatAmount}` : "-"}
+                    </>
                   </td>
                 )}
 

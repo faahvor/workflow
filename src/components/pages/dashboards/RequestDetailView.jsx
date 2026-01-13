@@ -47,6 +47,14 @@ import ReadOnlyTable from "../../shared/tables/ReadOnlyTable";
 import InvoiceFilesUpload from "./InvoiceFilesUpload";
 import CommentThread from "../../shared/CommentThread";
 import EmailComposer from "../EmailComposer";
+import MergeTable from "../../shared/tables/MergeTable";
+import ServiceTable from "../../shared/tables/ServiceTable";
+import ProjectManagerTable from "../../shared/tables/ProjectManagerTable";
+import CostControllerTable from "../../shared/tables/CostControllerTable";
+import HeadOfProjectTable from "../../shared/tables/HeadOfProjectTable";
+import LegalHeadTable from "../../shared/tables/LegalHeadTable";
+import DirectorOfAdminTable from "../../shared/tables/DirectorOfAdminTable";
+import HrManagerTable from "../../shared/tables/HrManagerTable";
 
 async function fetchFileAsAttachment(url, filename) {
   const resp = await fetch(url);
@@ -145,6 +153,21 @@ const RequestDetailView = ({
   const [freightRoute, setFreightRoute] = useState(null);
   const [isSavingFreightRoute, setIsSavingFreightRoute] = useState(false);
   const [editingAdditionalInfo, setEditingAdditionalInfo] = useState(false);
+  const currentRequest = selectedRequest || request;
+  const isQueried = (selectedRequest?.isQueried ?? request?.isQueried) === true;
+  const [hasGrnDoc, setHasGrnDoc] = useState(false);
+const [showInternationalFlow, setShowInternationalFlow] = useState(false);
+const [internationalWorkflowPath, setInternationalWorkflowPath] = useState(null);
+const [loadingInternationalFlow, setLoadingInternationalFlow] = useState(false);
+
+
+  // --- Duplicate Item Detection ---
+  const duplicatedItems = Array.isArray(currentRequest?.items)
+    ? currentRequest.items.filter((it) => it.isDuplicateItem)
+    : [];
+  const hasDuplicate = duplicatedItems.length > 0;
+  const firstDuplicate = duplicatedItems[0];
+
   const [additionalInfoDraft, setAdditionalInfoDraft] = useState(
     request.additionalInformation || ""
   );
@@ -173,11 +196,13 @@ const RequestDetailView = ({
     { value: "Marine", label: "Marine" },
     { value: "IT", label: "IT" },
     { value: "Account", label: "Account" },
-    { value: "Protocol", label: "Protocol" },
-    { value: "Compliance/QHSE", label: "Compliance/QHSE" },
+    { value: "Legal", label: "Legal" },
+    { value: "QHSE", label: "QHSE" },
     { value: "Operations", label: "Operations" },
+    { value: "Vessel/Catering", label: "Vessel/Catering" },
     { value: "Project", label: "Project" },
     { value: "Purchase", label: "Purchase" },
+    { value: "Protocol", label: "Protocol" },
     { value: "Store", label: "Store" },
     { value: "HR", label: "HR" },
     { value: "Admin", label: "Admin" },
@@ -548,29 +573,42 @@ const RequestDetailView = ({
     "operations manager",
     "equipment manager",
     "procurement manager",
+        "project manager",
+        "hr manager",
+
   ];
   const allowedQueryRoles = [
     "vessel manager",
     "managing director",
     "cfo",
     "accounting lead",
-    "procurement manager"
+    "procurement manager",
+    "project manager",
+    "hr manager",
   ];
-  const isVesselManagerBlockedForActions =
-    userRole === "vessel manager" &&
-    (
-      selectedRequest?.flow?.currentState ||
-      request?.flow?.currentState ||
-      request?.status ||
-      ""
-    ).toString() === "PENDING_VESSEL_MANAGER_APPROVAL_2";
+ const currentState = (
+  selectedRequest?.flow?.currentState ||
+  request?.flow?.currentState ||
+  request?.status ||
+  ""
+).toString();
 
-  const currentAccountState = (
-    selectedRequest?.flow?.currentState ||
-    request?.flow?.currentState ||
-    request?.status ||
-    ""
-  ).toString();
+function getSecondApprovalBlockState(userRole, state) {
+  // Normalize role to uppercase with underscores, e.g. "hr manager" => "HR_MANAGER"
+  const normalizedRole = String(userRole || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_");
+  return state === `PENDING_${normalizedRole}_APPROVAL_2`;
+}
+
+const isBlockedForActions = getSecondApprovalBlockState(userRole, currentState);
+const currentAccountState = (
+  selectedRequest?.flow?.currentState ||
+  request?.flow?.currentState ||
+  request?.status ||
+  ""
+).toString();
 
   const showAccountingAttach =
     !isReadOnly &&
@@ -775,10 +813,10 @@ const RequestDetailView = ({
       (request && request.nextDeliveryTarget) ||
       null;
 
-    if (saved) {
-      setNextDeliveryTarget({ value: saved, label: saved });
-      return;
-    }
+    // if (saved) {
+    //   setNextDeliveryTarget({ value: saved, label: saved });
+    //   return;
+    // }
 
     const stations =
       (selectedRequest && selectedRequest.nextDeliveryStations) ||
@@ -1425,81 +1463,9 @@ const RequestDetailView = ({
 
   // NEW: fetch default dropdown results (pending shipping requests) and optional term filter
   const fetchAttachDropdownResults = async (term = "") => {
-    setAttachDropdownLoading(true);
-    try {
-      const token = getToken();
-      if (!token) throw new Error("Not authenticated");
-      const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const all = resp.data?.data || resp.data || [];
-
-      // keep only requests with tag === "shipping" (backend may vary: tag or tags)
-      const shipping = all.filter((r) => {
-        if (!r) return false;
-        if (Array.isArray(r.tags) && r.tags.length) {
-          return r.tags
-            .map((t) => String(t).toLowerCase())
-            .includes("shipping");
-        }
-        const t = (r.tag || "").toString().toLowerCase();
-        return t.includes("shipping");
-      });
-
-      // EXCLUDE the currently opened request from the dropdown
-      const currentOpenId = request?.requestId || request?.id || null;
-      const shippingFiltered = shipping.filter(
-        (r) => (r.requestId || r.id) !== currentOpenId
-      );
-
-      // optional client-side term filtering (vendor name or PO)
-      const q = (term || "").toString().trim().toLowerCase();
-      const matched = q
-        ? shippingFiltered.filter((r) => {
-            const vendor = (r.vendor || r.requester?.displayName || "")
-              .toString()
-              .toLowerCase();
-            const po = (
-              r.purchaseOrderNumber ||
-              r.reference ||
-              r.requestId ||
-              ""
-            )
-              .toString()
-              .toLowerCase();
-            return vendor.includes(q) || po.includes(q);
-          })
-        : shippingFiltered;
-
-      // newest-first, limit to 10
-      const sorted = matched
-        .slice()
-        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-        .slice(0, 10);
-
-      setAttachDropdownResults(sorted);
-      setAttachDropdownOpen(true);
-    } catch (err) {
-      console.error("Attach dropdown fetch error:", err);
-      setAttachDropdownResults([]);
-      setAttachDropdownOpen(false);
-    } finally {
-      setAttachDropdownLoading(false);
-    }
-  };
-
-
- // Helper to normalize request type for comparison
-function normalizeType(type) {
-  return String(type || "")
-    .toLowerCase()
-    .replace(/\s+/g, "");
-}
-
-
-const fetchAccAttachDropdownResults = async (term = "") => {
-  setAccAttachDropdownLoading(true);
+  setAttachDropdownLoading(true);
   try {
+    
     const token = getToken();
     if (!token) throw new Error("Not authenticated");
     const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
@@ -1507,45 +1473,29 @@ const fetchAccAttachDropdownResults = async (term = "") => {
     });
     const all = resp.data?.data || resp.data || [];
 
-    // Only exclude shipping for non-accounting officer roles
-    let filtered = all;
-    if (
-      userRole !== "accountingofficer" &&
-      userRole !== "accounting officer"
-    ) {
-      filtered = all.filter((r) => {
-        if (!r) return false;
-        if (Array.isArray(r.tags) && r.tags.length) {
-          return !r.tags
-            .map((t) => String(t).toLowerCase())
-            .includes("shipping");
-        }
-        const tag = (r.tag || "").toString().toLowerCase();
-        return !tag.includes("shipping");
-      });
-    }
+    // Get current tag ("shipping" or "clearing")
+    const currentTag = String(currentRequest?.tag || "").toLowerCase();
 
-    // exclude the currently opened request
+    // Only include requests with the same tag as the current request
+    const filtered = all.filter((r) => {
+      if (!r) return false;
+      if (Array.isArray(r.tags) && r.tags.length) {
+        return r.tags.map((t) => String(t).toLowerCase()).includes(currentTag);
+      }
+      const t = (r.tag || "").toString().toLowerCase();
+      return t === currentTag;
+    });
+
+    // EXCLUDE the currently opened request from the dropdown
     const currentOpenId = request?.requestId || request?.id || null;
-    filtered = filtered.filter(
+    const filteredResults = filtered.filter(
       (r) => (r.requestId || r.id) !== currentOpenId
     );
 
-    // --- Only for accounting officer: filter by request type ---
-    if (
-      userRole === "accountingofficer" ||
-      userRole === "accounting officer"
-    ) {
-      const currentType = normalizeType(currentRequest?.requestType);
-      filtered = filtered.filter(
-        (r) => normalizeType(r.requestType) === currentType
-      );
-    }
-
-    // optional client-side search (vendor or PON)
+    // optional client-side term filtering (vendor name or PO)
     const q = (term || "").toString().trim().toLowerCase();
     const matched = q
-      ? filtered.filter((r) => {
+      ? filteredResults.filter((r) => {
           const vendor = (r.vendor || r.requester?.displayName || "")
             .toString()
             .toLowerCase();
@@ -1559,23 +1509,111 @@ const fetchAccAttachDropdownResults = async (term = "") => {
             .toLowerCase();
           return vendor.includes(q) || po.includes(q);
         })
-      : filtered;
+      : filteredResults;
 
+    // newest-first, limit to 10
     const sorted = matched
       .slice()
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
       .slice(0, 10);
 
-    setAccAttachDropdownResults(sorted);
-    setAccAttachDropdownOpen(true);
+    setAttachDropdownResults(sorted);
+    setAttachDropdownOpen(true);
   } catch (err) {
-    console.error("Accounting attach dropdown fetch error:", err);
-    setAccAttachDropdownResults([]);
-    setAccAttachDropdownOpen(false);
+    console.error("Attach dropdown fetch error:", err);
+    setAttachDropdownResults([]);
+    setAttachDropdownOpen(false);
   } finally {
-    setAccAttachDropdownLoading(false);
+    setAttachDropdownLoading(false);
   }
 };
+
+  // Helper to normalize request type for comparison
+  function normalizeType(type) {
+    return String(type || "")
+      .toLowerCase()
+      .replace(/\s+/g, "");
+  }
+
+  const fetchAccAttachDropdownResults = async (term = "") => {
+    setAccAttachDropdownLoading(true);
+    try {
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+      const resp = await axios.get(`${API_BASE_URL}/requests/pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const all = resp.data?.data || resp.data || [];
+
+      // Only exclude shipping for non-accounting officer roles
+      let filtered = all;
+      if (
+        userRole !== "accountingofficer" &&
+        userRole !== "accounting officer"
+      ) {
+        filtered = all.filter((r) => {
+          if (!r) return false;
+          if (Array.isArray(r.tags) && r.tags.length) {
+            return !r.tags
+              .map((t) => String(t).toLowerCase())
+              .includes("shipping");
+          }
+          const tag = (r.tag || "").toString().toLowerCase();
+          return !tag.includes("shipping");
+        });
+      }
+
+      // exclude the currently opened request
+      const currentOpenId = request?.requestId || request?.id || null;
+      filtered = filtered.filter(
+        (r) => (r.requestId || r.id) !== currentOpenId
+      );
+
+      // --- Only for accounting officer: filter by request type ---
+      if (
+        userRole === "accountingofficer" ||
+        userRole === "accounting officer"
+      ) {
+        const currentType = normalizeType(currentRequest?.requestType);
+        filtered = filtered.filter(
+          (r) => normalizeType(r.requestType) === currentType
+        );
+      }
+
+      // optional client-side search (vendor or PON)
+      const q = (term || "").toString().trim().toLowerCase();
+      const matched = q
+        ? filtered.filter((r) => {
+            const vendor = (r.vendor || r.requester?.displayName || "")
+              .toString()
+              .toLowerCase();
+            const po = (
+              r.purchaseOrderNumber ||
+              r.reference ||
+              r.requestId ||
+              ""
+            )
+              .toString()
+              .toLowerCase();
+            return vendor.includes(q) || po.includes(q);
+          })
+        : filtered;
+
+      const sorted = matched
+        .slice()
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        .slice(0, 10);
+
+      setAccAttachDropdownResults(sorted);
+      setAccAttachDropdownOpen(true);
+    } catch (err) {
+      console.error("Accounting attach dropdown fetch error:", err);
+      setAccAttachDropdownResults([]);
+      setAccAttachDropdownOpen(false);
+    } finally {
+      setAccAttachDropdownLoading(false);
+    }
+  };
 
   const loadSourceRequestItems = async (sourceRequestId) => {
     try {
@@ -1731,11 +1769,6 @@ const fetchAccAttachDropdownResults = async (term = "") => {
     }
   };
 
-
-  
-  const currentRequest = selectedRequest || request;
-  const isQueried = (selectedRequest?.isQueried ?? request?.isQueried) === true;
-
   const reqTypeLower = (currentRequest?.requestType || "")
     .toString()
     .toLowerCase();
@@ -1769,15 +1802,22 @@ const fetchAccAttachDropdownResults = async (term = "") => {
       (it) => (it?.itemType || "").toString().toLowerCase() === "pettycash"
     );
 
+    const hasLocalLogisticsItem =
+  Array.isArray(currentRequest?.items) &&
+  currentRequest.items.some(
+    (it) =>
+      String(it.logisticsType || "")
+        .toLowerCase()
+        .trim() === "local"
+  );
   // ADDED: combined flags used by UI & validation
   const showDeliveryTarget =
-    isPurchaseOrder && !poSingleItemPettyCash && !poAllItemsPettyCash;
+    isPurchaseOrder && !poSingleItemPettyCash && !poAllItemsPettyCash && hasLocalLogisticsItem;
   const showPaymentType =
     !isPettyCash &&
     !(isPurchaseOrder && (poSingleItemPettyCash || poAllItemsPettyCash));
   const showNextApproval = isPurchaseOrder && isMarineDestination;
 
-  // ...existing code...
   const renderItemsTable = () => {
     const userRole = user?.role?.toLowerCase();
 
@@ -1809,6 +1849,13 @@ const fetchAccAttachDropdownResults = async (term = "") => {
       return {
         itemId: it.itemId || it._id || it.id || `gen-${idx}`,
         name: it.name || it.description || it.title || "N/A",
+        isDuplicateItem: !!it.isDuplicateItem, // <-- ADD THIS
+        duplicateOfRequestId:
+          it.duplicateOfRequestId ||
+          it.duplicateOfRequestId ||
+          it.duplicateOf ||
+          null, // <-- ADD THIS
+        duplicateOfItemId: it.duplicateOfItemId || null, // <-- ADD THIS
         itemType: it.itemType || it.makersType || it.type || "",
         maker: it.maker || it.manufacturer || "",
         makersPartNo:
@@ -1872,21 +1919,64 @@ const fetchAccAttachDropdownResults = async (term = "") => {
         vatted: it.vatted ?? false,
         movedFromRequestId:
           it.movedFromRequestId || it.__raw?.movedFromRequestId || "",
+        foundInInventory: it.foundInInventory ?? false,
+        inventoryStockLevel: it.inventoryStockLevel ?? 0,
         __raw: it,
       };
     });
 
+        const tableReadOnly = isReadOnly || actionLoading;
+
+
+      if (
+      currentRequest?.isService === true &&
+      (currentRequest?.requestType || "").toLowerCase() === "pettycash"
+    ) {
+      return (
+        <ServiceTable
+          items={items}
+          userRole={userRole}
+          onEditItem={handleEditItem}
+          isReadOnly={tableReadOnly}
+       requestType={currentRequest?.requestType}
+      currentState={currentRequest?.flow?.currentState || currentRequest?.status || ""}
+    />
+      );
+    }
+
     // When viewing approved/completed set tables to read-only (also consider actionLoading)
-    const tableReadOnly = isReadOnly || actionLoading;
 
     // ✅ FIX: Only return CompletedTable when isReadOnly is true
     if (isReadOnly) {
       if (reqType === "purchaseorder" || reqType === "pettycash") {
-        return <CompletedTable items={items} userRole={userRole}  requestType={request.requestType} />;
+        return (
+          <CompletedTable
+            items={items}
+            userRole={userRole}
+            requestType={request.requestType}
+          />
+        );
       }
       // Fallback for any other request type in read-only mode
-      return <CompletedTable items={items} userRole={userRole}  requestType={request.requestType} />;
+      return (
+        <CompletedTable
+          items={items}
+          userRole={userRole}
+          requestType={request.requestType}
+        />
+      );
     }
+  if (isReadOnly && Array.isArray(currentRequest?.movedItems) && currentRequest.movedItems.length > 0) {
+    return (
+      <MergeTable
+        movedItems={currentRequest.movedItems}
+        isReadOnly={true}
+        tag={currentRequest?.tag || ""}
+      />
+    );
+  }
+
+  
 
     // Role-based table selection (for non-read-only mode)
     switch (userRole) {
@@ -1910,7 +2000,99 @@ const fetchAccAttachDropdownResults = async (term = "") => {
             clearingFee={currentRequest?.clearingFee}
           />
         );
-      // ...existing code (rest of switch cases)...
+
+        case "projectmanager":
+case "project manager":
+  return (
+    <ProjectManagerTable
+      items={items}
+      onEditItem={handleEditItem}
+      onDeleteItem={openDeleteModal}
+      requestId={request.requestId}
+      isReadOnly={tableReadOnly}
+      tag={currentRequest?.tag || ""}
+      clearingFee={currentRequest?.clearingFee}
+      request={currentRequest}
+    />
+  );
+
+  case "costcontroller":
+case "cost controller":
+  return (
+    <CostControllerTable
+      items={items}
+      onEditItem={handleEditItem}
+      isReadOnly={tableReadOnly}
+      vendors={vendors}
+      requestType={selectedRequest?.requestType || request?.requestType || ""}
+      tag={currentRequest?.tag || ""}
+    />
+  );
+
+  case "headofproject":
+case "head of project":
+  return (
+    <HeadOfProjectTable
+      items={items}
+      onEditItem={handleEditItem}
+      isReadOnly={tableReadOnly}
+      vendors={vendors}
+      requestType={selectedRequest?.requestType || request?.requestType || ""}
+      tag={currentRequest?.tag || ""}
+    />
+  );
+
+  case "hrmanager":
+case "hr manager":
+  return (
+    <HrManagerTable
+      items={items}
+      onEditItem={handleEditItem}
+      onDeleteItem={openDeleteModal}
+      requestId={request.requestId}
+      isReadOnly={tableReadOnly}
+      currentState={request.flow?.currentState}
+      vendors={vendors}
+      requestType={selectedRequest?.requestType || request?.requestType || ""}
+      tag={currentRequest?.tag || ""}
+      clearingFee={currentRequest?.clearingFee}
+      request={currentRequest}
+    />
+  );
+  case "legalhead":
+case "legal head":
+  return (
+    <LegalHeadTable
+      items={items}
+      onEditItem={handleEditItem}
+      onDeleteItem={openDeleteModal}
+      requestId={request.requestId}
+      isReadOnly={tableReadOnly}
+      currentState={request.flow?.currentState}
+      vendors={vendors}
+      requestType={selectedRequest?.requestType || request?.requestType || ""}
+      tag={currentRequest?.tag || ""}
+      clearingFee={currentRequest?.clearingFee}
+      request={currentRequest}
+    />
+  );
+  case "directorofadmin":
+case "director of admin":
+  return (
+    <DirectorOfAdminTable
+      items={items}
+      onEditItem={handleEditItem}
+      onDeleteItem={openDeleteModal}
+      requestId={request.requestId}
+      isReadOnly={tableReadOnly}
+      currentState={request.flow?.currentState}
+      vendors={vendors}
+      requestType={selectedRequest?.requestType || request?.requestType || ""}
+      tag={currentRequest?.tag || ""}
+      clearingFee={currentRequest?.clearingFee}
+      request={currentRequest}
+    />
+  );
 
       case "fleetmanager":
       case "fleet manager":
@@ -1964,8 +2146,7 @@ const fetchAccAttachDropdownResults = async (term = "") => {
             isReadOnly={tableReadOnly}
             vendors={vendors}
             tag={currentRequest?.tag}
-                        request={currentRequest}
-
+            request={currentRequest}
             clearingFee={currentRequest?.clearingFee}
           />
         );
@@ -1983,8 +2164,7 @@ const fetchAccAttachDropdownResults = async (term = "") => {
             requestId={request.requestId}
             onRefreshRequest={fetchRequestDetails}
             clearingFee={currentRequest?.clearingFee}
-                        request={currentRequest}
-
+            request={currentRequest}
           />
         );
       case "storebase":
@@ -2311,25 +2491,13 @@ const fetchAccAttachDropdownResults = async (term = "") => {
       );
       return false;
     }
-    const missingLocation = items.find(
-      (it) => it.inStock && (!it.storeLocation || it.storeLocation === "")
-    );
-    if (missingLocation) {
-      alert(
-        `Cannot approve: item "${
-          missingLocation.name || missingLocation.itemId
-        }" Provide a store location.`
-      );
-      return false;
-    }
+   
     return true;
   };
 
-// ...existing code...
-const tagLower = (currentRequest?.tag || "").toString().toLowerCase();
-const isShippingOrClearing =
-  tagLower === "shipping" || tagLower === "clearing";
-// ...existing code...
+  const tagLower = (currentRequest?.tag || "").toString().toLowerCase();
+  const isShippingOrClearing =
+    tagLower === "shipping" || tagLower === "clearing";
   const handleApproveClick = () => {
     const req = selectedRequest || request;
     const reqType = (req?.requestType || "").toString().toLowerCase();
@@ -2337,37 +2505,37 @@ const isShippingOrClearing =
     const userRole = (user?.role || "").toString().toLowerCase();
     const items = Array.isArray(req?.items) ? req.items : [];
 
-   if (!allItemsAreInStock && userRole === "procurement officer") {
-    // Check for purchaseOrder with all pettycash items
-    if (reqType === "purchaseorder") {
-      const allPettyCash =
-        items.length > 0 &&
-        items.every(
-          (it) =>
-            (it?.itemType || "").toString().toLowerCase() === "pettycash"
-        );
-      if (allPettyCash) {
-        const invoiceFiles = Array.isArray(req?.invoiceFiles)
-          ? req.invoiceFiles
-          : [];
-        if (invoiceFiles.length === 0) {
-          alert(
-            "Please upload at least one invoice file before approving this Petty Cash Purchase Order request."
+    if (!allItemsAreInStock && userRole === "procurement officer") {
+      // Check for purchaseOrder with all pettycash items
+      if (reqType === "purchaseorder") {
+        const allPettyCash =
+          items.length > 0 &&
+          items.every(
+            (it) =>
+              (it?.itemType || "").toString().toLowerCase() === "pettycash"
           );
-          return;
-        }
-      } else {
-        const quotationFiles = Array.isArray(req?.quotationFiles)
-          ? req.quotationFiles
-          : [];
-        if (quotationFiles.length === 0) {
-          alert(
-            "Please upload at least one quotation file before approving this Purchase Order request."
-          );
-          return;
+        if (allPettyCash) {
+          const invoiceFiles = Array.isArray(req?.invoiceFiles)
+            ? req.invoiceFiles
+            : [];
+          if (invoiceFiles.length === 0) {
+            alert(
+              "PlUpload at least one invoice file before approving this Petty Cash PO request."
+            );
+            return;
+          }
+        } else {
+          const quotationFiles = Array.isArray(req?.quotationFiles)
+            ? req.quotationFiles
+            : [];
+          if (quotationFiles.length === 0) {
+            alert(
+              "Upload at least one quotation file before approving this PO."
+            );
+            return;
+          }
         }
       }
-    }
       // For pettyCash request type
       if (reqType === "pettycash") {
         const invoiceFiles = Array.isArray(req?.invoiceFiles)
@@ -2397,32 +2565,32 @@ const isShippingOrClearing =
       );
 
     if (isProcurementOfficer && !allItemsAreInStock) {
-  // Delivery Target required only for purchaseOrder and not the special petty-in-PO cases
-  if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
-    if (!deliveryTarget || !deliveryTarget.value) {
-      alert(
-        "Please select 'Delivery Target' before approving this request."
-      );
-      return;
-    }
-  }
+      // Delivery Target required only for purchaseOrder and not the special petty-in-PO cases
+      // if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
+      //   if (!deliveryTarget || !deliveryTarget.value) {
+      //     alert(
+      //       "Please select 'Delivery Target' before approving this request."
+      //     );
+      //     return;
+      //   }
+      // }
 
-  // Payment Type must be selected for purchaseOrder (visible for all non-pettyCash)
-  if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
-    if (!paymentType || !paymentType.value) {
-      alert("Please select 'Payment Type' before approving this request.");
-      return;
-    }
-  }
+      // Payment Type must be selected for purchaseOrder (visible for all non-pettyCash)
+      if (reqType === "purchaseorder" && !reqSinglePetty && !reqAllPetty) {
+        if (!paymentType || !paymentType.value) {
+          alert("Please select 'Payment Type' before approving this request.");
+          return;
+        }
+      }
 
-  // Next Approval is required only when destination is marine and request is purchaseOrder
-  if (reqType === "purchaseorder" && dest.includes("marine")) {
-    if (!nextApprovalRole || !nextApprovalRole.value) {
-      alert("Please select 'Next Approval' before approving this request.");
-      return;
+      // Next Approval is required only when destination is marine and request is purchaseOrder
+      if (reqType === "purchaseorder" && dest.includes("marine")) {
+        if (!nextApprovalRole || !nextApprovalRole.value) {
+          alert("Please select 'Next Approval' before approving this request.");
+          return;
+        }
+      }
     }
-  }
-}
 
     const reqDepartment = (request?.department || "").toString().toLowerCase();
     if (
@@ -2477,6 +2645,7 @@ const isShippingOrClearing =
         }
       }
     }
+    
 
     // existing local validations
     if (!canProceedToApprove()) return;
@@ -2494,41 +2663,62 @@ const isShippingOrClearing =
     const isDeliveryRoleNow = deliveryRoles.includes(roleLower);
 
     // Only check delivery validation for delivery roles, NOT for requesters
-   if (isDeliveryRoleNow) {
-  const tagLower =
-    (selectedRequest?.tag || request?.tag || "")
-      .toString()
-      .toLowerCase();
-  const isShippingOrClearing =
-    tagLower === "shipping" || tagLower === "clearing";
+    if (isDeliveryRoleNow) {
+      const tagLower = (selectedRequest?.tag || request?.tag || "")
+        .toString()
+        .toLowerCase();
+      const isShippingOrClearing =
+        tagLower === "shipping" || tagLower === "clearing";
 
-  const incompleteDelivery = (itemsList || []).some((it) => {
-    let delivered, qty;
-    if (isShippingOrClearing) {
-      delivered = Number(it.shippingDeliveredQuantity || 0);
-      qty = Number(it.shippingQuantity || 0);
-    } else {
-      delivered =
-        Number(
-          it.deliveredQuantity ??
-            it.deliverybaseDeliveredQuantity ??
-            it.deliveryjettyDeliveredQuantity ??
-            it.deliveryvesselDeliveredQuantity ??
-            0
-        ) || 0;
-      qty = Number(it.quantity || 0) || 0;
+      const incompleteDelivery = (itemsList || []).some((it) => {
+        let delivered, qty;
+        if (isShippingOrClearing) {
+          delivered = Number(it.shippingDeliveredQuantity || 0);
+          qty = Number(it.shippingQuantity || 0);
+        } else {
+          delivered =
+            Number(
+              it.deliveredQuantity ??
+                it.deliverybaseDeliveredQuantity ??
+                it.deliveryjettyDeliveredQuantity ??
+                it.deliveryvesselDeliveredQuantity ??
+                0
+            ) || 0;
+          qty = Number(it.quantity || 0) || 0;
+        }
+        return qty > 0 && delivered !== qty;
+      });
+
+      if (incompleteDelivery) {
+        const currentUserId = user?.userId || user?.id || user?._id || null;
+        if (!hasCommentByUser(currentUserId)) {
+          alert("Please state a reason for approving delivery not completed");
+          return; // block approval
+        }
+      }
     }
-    return qty > 0 && delivered !== qty;
-  });
-
-  if (incompleteDelivery) {
-    const currentUserId = user?.userId || user?.id || user?._id || null;
-    if (!hasCommentByUser(currentUserId)) {
-      alert("Please state a reason for approving delivery not completed");
-      return; // block approval
+     if (userRole === "procurement officer") {
+    for (const item of items) {
+      if (
+        item.inStock === true &&
+        Number(item.inventoryStockLevel) >= Number(item.quantity) &&
+        Number(item.inStockQuantity) < Number(item.quantity)
+      ) {
+        const proceed = window.confirm(
+          `Stock still available for "${item.name || item.itemId}". Proceed with approval?`
+        );
+        if (!proceed) {
+          return; // Block approval if user cancels
+        }
+      }
     }
   }
-}
+
+   const storeRoles = ["store base", "store jetty", "store vessel"];
+  if (storeRoles.includes(userRole) && !hasGrnDoc) {
+    alert("Please generate GRN before approving this request.");
+    return;
+  }
 
     // finally call parent approve handler
     onApprove(request.requestId);
@@ -2865,9 +3055,9 @@ const isShippingOrClearing =
   };
 
   const allItemsAreInStock =
-  Array.isArray(currentRequest?.items) &&
-  currentRequest.items.length > 0 &&
-  currentRequest.items.every((it) => it.inStock === true);
+    Array.isArray(currentRequest?.items) &&
+    currentRequest.items.length > 0 &&
+    currentRequest.items.every((it) => it.inStock === true);
 
   useEffect(() => {
     return () => {
@@ -2910,6 +3100,42 @@ const isShippingOrClearing =
     rejectedByUserId &&
     currentUserId &&
     String(rejectedByUserId) === String(currentUserId);
+
+const workflowPath =
+  request.flow?.path ||
+  (Array.isArray(request.path) ? request.path : (request.path ? [request.path] : null)) ||
+  null;
+
+const handleToggleInternationalFlow = async () => {
+  if (showInternationalFlow) {
+    setShowInternationalFlow(false);
+    return;
+  }
+  setLoadingInternationalFlow(true);
+  try {
+    const token = getToken();
+    const intlReqId = request?.internationalFlow?.requestId;
+    if (!intlReqId) return;
+    const resp = await axios.get(
+      `${API_BASE_URL}/requests/${intlReqId}/flow`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    // The API should return the same shape as the normal flow
+    const path =
+      resp.data?.path ||
+      (Array.isArray(resp.data) ? resp.data : [resp.data]);
+    setInternationalWorkflowPath(path);
+    setShowInternationalFlow(true);
+  } catch (err) {
+    alert("Failed to load international flow");
+  } finally {
+    setLoadingInternationalFlow(false);
+  }
+};
+
+  const isServicePettyCash = (req) =>
+  req?.isService === true &&
+  (req?.requestType || "").toLowerCase() === "pettycash";
   return (
     <>
       {showEmailComposer && (
@@ -2931,6 +3157,71 @@ const isShippingOrClearing =
         />
       )}
       <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+        {hasDuplicate && (
+  <div
+    className="fixed top-4 right-4 z-50 max-w-xs md:max-w-sm bg-red-100 border-2 border-red-400 rounded-xl shadow-lg flex items-center gap-3 px-4 py-3 animate-fade-in"
+    style={{
+      minWidth: "180px",
+      animation: "fadeIn 0.5s",
+    }}
+  >
+    <span className="text-red-600 text-sm animate-pulse">⚠️</span>
+    <div className="flex-1">
+      <span className="font-bold text-red-700 text-[10px] ">
+        {duplicatedItems.length === 1 ? (
+          <>
+            <span>
+              One item is duplicated (from Req:{" "}
+              <span className="font-mono">
+                {firstDuplicate.duplicateOfRequestId ||
+                  firstDuplicate.duplicateOf ||
+                  "Unknown"}
+              </span>
+              )
+            </span>
+          </>
+        ) : (
+          (() => {
+            // Count items per requestId
+            const counts = {};
+            duplicatedItems.forEach((item) => {
+              const reqId =
+                item.duplicateOfRequestId ||
+                item.duplicateOf ||
+                "Unknown";
+              counts[reqId] = (counts[reqId] || 0) + 1;
+            });
+            const reqIds = Object.keys(counts);
+
+            if (reqIds.length > 1) {
+              return (
+                <>
+                  {reqIds.map((id, idx) => (
+                    <span key={id}>
+                      {counts[id]} item
+                      {counts[id] > 1 ? "s" : ""} duplicated
+                      from Req:{" "}
+                      <span className="font-mono">{id}</span>
+                      {idx < reqIds.length - 1 ? ", and " : ""}
+                    </span>
+                  ))}
+                </>
+              );
+            }
+            // Fallback for single source
+            return (
+              <>
+                {duplicatedItems.length} items are duplicated
+                (from Req:{" "}
+                <span className="font-mono">{reqIds[0]}</span>)
+              </>
+            );
+          })()
+        )}
+      </span>
+    </div>
+  </div>
+)}
         {/* Back Button */}
         <button
           onClick={onBack}
@@ -2941,11 +3232,34 @@ const isShippingOrClearing =
         </button>
 
         {/* Workflow Progress - Now a separate component */}
-        {request.flow?.path && (
-          <div className="mb-8">
-            <RequestWorkflow workflowPath={request.flow.path} />
+{workflowPath && (
+  <div className="mb-8 mt-[3rem]">
+    <RequestWorkflow workflowPath={workflowPath} />
+    {/* Button and international flow inside the same workflow card */}
+    {request?.internationalFlow?.requestId && (
+      <>
+        <div className="flex justify-center mt-4">
+          <button
+            onClick={handleToggleInternationalFlow}
+            className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg shadow hover:bg-blue-600 transition"
+            disabled={loadingInternationalFlow}
+          >
+            {showInternationalFlow ? "Hide International Flow" : "View International Flow"}
+          </button>
+        </div>
+        {showInternationalFlow && (
+          <div className="w-full mt-6">
+            {loadingInternationalFlow ? (
+              <div className="text-center text-blue-600 py-6">Loading international workflow...</div>
+            ) : (
+              <RequestWorkflow workflowPath={internationalWorkflowPath} />
+            )}
           </div>
         )}
+      </>
+    )}
+  </div>
+)}
 
         {/* Request Information */}
         <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl overflow-hidden shadow-lg mb-8">
@@ -3009,48 +3323,58 @@ const isShippingOrClearing =
                 </p>
               </div>
             )}
-           <div className="px-4 py-3 border-b border-r border-slate-200">
-  <p className="text-xs text-slate-500 font-medium mb-0.5">
-    Submitted Date /Time
-  </p>
-  <p className="text-sm text-slate-900 font-semibold">
-    {new Date(request.createdAt).toLocaleDateString()}{" "}
-    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-  </p>
-</div>
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Submitted Date /Time
+              </p>
+              <p className="text-sm text-slate-900 font-semibold">
+                {new Date(request.createdAt).toLocaleDateString()}{" "}
+                {new Date(request.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            </div>
 
-           {!(
-  (request.department || "").toLowerCase() === "freight" &&
-  (request.logisticsType || "").toLowerCase() === "international"
-) && (
+            {isServicePettyCash(request) ? (
+  // Show "Request: Service" and hide Logistics/Payment Type
   <div className="px-4 py-3 border-b border-r border-slate-200">
-    <p className="text-xs text-slate-500 font-medium mb-0.5">
-      Request Type
-    </p>
+    <p className="text-xs text-slate-500 font-medium mb-0.5">Request</p>
     <p className="text-sm font-semibold">
       <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-        {isProcurementOfficerApproved(request)
+        Service
+      </span>
+    </p>
+  </div>
+) : (
+
+            <>
+
+            {!(
+              (request.department || "").toLowerCase() === "freight" &&
+              (request.logisticsType || "").toLowerCase() === "international"
+            ) && (
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+  <p className="text-xs text-slate-500 font-medium mb-0.5">
+    Request Type
+  </p>
+  <p className="text-sm font-semibold">
+    <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+      {request.requestType === "inStock"
+        ? "INSTOCK"
+        : isProcurementOfficerApproved(request)
           ? request.requestType === "purchaseOrder"
             ? "Purchase Order"
             : request.requestType === "pettyCash"
             ? "Petty Cash"
-            : request.requestType === "inStock"
-            ? "INSTOCK"
             : request.requestType || "N/A"
           : "N/A"}
-      </span>
-    </p>
-  </div>
-)}
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Reference
-              </p>
-              <p className="text-sm text-slate-900 font-semibold">
-                {request.reference || "N/A"}
-              </p>
-            </div>
+    </span>
+  </p>
+</div>
+            )}
 
+            
             <div className="px-4 py-3 border-b border-r border-slate-200">
               <p className="text-xs text-slate-500 font-medium mb-0.5">
                 Logistics Type{" "}
@@ -3068,6 +3392,17 @@ const isShippingOrClearing =
                 {request.paymentType || "N/A"}
               </p>
             </div>
+</>
+)}
+            <div className="px-4 py-3 border-b border-r border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-0.5">
+                Reference
+              </p>
+              <p className="text-sm text-slate-900 font-semibold">
+                {request.reference || "N/A"}
+              </p>
+            </div>
+
             {request.destination === "Marine" ? (
               <div className="px-4 py-3 border-b border-r border-slate-200">
                 <p className="text-xs text-slate-500 font-medium mb-0.5">
@@ -3110,120 +3445,121 @@ const isShippingOrClearing =
         )}
 
         {/* Additional Information */}
-        {(
-  (userRole === "requester" &&
-    (currentRequest.department || "").toLowerCase() === "freight") ||
-  currentRequest.additionalInformation
-) && (
-  <div className="mb-8 relative">
-    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-      <MdInfo className="text-xl" />
-      Additional Information
-    </h3>
-    <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg relative">
-      {!editingAdditionalInfo ? (
-        <>
-          <p className="text-slate-700 leading-relaxed">
-            {currentRequest.additionalInformation || (
-              <span className="text-slate-400 italic">
-                No additional information provided.
-              </span>
-            )}
-          </p>
-          {/* Only show edit button if user is requester and department is freight */}
-          {userRole === "requester" &&
-            (currentRequest.department || "").toLowerCase() === "freight" && (
-              <button
-                className="absolute bottom-4 right-4 text-emerald-600 hover:text-emerald-800"
-                onClick={() => {
-                  setEditingAdditionalInfo(true);
-                  setAdditionalInfoDraft(
-                    currentRequest.additionalInformation || ""
-                  );
-                }}
-                title="Edit Additional Information"
-              >
-                <svg
-                  width="22"
-                  height="22"
-                  fill="none"
-                  viewBox="0 0 24 24"
+        {((userRole === "requester" &&
+          (currentRequest.department || "").toLowerCase() === "freight") ||
+          currentRequest.additionalInformation) && (
+          <div className="mb-8 relative">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdInfo className="text-xl" />
+              Additional Information
+            </h3>
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg relative">
+              {!editingAdditionalInfo ? (
+                <>
+                  <p className="text-slate-700 leading-relaxed">
+                    {currentRequest.additionalInformation || (
+                      <span className="text-slate-400 italic">
+                        No additional information provided.
+                      </span>
+                    )}
+                  </p>
+                  {/* Only show edit button if user is requester and department is freight */}
+                  {userRole === "requester" &&
+                    (currentRequest.department || "").toLowerCase() ===
+                      "freight" && (
+                      <button
+                        className="absolute bottom-4 right-4 text-emerald-600 hover:text-emerald-800"
+                        onClick={() => {
+                          setEditingAdditionalInfo(true);
+                          setAdditionalInfoDraft(
+                            currentRequest.additionalInformation || ""
+                          );
+                        }}
+                        title="Edit Additional Information"
+                      >
+                        <svg
+                          width="22"
+                          height="22"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            d="M16.862 5.487a2.07 2.07 0 1 1 2.93 2.93l-9.193 9.193-3.293.364.364-3.293 9.192-9.194Z"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                </>
+              ) : (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setSavingAdditionalInfo(true);
+                    try {
+                      const token = getToken();
+                      await axios.patch(
+                        `${API_BASE_URL}/requests/${request.requestId}`,
+                        { additionalInformation: additionalInfoDraft },
+                        { headers: { Authorization: `Bearer ${token}` } }
+                      );
+                      // Refresh request details to show updated info
+                      await fetchRequestDetails();
+                      setFilesRefreshCounter((c) => c + 1);
+                      setEditingAdditionalInfo(false);
+                    } catch (err) {
+                      alert("Failed to update Additional Information");
+                    } finally {
+                      setSavingAdditionalInfo(false);
+                    }
+                  }}
                 >
-                  <path
-                    d="M16.862 5.487a2.07 2.07 0 1 1 2.93 2.93l-9.193 9.193-3.293.364.364-3.293 9.192-9.194Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                  <textarea
+                    className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    rows={4}
+                    value={additionalInfoDraft}
+                    onChange={(e) => setAdditionalInfoDraft(e.target.value)}
+                    disabled={savingAdditionalInfo}
                   />
-                </svg>
-              </button>
-            )}
-        </>
-      ) : (
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setSavingAdditionalInfo(true);
-            try {
-              const token = getToken();
-              await axios.patch(
-                `${API_BASE_URL}/requests/${request.requestId}`,
-                { additionalInformation: additionalInfoDraft },
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-              // Refresh request details to show updated info
-              await fetchRequestDetails();
-              setFilesRefreshCounter((c) => c + 1);
-              setEditingAdditionalInfo(false);
-            } catch (err) {
-              alert("Failed to update Additional Information");
-            } finally {
-              setSavingAdditionalInfo(false);
-            }
-          }}
-        >
-          <textarea
-            className="w-full border rounded-lg p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-emerald-200"
-            rows={4}
-            value={additionalInfoDraft}
-            onChange={(e) => setAdditionalInfoDraft(e.target.value)}
-            disabled={savingAdditionalInfo}
-          />
-          <div className="flex justify-end gap-2 mt-2">
-            <button
-              type="button"
-              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-md"
-              onClick={() => setEditingAdditionalInfo(false)}
-              disabled={savingAdditionalInfo}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-emerald-500 text-white rounded-md"
-              disabled={savingAdditionalInfo}
-            >
-              {savingAdditionalInfo ? "Saving..." : "Save"}
-            </button>
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button
+                      type="button"
+                      className="px-4 py-2 bg-slate-100 text-slate-700 rounded-md"
+                      onClick={() => setEditingAdditionalInfo(false)}
+                      disabled={savingAdditionalInfo}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-emerald-500 text-white rounded-md"
+                      disabled={savingAdditionalInfo}
+                    >
+                      {savingAdditionalInfo ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
-        </form>
-      )}
-    </div>
-  </div>
-)}
+        )}
 
         {/* ===== attaching of request to another request ===== */}
 
-        {String(currentRequest?.tag || "")
-          .toLowerCase()
-          .includes("shipping") &&
-          userRole === "requester" &&
-          !isReadOnly && (
-            <div className="mb-8">
-              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                🔗 Attach Items from Another Request
-              </h3>
+      {["shipping", "clearing"].includes(String(currentRequest?.tag || "").toLowerCase()) &&
+  userRole === "requester" &&
+  !isReadOnly && (
+    <div className="mb-8">
+      <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+        🔗 Attach Items from Another{" "}
+        {String(currentRequest?.tag || "").toLowerCase() === "clearing"
+          ? "Clearing"
+          : "Shipping"}{" "}
+        Request
+      </h3>
 
               <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-4 shadow-lg">
                 <div className="flex gap-3 items-start relative">
@@ -3274,7 +3610,7 @@ const isShippingOrClearing =
                         }
                       }
                     }}
-                    placeholder="Search by vendor name or PON (click to show shipping requests)"
+                    placeholder="Search by vendor name or PON (click to show pending requests)"
                     className="flex-1 px-4 py-3 border rounded-xl"
                   />
                   <button
@@ -3472,6 +3808,7 @@ const isShippingOrClearing =
                               <div className="text-xs text-slate-500">
                                 Qty: {it.quantity || it.qty || "N/A"}
                               </div>
+                              
                             </div>
                             <div>
                               <input
@@ -3486,24 +3823,7 @@ const isShippingOrClearing =
                     </div>
 
                     <div className="mt-4 flex items-center gap-2">
-                      <input
-                        placeholder="Purpose (optional)"
-                        className="flex-1 px-3 py-2 border rounded-lg"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const p = e.target.value.trim();
-                            const confirmed = window.confirm(
-                              "Attach selected items to this request?"
-                            );
-                            if (confirmed)
-                              attachSelectedToTarget(
-                                currentRequest.requestId,
-                                p
-                              );
-                          }
-                        }}
-                        id="attach-purpose-input"
-                      />
+                     
                       <button
                         onClick={() => {
                           const el = document.getElementById(
@@ -3757,19 +4077,20 @@ const isShippingOrClearing =
                     {accAttachSourceItems.map((it) => {
                       const iid = it.itemId || it._id || it.id;
                       return (
-                        <label
-                          key={iid}
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
-                        >
-                          <div>
-                            <div className="text-sm font-semibold">
-                              {it.name || it.description || iid}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Qty: {it.quantity || it.qty || "N/A"}
-                            </div>
-                          </div>
-                          <div>
+                       <label key={iid} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer">
+  <div>
+    <div className="text-sm font-semibold">{it.name || it.description || iid}</div>
+    <div className="text-xs text-slate-500">Qty: {it.quantity || it.qty || "N/A"}</div>
+    <div className="text-xs text-slate-700 font-semibold">
+      Total: {formatAmount(
+        it.total !== undefined
+          ? it.total
+          : (Number(it.unitPrice || 0) * Number(it.quantity || it.qty || 0)),
+        it.currency
+      )}
+    </div>
+  </div>
+  <div>
                             <input
                               type="checkbox"
                               checked={accAttachSelectedItemIds.includes(iid)}
@@ -3788,11 +4109,7 @@ const isShippingOrClearing =
                   </div>
 
                   <div className="mt-4 flex items-center gap-2">
-                    <input
-                      placeholder="Purpose (optional)"
-                      id="attach-purpose-accounting"
-                      className="flex-1 px-3 py-2 border rounded-lg"
-                    />
+                   
                     <button
                       onClick={() => {
                         const el = document.getElementById(
@@ -3827,6 +4144,34 @@ const isShippingOrClearing =
           </div>
         )}
 
+        {userRole === "requester" &&
+  (request?.department || "").toLowerCase() === "freight" &&
+  !isReadOnly &&
+  (String(currentRequest?.tag || "").toLowerCase() === "shipping" ||
+    String(currentRequest?.tag || "").toLowerCase() === "clearing") && (
+    <InvoiceFilesUpload
+      requestId={request.requestId}
+      apiBase={API_BASE_URL}
+      getToken={getToken}
+      onFilesChanged={handleFilesChanged}
+      isReadOnly={isReadOnly}
+      invoiceFiles={currentRequest?.invoiceFiles || []}
+    />
+)}
+
+{userRole === "procurement manager" &&
+  currentRequest?.isService === true &&
+  (currentRequest?.requestType || "").toLowerCase() === "pettycash" &&
+  !isReadOnly && (
+    <InvoiceFilesUpload
+      requestId={request.requestId}
+      apiBase={API_BASE_URL}
+      getToken={getToken}
+      onFilesChanged={handleFilesChanged}
+      isReadOnly={isReadOnly}
+      invoiceFiles={currentRequest?.invoiceFiles || []}
+    />
+)}
         {userRole === "invoice controller" && !isReadOnly && (
           <InvoiceFilesUpload
             requestId={request.requestId}
@@ -3849,162 +4194,168 @@ const isShippingOrClearing =
         )}
 
         {/* Quotation/Invoice Upload - Procurement Officer gets toggle, Requester (shipping/clearing) gets quotation only */}
-       {userRole === "procurement officer" && !isReadOnly && !isReadOnlyMode && (
-  <>
-    {isPettyCash ? (
-      // Show InvoiceUpload for pettyCash requests
-      <InvoiceUpload
-        requestId={request.requestId}
-        apiBase={API_BASE_URL}
-        getToken={getToken}
-        onFilesChanged={handleFilesChanged}
-      />
-    ) : (
-      // Show Quotation upload for other requests
-      <div className="mb-8">
-        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <MdAttachFile className="text-xl" />
-          Upload Quotation
-        </h3>
-        <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
-          <div
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            role="button"
-            tabIndex={0}
-            onClick={handleBrowseClick}
-            className="w-full cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors duration-200 p-6 flex items-center justify-between gap-6"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
-                📎
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">
-                  {quotationFiles.length > 0
-                    ? `${quotationFiles.length} file(s) selected`
-                    : "Drag & drop quotation(s) here, or click to browse"}
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  PDF or images recommended.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleBrowseClick();
-                }}
-                className="px-4 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] transition"
-              >
-                Add Files
-              </button>
-              {quotationFiles.length > 0 && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUploadAll();
-                  }}
-                  disabled={isUploading}
-                  className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 transition text-sm"
-                >
-                  Upload All
-                </button>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,image/*"
-              onChange={handleInputChange}
-              multiple
-              className="hidden"
-            />
-          </div>
-          {quotationFiles.length > 0 && (
-            <div className="mt-4 space-y-3">
-              {quotationFiles.map((entry) => (
-                <div key={entry.id} className="flex items-start gap-4">
-                  <div className="w-20 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden border">
-                    {entry.previewUrl ? (
-                      <img
-                        src={entry.previewUrl}
-                        alt="preview"
-                        className="w-full h-full object-cover"
+        {userRole === "procurement officer" &&
+          !isReadOnly &&
+          !isReadOnlyMode && (
+            <>
+              {isPettyCash ? (
+                // Show InvoiceUpload for pettyCash requests
+                <InvoiceUpload
+                  requestId={request.requestId}
+                  apiBase={API_BASE_URL}
+                  getToken={getToken}
+                  onFilesChanged={handleFilesChanged}
+                />
+              ) : (
+                // Show Quotation upload for other requests
+                <div className="mb-8">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <MdAttachFile className="text-xl" />
+                    Upload Quotation
+                  </h3>
+                  <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+                    <div
+                      onDrop={handleDrop}
+                      onDragOver={handleDragOver}
+                      role="button"
+                      tabIndex={0}
+                      onClick={handleBrowseClick}
+                      className="w-full cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors duration-200 p-6 flex items-center justify-between gap-6"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                          📎
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {quotationFiles.length > 0
+                              ? `${quotationFiles.length} file(s) selected`
+                              : "Drag & drop quotation(s) here, or click to browse"}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            PDF or images recommended.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleBrowseClick();
+                          }}
+                          className="px-4 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] transition"
+                        >
+                          Add Files
+                        </button>
+                        {quotationFiles.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUploadAll();
+                            }}
+                            disabled={isUploading}
+                            className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 transition text-sm"
+                          >
+                            Upload All
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,image/*"
+                        onChange={handleInputChange}
+                        multiple
+                        className="hidden"
                       />
-                    ) : (
-                      <div className="text-slate-600 text-sm px-2 text-center">
-                        {entry.file.type === "application/pdf"
-                          ? "PDF"
-                          : "FILE"}
+                    </div>
+                    {quotationFiles.length > 0 && (
+                      <div className="mt-4 space-y-3">
+                        {quotationFiles.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="flex items-start gap-4"
+                          >
+                            <div className="w-20 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden border">
+                              {entry.previewUrl ? (
+                                <img
+                                  src={entry.previewUrl}
+                                  alt="preview"
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="text-slate-600 text-sm px-2 text-center">
+                                  {entry.file.type === "application/pdf"
+                                    ? "PDF"
+                                    : "FILE"}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900 truncate w-72">
+                                    {entry.file.name}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {(entry.file.size / 1024 / 1024).toFixed(2)}{" "}
+                                    MB
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUploadFile(entry.id);
+                                    }}
+                                    disabled={isUploading || entry.uploaded}
+                                    className={`px-3 py-2 rounded-md text-sm font-medium ${
+                                      isUploading || entry.uploaded
+                                        ? "bg-gray-200 text-slate-600 cursor-not-allowed"
+                                        : "bg-emerald-500 text-white hover:bg-emerald-600"
+                                    }`}
+                                  >
+                                    {entry.uploaded ? "Uploaded" : "Upload"}
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveFile(entry.id);
+                                    }}
+                                    className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-3">
+                                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className="h-2 bg-emerald-500 transition-all"
+                                    style={{ width: `${entry.progress}%` }}
+                                  />
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  {entry.progress}%{" "}
+                                  {isUploading && entry.progress < 100
+                                    ? "• uploading"
+                                    : entry.uploaded
+                                    ? "• complete"
+                                    : ""}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 truncate w-72">
-                          {entry.file.name}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {(entry.file.size / 1024 / 1024).toFixed(2)} MB
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUploadFile(entry.id);
-                          }}
-                          disabled={isUploading || entry.uploaded}
-                          className={`px-3 py-2 rounded-md text-sm font-medium ${
-                            isUploading || entry.uploaded
-                              ? "bg-gray-200 text-slate-600 cursor-not-allowed"
-                              : "bg-emerald-500 text-white hover:bg-emerald-600"
-                          }`}
-                        >
-                          {entry.uploaded ? "Uploaded" : "Upload"}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveFile(entry.id);
-                          }}
-                          className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </div>
-                    <div className="mt-3">
-                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="h-2 bg-emerald-500 transition-all"
-                          style={{ width: `${entry.progress}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {entry.progress}%{" "}
-                        {isUploading && entry.progress < 100
-                          ? "• uploading"
-                          : entry.uploaded
-                          ? "• complete"
-                          : ""}
-                      </p>
-                    </div>
-                  </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
-        </div>
-      </div>
-    )}
-  </>
-)}
         {/* ===== End Quotation/Invoice Upload ===== */}
 
         {/* Items List - Role-based table */}
@@ -4060,51 +4411,51 @@ const isShippingOrClearing =
                 {renderItemsTable()}
               </div>
 
-            {currentRequest?.doVendorSplit === true &&
-  userRole === "requester" &&
-  Array.isArray(currentRequest?.originalItemsSnapshot) &&
-  currentRequest.originalItemsSnapshot.length > 0 && (
-    <div className="mt-4">
-      <button
-        onClick={() => setShowSnapshot((prev) => !prev)}
-        className="px-4 py-2 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center gap-2"
-      >
-        {showSnapshot ? (
-          <>
-            <span>▲</span> Hide Snapshot
-          </>
-        ) : (
-          <>
-            <span>▼</span> Show Snapshot
-          </>
-        )}
-      </button>
-    </div>
-  )}
+              {currentRequest?.doVendorSplit === true &&
+                userRole === "requester" &&
+                Array.isArray(currentRequest?.originalItemsSnapshot) &&
+                currentRequest.originalItemsSnapshot.length > 0 && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setShowSnapshot((prev) => !prev)}
+                      className="px-4 py-2 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center gap-2"
+                    >
+                      {showSnapshot ? (
+                        <>
+                          <span>▲</span> Hide Snapshot
+                        </>
+                      ) : (
+                        <>
+                          <span>▼</span> Show Snapshot
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
 
-{showSnapshot &&
-  currentRequest?.doVendorSplit === true &&
-  userRole === "requester" &&
-  Array.isArray(currentRequest?.originalItemsSnapshot) &&
-  currentRequest.originalItemsSnapshot.length > 0 && (
-    <div className="mt-6">
-      <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-        <MdShoppingCart className="text-xl text-amber-500" />
-        Original Items Snapshot
-      </h3>
-      <div
-        className="bg-amber-50/50 backdrop-blur-xl border-2 border-amber-200 rounded-2xl p-4 shadow-lg"
-        style={{ position: "relative", zIndex: 1 }}
-      >
-        <SnapShotTable
-          items={currentRequest.originalItemsSnapshot}
-          requestType={currentRequest?.requestType || ""}
-          tag={currentRequest?.tag || ""}
-          vendors={vendors}
-        />
-      </div>
-    </div>
-  )}
+              {showSnapshot &&
+                currentRequest?.doVendorSplit === true &&
+                userRole === "requester" &&
+                Array.isArray(currentRequest?.originalItemsSnapshot) &&
+                currentRequest.originalItemsSnapshot.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <MdShoppingCart className="text-xl text-amber-500" />
+                      Original Items Snapshot
+                    </h3>
+                    <div
+                      className="bg-amber-50/50 backdrop-blur-xl border-2 border-amber-200 rounded-2xl p-4 shadow-lg"
+                      style={{ position: "relative", zIndex: 1 }}
+                    >
+                      <SnapShotTable
+                        items={currentRequest.originalItemsSnapshot}
+                        requestType={currentRequest?.requestType || ""}
+                        tag={currentRequest?.tag || ""}
+                        vendors={vendors}
+                      />
+                    </div>
+                  </div>
+                )}
 
               {/* Snapshot Table */}
               {showSnapshot &&
@@ -4216,10 +4567,10 @@ const isShippingOrClearing =
         />
 
         {user?.role?.toLowerCase() === "procurement officer" &&
-  !isReadOnly &&
-  !isReadOnlyMode &&
-  !hideAssignForProcurement &&
-  !allItemsAreInStock && (
+          !isReadOnly &&
+          !isReadOnlyMode &&
+          !hideAssignForProcurement &&
+          !allItemsAreInStock && (
             <div className="mb-8">
               <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                 <MdDirectionsBoat className="text-xl" />
@@ -4432,36 +4783,37 @@ const isShippingOrClearing =
                       )}
                     </div>
                   )}
- <div className="flex-1 max-w-md">
-      <label className="text-sm font-semibold text-slate-700 mb-2 block">
-        Payment Type
-      </label>
-      <Select
-        options={paymentTypeOptions}
-        value={paymentType}
-        onChange={handlePaymentTypeChange}
-        isClearable
-        placeholder="Select"
-        styles={{
-          control: (provided) => ({
-            ...provided,
-            minHeight: "48px",
-            borderRadius: 12,
-            boxShadow: "none",
-          }),
-          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-        }}
-        menuPortalTarget={document.body}
-      />
-      <div className="mt-2 text-sm text-slate-500">
-        {isSavingPaymentType ? (
-          <span className="text-xs text-slate-500">Saving...</span>
-        ) : (
-          <span className="text-xs text-slate-500"></span>
-        )}
-      </div>
-    </div>
-                  
+                  <div className="flex-1 max-w-md">
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                      Payment Type
+                    </label>
+                    <Select
+                      options={paymentTypeOptions}
+                      value={paymentType}
+                      onChange={handlePaymentTypeChange}
+                      isClearable
+                      placeholder="Select"
+                      styles={{
+                        control: (provided) => ({
+                          ...provided,
+                          minHeight: "48px",
+                          borderRadius: 12,
+                          boxShadow: "none",
+                        }),
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                      }}
+                      menuPortalTarget={document.body}
+                    />
+                    <div className="mt-2 text-sm text-slate-500">
+                      {isSavingPaymentType ? (
+                        <span className="text-xs text-slate-500">
+                          Saving...
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-500"></span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -4479,6 +4831,9 @@ const isShippingOrClearing =
           ]}
           requestData={currentRequest}
           filesRefreshCounter={filesRefreshCounter}
+            isReadOnly={isReadOnly}
+  isReadOnlyMode={isReadOnlyMode}
+  onGrnStatusChange={setHasGrnDoc} 
         />
         {isRejectModalOpen && (
           <>
@@ -4751,7 +5106,7 @@ const isShippingOrClearing =
                 </p>
                 <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
                   {allowedRejectRoles.includes(userRole) &&
-                    !isVesselManagerBlockedForActions &&
+                    !isBlockedForActions &&
                     !isRejected && (
                       <button
                         onClick={openRejectModal}
@@ -4763,7 +5118,7 @@ const isShippingOrClearing =
                       </button>
                     )}
                   {allowedQueryRoles.includes(userRole) &&
-                    !isVesselManagerBlockedForActions &&
+                    !isBlockedForActions &&
                     !isQueried &&
                     !isRejected && (
                       <button

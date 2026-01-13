@@ -41,26 +41,26 @@ const RequesterPending = ({
   const [vessels, setVessels] = useState([]);
 
   const fetchVessels = async () => {
-  try {
-    const token = getToken();
-    const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setVessels(response.data.data || []);
-  } catch (err) {
-    console.error("❌ Error fetching vessels:", err);
-  }
-};
+    try {
+      const token = getToken();
+      const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVessels(response.data.data || []);
+    } catch (err) {
+      console.error("❌ Error fetching vessels:", err);
+    }
+  };
 
-useEffect(() => {
-  fetchVessels();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+  useEffect(() => {
+    fetchVessels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-const getVesselName = (vesselId) => {
-  const vessel = vessels.find((v) => v.vesselId === vesselId);
-  return vessel?.name || vesselId;
-};
+  const getVesselName = (vesselId) => {
+    const vessel = vessels.find((v) => v.vesselId === vesselId);
+    return vessel?.name || vesselId;
+  };
 
   const getInStockColor = () => {
     return "bg-green-100 text-green-700 border-green-200";
@@ -130,22 +130,21 @@ const getVesselName = (vesselId) => {
     return matchesSearch && matchesFilter;
   });
 
-const sortedRequests = [
-  ...filtered.filter((r) => r.priority === "high"),
-  ...filtered
-    .filter((r) => r.priority !== "high")
-    .sort((a, b) => {
-      // If requestId is numeric, sort numerically
-      const numA = Number(String(a.requestId).replace(/\D/g, ""));
-      const numB = Number(String(b.requestId).replace(/\D/g, ""));
-      return numB - numA;
-    }),
-];
+  const sortedRequests = [
+    ...filtered.filter((r) => r.priority === "high"),
+    ...filtered
+      .filter((r) => r.priority !== "high")
+      .sort((a, b) => {
+        // If requestId is numeric, sort numerically
+        const numA = Number(String(a.requestId).replace(/\D/g, ""));
+        const numB = Number(String(b.requestId).replace(/\D/g, ""));
+        return numB - numA;
+      }),
+  ];
 
-const total = sortedRequests.length;
-const pages = Math.max(1, Math.ceil(total / pageSize));
-const paged = sortedRequests.slice((page - 1) * pageSize, page * pageSize);
-
+  const total = sortedRequests.length;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const paged = sortedRequests.slice((page - 1) * pageSize, page * pageSize);
 
   const handleViewDetailsClick = async (request) => {
     if (request.isUnread) {
@@ -211,6 +210,8 @@ const paged = sortedRequests.slice((page - 1) * pageSize, page * pageSize);
         return type;
     }
   };
+
+  const isServiceRequest = (request) => request?.isService === true;
 
   function hasProcurementOfficerApproved(request) {
     return (
@@ -308,24 +309,33 @@ const paged = sortedRequests.slice((page - 1) * pageSize, page * pageSize);
                           <span>Clearing</span>
                         </span>
                       )}
-                       {hasProcurementOfficerApproved(request) && (
-                  <span
-                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
-                      request.requestType
-                    )}`}
-                  >
-                    {getTypeIcon(request.requestType)}
-                    <span>{getTypeLabel(request.requestType)}</span>
-                  </span>
-                )}
+
+                      {request.isService === true && (
+                        <span
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 ml-1"
+                          style={{ marginLeft: 4 }}
+                        >
+                          <MdHelpOutline className="text-sm" />
+                          <span>Services</span>
+                        </span>
+                      )}
+                      {request.requestType === "inStock" ||
+                      hasProcurementOfficerApproved(request) ? (
+                        <span
+                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+                            request.requestType
+                          )}`}
+                        >
+                          {getTypeIcon(request.requestType)}
+                          <span>{getTypeLabel(request.requestType)}</span>
+                        </span>
+                      ) : null}
                       {request.offshoreReqNumber && (
                         <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
                           <MdDirectionsBoat className="text-sm" />
                           <span>{request.offshoreReqNumber}</span>
                         </span>
                       )}
-                    
-
                     </div>
 
                     <p className="text-slate-600 text-sm mb-3">
@@ -349,19 +359,22 @@ const paged = sortedRequests.slice((page - 1) * pageSize, page * pageSize);
                       {request.vesselId && (
                         <div className="flex items-center gap-1.5 text-slate-600">
                           <MdDirectionsBoat className="text-base" />
-                        <span className="text-xs md:text-sm font-medium">
-  {getVesselName(request.vesselId)}
-</span>
+                          <span className="text-xs md:text-sm font-medium">
+                            {getVesselName(request.vesselId)}
+                          </span>
                         </div>
                       )}
 
                       <div className="flex items-center gap-1.5 text-slate-600">
-  <HiClock className="text-base" />
-  <span className="text-xs md:text-sm font-medium">
-    {new Date(request.createdAt).toLocaleDateString()}{" "}
-    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-  </span>
-</div>
+                        <HiClock className="text-base" />
+                        <span className="text-xs md:text-sm font-medium">
+                          {new Date(request.createdAt).toLocaleDateString()}{" "}
+                          {new Date(request.createdAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

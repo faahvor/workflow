@@ -8,6 +8,8 @@ import {
   MdArrowForward,
   MdLocalShipping,
   MdInventory,
+  MdPriorityHigh,
+  MdHelpOutline,
 } from "react-icons/md";
 import { FaHouseFloodWaterCircleArrowRight } from "react-icons/fa6";
 import { HiClock } from "react-icons/hi";
@@ -144,6 +146,9 @@ const getTypeIcon = (type) => {
     }
   };
 
+  const isServiceRequest = (request) =>
+  request?.isService === true;
+
     const getClearingColor = () => {
     return "bg-purple-100 text-blue-700 border-purple-200";
   };
@@ -172,20 +177,15 @@ const filteredRequests = (requests || []).filter((req) => {
   return matchesSearch && matchesFilter;
 });
 
-// --- Add this sorting logic ---
-const sortedRequests = [
-  // High priority requests first
-  ...filteredRequests.filter((r) => r.priority === "high"),
-  // Then all others, sorted by requestId descending
-  ...filteredRequests
-    .filter((r) => r.priority !== "high")
-    .sort((a, b) => {
-      // If requestId is numeric, sort numerically
-      const numA = Number(String(a.requestId).replace(/\D/g, ""));
-      const numB = Number(String(b.requestId).replace(/\D/g, ""));
-      return numB - numA;
-    }),
-];
+const sortedRequests = [...requests].sort((a, b) => {
+  // High priority always comes first
+  if (a.priority === "high" && b.priority !== "high") return -1;
+  if (a.priority !== "high" && b.priority === "high") return 1;
+  // If same priority, sort by requestId descending
+  const numA = Number(String(a.requestId).replace(/\D/g, ""));
+  const numB = Number(String(b.requestId).replace(/\D/g, ""));
+  return numB - numA;
+});
 
   const handleViewDetails = (request) => {
     if (typeof onOpenDetail === "function") onOpenDetail(request);
@@ -244,6 +244,16 @@ const sortedRequests = [
                         <span>{request.offshoreReqNumber}</span>
                       </span>
                     )}
+
+                    {request.isService === true && (
+  <span
+    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 ml-1"
+    style={{ marginLeft: 4 }}
+  >
+    <MdHelpOutline className="text-sm" />
+    <span>Services</span>
+  </span>
+)}
                     {hasProcurementOfficerApproved(request) && (
                       <span
                         className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTypeColor(
@@ -254,6 +264,12 @@ const sortedRequests = [
                         <span>{getTypeLabel(request.requestType)}</span>
                       </span>
                     )}
+                      {request.priority === "high" && (
+                                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">
+                                        <MdPriorityHigh className="text-sm" />
+                                        <span>URGENT</span>
+                                      </span>
+                                    )}
                   </div>
 
                   <p className="text-slate-600 text-sm mb-3">

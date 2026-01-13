@@ -265,10 +265,17 @@ const AttachItems = ({
         {sourceItems.length > 0 && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="text-sm font-semibold">Source: {selectedSource?.requestId}</div>
-                <div className="text-xs text-slate-500">{selectedSource?.vendor}</div>
-              </div>
+             <div>
+  <div className="text-sm font-semibold">
+    Source: {selectedSource?.requestId}
+  </div>
+  <div className="text-xs text-slate-500">{selectedSource?.vendor}</div>
+  {selectedSource?.total !== undefined && (
+    <div className="text-xs text-slate-700 font-semibold mt-1">
+      Total: {formatAmount(selectedSource.total, selectedSource.currency)}
+    </div>
+  )}
+</div>
 
               <div className="flex items-center gap-2">
                 <button onClick={selectAll} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-md">Select All</button>
@@ -293,7 +300,7 @@ const AttachItems = ({
               })}
             </div>
 
-            <div className="mt-4 flex items-center gap-2">
+            {/* <div className="mt-4 flex items-center gap-2">
               <input placeholder="Purpose (optional)" id="attach-purpose-accounting" className="flex-1 px-3 py-2 border rounded-lg" />
               <button
                 onClick={() => {
@@ -306,7 +313,7 @@ const AttachItems = ({
               >
                 {attaching ? "Attaching…" : "Attach Selected"}
               </button>
-            </div>
+            </div> */}
           </div>
         )}
       </div>

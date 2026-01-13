@@ -60,22 +60,21 @@ function ServiceTable({ rows, setRows }) {
         <tbody>
           {rows.map((row, idx) => (
             <tr key={idx}>
-              <td className="p-2 border border-[#036173]">
-                <input
-                  type="text"
-                  value={row.description}
-                  onChange={(e) =>
-                    handleChange(idx, "description", e.target.value)
-                  }
-                  className="w-full bg-transparent"
-                />
-              </td>
+            <td className="p-2 border border-[#036173] max-w-[220px] whitespace-normal break-words overflow-hidden align-top">
+  <textarea
+    value={row.description}
+    onChange={(e) => handleChange(idx, "description", e.target.value)}
+    className="w-full bg-transparent outline-none resize-none"
+    rows={2}
+    style={{ wordBreak: "break-word" }}
+  />
+</td>
               <td className="p-2 border border-[#036173]">
                 <input
                   type="number"
                   value={row.amount}
                   onChange={(e) => handleChange(idx, "amount", e.target.value)}
-                  className="w-full bg-transparent"
+                  className="w-full bg-transparent outline-none"
                 />
               </td>
               <td className="p-2 border border-[#036173] text-center">
@@ -140,7 +139,7 @@ function MaterialTable({ rows, setRows }) {
                   onChange={(e) =>
                     handleChange(idx, "description", e.target.value)
                   }
-                  className="w-full bg-transparent"
+                  className="w-full bg-transparent outline-none"
                 />
               </td>
               <td className="p-2 border border-[#036173]">
@@ -150,7 +149,7 @@ function MaterialTable({ rows, setRows }) {
                   onChange={(e) =>
                     handleChange(idx, "quantity", e.target.value)
                   }
-                  className="w-full bg-transparent"
+                  className="w-full bg-transparent outline-none"
                 />
               </td>
               <td className="p-2 border border-[#036173] text-center">
@@ -244,7 +243,9 @@ const RequesterDashboard = () => {
   const [requestType, setRequestType] = useState("inventory"); // "inventory" or "services"
   const [pendingUnreadCount, setPendingUnreadCount] = useState(0);
   const [rejectedUnreadCount, setRejectedUnreadCount] = useState(0); // Service Table State
-
+  const [servicePurpose, setServicePurpose] = useState("");
+  const [nextApproverAfterVesselManager, setNextApproverAfterVesselManager] =
+    useState("");
   const [serviceRows, setServiceRows] = useState([
     { description: "", amount: "" },
   ]);
@@ -253,17 +254,43 @@ const RequesterDashboard = () => {
   ]);
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  // ...existing code...
+
+  const fetchChatUnreadCount = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const resp = await axios.get(
+        "https://hdp-backend-1vcl.onrender.com/api/chat/unread-count",
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setChatUnreadCount(resp.data?.unreadCount || 0);
+    } catch (err) {
+      setChatUnreadCount(0);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchChatUnreadCount();
+      const interval = setInterval(fetchChatUnreadCount, 3000); // every 3 seconds
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   // Destinations list
   const destinations = [
     { name: "Marine" },
     { name: "IT" },
     { name: "Account" },
-    { name: "Protocol" },
-    { name: "Compliance/QHSE" },
+    { name: "Legal" },
+    { name: "QHSE" },
     { name: "Operations" },
     { name: "Project" },
+    { name: "Vessel/Catering" },
     { name: "Purchase" },
+    { name: "Protocol" },
     { name: "Store" },
     { name: "HR" },
     { name: "Admin" },
@@ -399,7 +426,12 @@ const RequesterDashboard = () => {
 
   const [companiesList, setCompaniesList] = useState([]);
   const [loadingCompanies, setLoadingCompanies] = useState(false);
-
+const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("sidebarCollapsed") === "true";
+  }
+  return false;
+});
   useEffect(() => {
     // Set fixed valid currencies
     const validCurrencies = [
@@ -496,33 +528,32 @@ const RequesterDashboard = () => {
   };
 
   // Fetch project managers (placeholder endpoint - replace when available)
-  const fetchProjectManagers = async () => {
-    try {
-      setLoadingProjectManagers(true);
-      const token = getToken();
+ const fetchProjectManagers = async () => {
+  try {
+    setLoadingProjectManagers(true);
+    const token = getToken();
 
-      if (!token) {
-        console.error("No token found");
-        return;
-      }
-
-      // TODO: Replace with actual endpoint when available
-      const response = {
-        data: [
-          { id: "PM-001", name: "John Doe" },
-          { id: "PM-002", name: "Jane Smith" },
-          { id: "PM-003", name: "Bob Wilson" },
-        ],
-      };
-
-      setProjectManagers(response.data || []);
-    } catch (err) {
-      console.error("❌ Error fetching project managers:", err);
-    } finally {
-      setLoadingProjectManagers(false);
+    if (!token) {
+      console.error("No token found");
+      return;
     }
-  };
 
+    const response = await axios.get(
+      "https://hdp-backend-1vcl.onrender.com/api/user/project-managers",
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    console.log("Project Managers API response:", response.data); // <-- Add this line
+
+    setProjectManagers(response.data || []);
+  } catch (err) {
+    console.error("❌ Error fetching project managers:", err);
+  } finally {
+    setLoadingProjectManagers(false);
+  }
+};
   const handleOpenDetail = async (request, opts = {}) => {
     const readOnly = !!opts.readOnly;
     const origin = opts.origin || null;
@@ -796,23 +827,155 @@ const RequesterDashboard = () => {
       return;
     }
 
-    if (selectedItems.length === 0) {
-      alert("Please add at least one item from inventory");
-      return;
-    }
-
-    const invalidItems = selectedItems.filter(
-      (item) => !item.quantity || item.quantity < 1
-    );
-    if (invalidItems.length > 0) {
-      alert("All items must have a quantity of at least 1");
-      return;
+    // --- SERVICES REQUEST VALIDATION ---
+    if (requestType === "services") {
+      const hasService = serviceRows.some(
+        (row) => row.description && row.amount
+      );
+      const hasMaterial = materialRows.some(
+        (row) => row.description && row.quantity
+      );
+      if (!hasService && !hasMaterial) {
+        alert("Please add at least one service or material item.");
+        return;
+      }
+    } else {
+      // --- INVENTORY REQUEST VALIDATION ---
+      if (selectedItems.length === 0) {
+        alert("Please add at least one item from inventory");
+        return;
+      }
+      const invalidItems = selectedItems.filter(
+        (item) => !item.quantity || item.quantity < 1
+      );
+      if (invalidItems.length > 0) {
+        alert("All items must have a quantity of at least 1");
+        return;
+      }
     }
 
     try {
       setSubmitting(true);
       const token = getToken();
 
+      // --- SERVICES REQUEST LOGIC ---
+      if (requestType === "services") {
+        // Build serviceItems and materialItems arrays
+        const serviceItems = serviceRows
+          .filter((row) => row.description && row.amount)
+          .map((row) => ({
+            name: row.description,
+            quantity: 1,
+            unitPrice: Number(row.amount),
+            description: row.description,
+          }));
+
+        const materialItems = materialRows
+          .filter((row) => row.description && row.quantity)
+          .map((row) => ({
+            name: row.description,
+            quantity: Number(row.quantity),
+            unitPrice: 0,
+          }));
+
+        // Build payload
+        const payload = {
+          companyId: formData.company,
+          department: formData.department,
+          destination: formData.destination,
+          vesselId: formData.vesselId || undefined,
+          purpose: servicePurpose,
+          priority: formData.priority,
+          requiredDate: undefined, // You can add a date picker if needed
+          currency: "NGN", // Or allow user to select
+          isService: true,
+          serviceItems,
+          materialItems,
+        };
+
+        if (formData.destination === "Marine") {
+          payload.nextApproverAfterVesselManager =
+            nextApproverAfterVesselManager;
+        }
+        if (formData.reference) payload.reference = formData.reference;
+        if (formData.projectManager)
+          payload.projectManager = formData.projectManager;
+        if (formData.additionalInformation)
+          payload.additionalInformation = formData.additionalInformation;
+        if (formData.jobNumber) payload.jobNumber = formData.jobNumber;
+        if (formData.destination === "Marine" && offShoreNumber) {
+          payload.offshoreReqNumber = offShoreNumber;
+        }
+        if (formData.destination === "Marine" && formData.deckOrEngine) {
+          payload.deckOrEngine = formData.deckOrEngine;
+        }
+
+        // If there are images, use FormData
+        if (requestImages.length > 0) {
+          const fd = new FormData();
+          Object.entries(payload).forEach(([key, value]) => {
+            if (Array.isArray(value) || typeof value === "object") {
+              fd.append(key, JSON.stringify(value));
+            } else if (value !== undefined) {
+              fd.append(key, value);
+            }
+          });
+          requestImages.forEach((f) => {
+            if (f && f.file) {
+              fd.append("requestImages", f.file);
+            }
+          });
+
+          const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          console.log(
+            "✅ Service Request Created (with images):",
+            response.data
+          );
+          alert("Service request created successfully!");
+        } else {
+          // No images, send as JSON
+          const response = await axios.post(
+            `${API_BASE_URL}/requests`,
+            payload,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+
+          console.log("✅ Service Request Created:", response.data);
+          alert("Service request created successfully!");
+        }
+
+        // Reset form
+        setFormData({
+          department: user?.department || "",
+          destination: "",
+          company: "",
+          vesselId: "",
+          projectManager: "",
+          priority: "normal",
+          reference: "",
+          purpose: "",
+          additionalInformation: "",
+          jobNumber: "",
+          deckOrEngine: "",
+        });
+        setServicePurpose("");
+        setNextApproverAfterVesselManager("");
+        setServiceRows([{ description: "", amount: "" }]);
+        setMaterialRows([{ description: "", quantity: "" }]);
+        setRequestImages([]);
+        setOffShoreNumber("");
+        setActiveView("myrequests");
+        return;
+      }
+
+      // --- INVENTORY REQUEST LOGIC ---
       // Prepare items for API
       const items = selectedItems.map((item) => {
         const qty = Number(item.quantity || 0);
@@ -840,7 +1003,7 @@ const RequesterDashboard = () => {
         if (formData.reference) fd.append("reference", formData.reference);
         if (formData.company) fd.append("companyId", formData.company);
         if (formData.projectManager)
-          fd.append("projectManager", formData.projectManager);
+          fd.append("projectManagerId", formData.projectManager);
 
         if (formData.jobNumber) {
           fd.append("jobNumber", formData.jobNumber);
@@ -909,7 +1072,7 @@ const RequesterDashboard = () => {
         }
 
         if (formData.projectManager) {
-          payload.projectManager = formData.projectManager;
+          payload.projectManagerId = formData.projectManager;
         }
 
         if (formData.additionalInformation) {
@@ -1309,6 +1472,9 @@ const RequesterDashboard = () => {
           isRequester={true}
           selectedRequestOrigin={selectedRequest?.origin}
           notificationCount={unreadCount}
+          chatUnreadCount={chatUnreadCount}
+            setCollapsed={setSidebarCollapsed}
+
         />
 
         {activeView === "chatRoom" && <ChatRoom />}
@@ -1324,7 +1490,7 @@ const RequesterDashboard = () => {
                   ? "Create New Request"
                   : activeView === "pending"
                   ? "Pending Requests"
-                  : activeView === "myrequests"
+                  : activeView === "myRequests"
                   ? "My Requests"
                   : activeView === "completed"
                   ? "Completed Requests"
@@ -1343,7 +1509,7 @@ const RequesterDashboard = () => {
                   ? "Fill in the details below to submit your request"
                   : activeView === "pending"
                   ? "View and track your submitted requests"
-                  : activeView === "myrequests"
+                  : activeView === "myRequests"
                   ? "View all your submitted requests"
                   : activeView === "completed"
                   ? "View completed requests"
@@ -1609,7 +1775,7 @@ const RequesterDashboard = () => {
                         name="projectManager"
                         value={formData.projectManager}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
+                        className="w-full px-4 py-3 border-2 border-slate-200 text-black rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
                         required
                         disabled={loadingProjectManagers}
                       >
@@ -1619,8 +1785,8 @@ const RequesterDashboard = () => {
                             : "Select Project Manager"}
                         </option>
                         {projectManagers.map((pm) => (
-                          <option key={pm.id} value={pm.id}>
-                            {pm.name}
+                          <option key={pm.userId} value={pm.userId}>
+                            {pm.displayName}
                           </option>
                         ))}
                       </select>
@@ -1840,6 +2006,37 @@ const RequesterDashboard = () => {
                   )}
                   {requestType === "services" && (
                     <>
+                      {/* Purpose for Service */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                          Purpose for Service *
+                        </label>
+                        <textarea
+                          value={servicePurpose}
+                          onChange={(e) => setServicePurpose(e.target.value)}
+                          placeholder="Describe the purpose of this service request"
+                          rows={3}
+                          className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm resize-none"
+                        />
+                      </div>
+                      {/* Next Approver (Marine only) */}
+                      {/* {formData.destination === "Marine" && (
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                            Next Approver After Vessel Manager *
+                          </label>
+                          <input
+                            type="text"
+                            value={nextApproverAfterVesselManager}
+                            onChange={(e) =>
+                              setNextApproverAfterVesselManager(e.target.value)
+                            }
+                            placeholder="e.g. Technical Manager"
+                            required
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm"
+                          />
+                        </div>
+                      )} */}
                       <ServiceTable
                         rows={serviceRows}
                         setRows={setServiceRows}
@@ -2043,7 +2240,7 @@ const RequesterDashboard = () => {
                 )}
               </>
             )}
-            {activeView === "myrequests" && (
+            {activeView === "myRequests" && (
               <RequesterHistory
                 searchQuery={searchQuery}
                 filterType={filterType}
@@ -2052,7 +2249,7 @@ const RequesterDashboard = () => {
                   handleOpenDetail(req, {
                     ...opts,
                     readOnly: true,
-                    origin: "myrequests",
+                    origin: "myRequests",
                   });
                 }}
               />

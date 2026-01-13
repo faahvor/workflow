@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import AdminSidebar from "../../../shared/layout/AdminSidebar";
 import UserManagement from "./UserManagement";
 import VesselManagement from "./VesselManagement";
@@ -19,64 +19,45 @@ import RequestManagement from "./RequestManagment";
 import AdminSettings from "./AdminSettings";
 import AdminLogs from "./AdminLogs";
 import CompanyManagement from "./CompanyManagement"; // new companies page
+import ChatRoom from "../ChatRoom";
+import { useAuth } from "../../../context/AuthContext";
 
-/*
-  AdminDashboard (shell)
-  - Renders AdminSidebar from shared/layout
-  - Manages activeSection state and passes to sidebar
-  - Reuses existing page components for content
-  - Uses mock data (same shape as NewDashboard) — replace when you provide real data
-*/
 
-const generateMockUsers = () =>
-  [
-    {
-      id: 1,
-      name: "John Doe",
-      email: "john.doe@gemz.com",
-      role: "Admin",
-      status: "Active",
-      department: "Procurement",
-    },
-    {
-      id: 2,
-      name: "Sarah Johnson",
-      email: "sarah.j@gemz.com",
-      role: "User",
-      status: "Active",
-      department: "Marine",
-    },
-    {
-      id: 3,
-      name: "Michael Brown",
-      email: "m.brown@gemz.com",
-      role: "User",
-      status: "Suspended",
-      department: "Operations",
-    },
-    {
-      id: 4,
-      name: "Emma Davis",
-      email: "emma.d@gemz.com",
-      role: "Admin",
-      status: "Locked",
-      department: "Accounts",
-    },
-    {
-      id: 5,
-      name: "David Wilson",
-      email: "d.wilson@gemz.com",
-      role: "User",
-      status: "Active",
-      department: "IT",
-    },
-  ].map((u, i) => ({ ...u, id: u.id || i + 1 }));
 
 const AdminDashboard = () => {
   const [activeSection, setActiveSection] = useState("overview");
-  const [users, setUsers] = useState(generateMockUsers());
+  const [users, setUsers] = useState([]);
   const [vatRate, setVatRate] = useState(7.5);
+  const { user, getToken } = useAuth();
+const [chatUnreadCount, setChatUnreadCount] = useState(0);
+const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("adminSidebarCollapsed") === "true";
+  }
+  return false;
+});
 
+const fetchChatUnreadCount = async () => {
+  try {
+    const token = getToken();
+    if (!token) return;
+    const resp = await axios.get(
+      "https://hdp-backend-1vcl.onrender.com/api/chat/unread-count",
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    setChatUnreadCount(resp.data?.unreadCount || 0);
+  } catch (err) {
+    setChatUnreadCount(0);
+  }
+};
+
+useEffect(() => {
+  if (user) {
+    fetchChatUnreadCount();
+    const interval = setInterval(fetchChatUnreadCount, 3000); // every 3 seconds
+    return () => clearInterval(interval);
+  }
+}, [user]);
   // quick derived stats (used by Overview)
   const vendorCount = 24;
   const inventoryCount = 1240;
@@ -84,6 +65,7 @@ const AdminDashboard = () => {
   const logsCount = 432;
   const adminsCount = users.filter((u) => u.role === "Admin").length;
   const totalUsers = users.length;
+  
 
   // nav items (kept for reference / potential right-side header)
   const navItems = useMemo(
@@ -140,7 +122,11 @@ const AdminDashboard = () => {
         <AdminSidebar
           activeSection={activeSection}
           setActiveSection={setActiveSection}
+           chatUnreadCount={chatUnreadCount} 
+             collapsed={sidebarCollapsed}
+  setCollapsed={setSidebarCollapsed}
         />
+            {activeSection === "chatRoom" && <ChatRoom />}
 
         {/* Main content area (full width) */}
         <div className="flex-1 overflow-auto">

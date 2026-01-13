@@ -190,6 +190,7 @@ export default function InventoryManagement() {
         if (form.maker) formData.append("maker", form.maker);
         if (form.makerPartNumber)
           formData.append("makerPartNumber", form.makerPartNumber);
+formData.append("storeLocation", form.storeLocation);
 
         addPhotos.forEach((file) => {
           formData.append("photos", file);
@@ -226,6 +227,8 @@ export default function InventoryManagement() {
           quantity: Number(form.quantity) || 0,
           maker: form.maker,
           makerPartNumber: form.makerPartNumber,
+            storeLocation: form.storeLocation,
+
         };
         const resp = await axios.post(`${API_BASE}/inventory`, payload, {
           headers,
@@ -434,6 +437,7 @@ export default function InventoryManagement() {
         if (form.maker) formData.append("maker", form.maker);
         if (form.makerPartNumber)
           formData.append("makerPartNumber", form.makerPartNumber);
+formData.append("storeLocation", form.storeLocation);
 
         editPhotos.forEach((file) => {
           formData.append("photos", file);
@@ -452,6 +456,8 @@ export default function InventoryManagement() {
           quantity: Number(form.quantity) || 0,
           maker: form.maker,
           makerPartNumber: form.makerPartNumber,
+            storeLocation: form.storeLocation,
+
         };
         await axios.patch(
           `${API_BASE}/inventory/${encodeURIComponent(editing.inventoryId)}`,
@@ -670,7 +676,7 @@ export default function InventoryManagement() {
                   <th className="px-4 py-3">Quantity</th>
                   <th className="px-4 py-3">Maker</th>
                   <th className="px-4 py-3">Maker PN</th>
-                  <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Store Location</th>
                   <th className="px-4 py-3">Uploads</th>
 
                   <th className="px-4 py-3">Actions</th>
@@ -713,19 +719,8 @@ export default function InventoryManagement() {
                       </td>
                       <td className="px-4 py-3">{it.maker}</td>
                       <td className="px-4 py-3">{it.makerPartNumber}</td>
-                         <td className="px-4 py-3">
-                        {it.isVerified ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-                            <MdVerified className="text-sm" />
-                            Verified
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-                            <MdPending className="text-sm" />
-                            Unverified
-                          </span>
-                        )}
-                      </td>
+                               <td className="px-4 py-3">{it.storeLocation}</td> {/* <-- changed */}
+
                       <td className="px-4 py-3 text-center">
                         {Array.isArray(it.photos) && it.photos.length > 0 ? (
                           <button
@@ -886,16 +881,31 @@ export default function InventoryManagement() {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
-              <div className="md:col-span-2">
-                <label className="text-xs text-slate-500">Maker Part No</label>
-                <input
-                  value={form.makerPartNumber}
-                  onChange={(e) =>
-                    setForm({ ...form, makerPartNumber: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
+
+              <div>
+  <label className="text-xs text-slate-500">Maker Part No</label>
+  <input
+    value={form.makerPartNumber}
+    onChange={(e) =>
+      setForm({ ...form, makerPartNumber: e.target.value })
+    }
+    className="w-full px-3 py-2 border rounded-lg"
+  />
+</div>
+<div>
+  <label className="text-xs text-slate-500">Store Location<span className="text-rose-500">*</span></label>
+  <select
+    value={form.storeLocation || ""}
+    onChange={e => setForm({ ...form, storeLocation: e.target.value })}
+    className="w-full px-3 py-2 border rounded-lg"
+    required
+  >
+    <option value="">Select location</option>
+    <option value="Store Base">Store Base</option>
+    <option value="Store Jetty">Store Jetty</option>
+    <option value="Store Vessel">Store Vessel</option>
+  </select>
+</div>
 
               
 
@@ -1135,64 +1145,21 @@ export default function InventoryManagement() {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
-              {/* Status Toggle - Only show if item is unverified (one-way verification) */}
-              <div className="md:col-span-2">
-                <label className="text-xs text-slate-500 block mb-2">
-                  Verification Status
-                </label>
-                {editing?.isVerified ? (
-                  // Already verified - show read-only badge
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold bg-emerald-100 text-emerald-700">
-                      <MdVerified className="text-base" />
-                      Verified
-                    </span>
-                    <p className="text-xs text-slate-400">
-                      This item is already verified
-                    </p>
-                  </div>
-                ) : (
-                  // Unverified - allow toggling to verified
-                  <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm({ ...form, isVerified: !form.isVerified })
-                      }
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
-                        form.isVerified ? "bg-emerald-500" : "bg-slate-300"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          form.isVerified ? "translate-x-6" : "translate-x-1"
-                        }`}
-                      />
-                    </button>
-                    <span
-                      className={`text-sm font-medium ${
-                        form.isVerified ? "text-emerald-700" : "text-amber-700"
-                      }`}
-                    >
-                      {form.isVerified ? (
-                        <span className="inline-flex items-center gap-1">
-                          <MdVerified /> Mark as Verified
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1">
-                          <MdPending /> Unverified
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                )}
-                <p className="text-xs text-slate-400 mt-1">
-                  {editing?.isVerified
-                    ? "Verified items cannot be changed back to unverified"
-                    : "Toggle to verify this inventory item"}
-                </p>
-              </div>
-
+            
+<div >
+  <label className="text-xs text-slate-500">Store Location<span className="text-rose-500">*</span></label>
+  <select
+    value={form.storeLocation || ""}
+    onChange={e => setForm({ ...form, storeLocation: e.target.value })}
+    className="w-full px-3 py-2 border rounded-lg"
+    required
+  >
+    <option value="">Select location</option>
+    <option value="Store Base">Store Base</option>
+    <option value="Store Jetty">Store Jetty</option>
+    <option value="Store Vessel">Store Vessel</option>
+  </select>
+</div>
               
 
               <div className="md:col-span-2">

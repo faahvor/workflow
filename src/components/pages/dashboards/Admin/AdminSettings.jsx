@@ -21,34 +21,75 @@ const AdminSettings = ({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // --- Logo upload prototype (local preview + localStorage) ---
   const [logoFile, setLogoFile] = useState(null);
-  // logoPreview may be a blob URL (temp) or a data URL persisted in localStorage
-  const [logoPreview, setLogoPreview] = useState(
-    () => localStorage.getItem("adminLogo") || ""
-  );
+  const [logoUrl, setLogoUrl] = useState(""); // backend logo URL
+  const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = React.useRef(null);
   const [dragLogo, setDragLogo] = useState(false);
+   const [sla, setSla] = useState("");
+  const [slaLoading, setSlaLoading] = useState(false);
+  const [slaSaving, setSlaSaving] = useState(false);
+  const [slaError, setSlaError] = useState("");
+  const [slaSuccess, setSlaSuccess] = useState("");
+  const [showSlaInfo, setShowSlaInfo] = useState(false);
 
-  const readFileAsDataURL = (file) =>
-    new Promise((res, rej) => {
-      const fr = new FileReader();
-      fr.onload = () => res(fr.result);
-      fr.onerror = rej;
-      fr.readAsDataURL(file);
-    });
+  const handleLogoUpload = async () => {
+    setError("");
+    setSuccess("");
+    if (!logoFile) {
+      setError("No logo selected.");
+      return;
+    }
+    if (
+      !["image/png", "image/jpeg", "image/jpg", "image/gif"].includes(
+        logoFile.type
+      )
+    ) {
+      setError("Invalid file type. Only PNG, JPG, JPEG, GIF allowed.");
+      return;
+    }
+    if (logoFile.size > 25 * 1024 * 1024) {
+      setError("File too large. Max size is 25MB.");
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      if (!token) throw new Error("Authentication required");
+      const formData = new FormData();
+      formData.append("logo", logoFile);
+      const resp = await axios.post(`${API_BASE}/settings/logo`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      if (resp.data && resp.data.logo && resp.data.logo.url) {
+        setLogoUrl(resp.data.logo.url);
+        setSuccess("Logo uploaded successfully!");
+        setLogoFile(null);
+        // Optionally: clear file input value
+        if (logoInputRef.current) logoInputRef.current.value = "";
+        setTimeout(() => setSuccess(""), 3000);
+      } else {
+        setError("Upload failed. Try again.");
+      }
+    } catch (err) {
+      console.error("Logo upload failed:", err);
+      setError(
+        err?.response?.data?.message ||
+          err.message ||
+          "Logo upload failed. Try again."
+      );
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   const handleLogoSelect = (files) => {
     if (!files || files.length === 0) return;
     const f = files[0];
     setLogoFile(f);
-    // temp preview using object URL for immediate feedback
-    try {
-      const url = URL.createObjectURL(f);
-      setLogoPreview(url);
-    } catch {
-      setLogoPreview("");
-    }
   };
 
   const handleLogoDrop = async (e) => {
@@ -61,38 +102,64 @@ const AdminSettings = ({
     if (logoInputRef.current) logoInputRef.current.click();
   };
 
-  const saveLogoPrototype = async () => {
-    setError("");
-    setSuccess("");
-    if (!logoFile && !logoPreview) {
-      setError("No logo selected.");
+    useEffect(() => {
+    // fetch current SLA on mount
+    const fetchSla = async () => {
+      setSlaLoading(true);
+      setSlaError("");
+      try {
+        const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const resp = await axios.get(`${API_BASE}/settings/sla`, { headers });
+        if (resp.data && typeof resp.data.approvalSlaHours === "number") {
+          setSla(resp.data.approvalSlaHours);
+        } else {
+          setSla(0);
+        }
+      } catch (err) {
+        setSla(0);
+        setSlaError("Could not load SLA value.");
+      } finally {
+        setSlaLoading(false);
+      }
+    };
+    fetchSla();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+   const handleSlaSave = async () => {
+    setSlaError("");
+    setSlaSuccess("");
+    const val = Number(sla);
+    if (!Number.isInteger(val) || val < 0) {
+      setSlaError("SLA must be a whole number (0 or greater).");
       return;
     }
-    setSaving(true);
+    setSlaSaving(true);
     try {
-      // convert to persistent data URL if not already one
-      let dataUrl = logoPreview;
-      if (logoFile) dataUrl = await readFileAsDataURL(logoFile);
-      // store prototype in localStorage
-      localStorage.setItem("adminLogo", dataUrl);
-      setLogoPreview(dataUrl);
-      setLogoFile(null);
-      setSuccess("Logo saved (prototype)");
-      setTimeout(() => setSuccess(""), 3000);
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      if (!token) throw new Error("Authentication required");
+      const headers = { Authorization: `Bearer ${token}` };
+      const resp = await axios.post(
+        `${API_BASE}/settings/sla`,
+        { hours: val },
+        { headers }
+      );
+      if (resp.data && typeof resp.data.approvalSlaHours === "number") {
+        setSla(resp.data.approvalSlaHours);
+        setSlaSuccess("Approval SLA updated successfully");
+        setTimeout(() => setSlaSuccess(""), 3000);
+      } else {
+        setSlaError("Failed to update SLA.");
+      }
     } catch (err) {
-      console.error("Failed to save logo (prototype):", err);
-      setError("Failed to save logo (see console)");
+      setSlaError(
+        err?.response?.data?.message || err.message || "Failed to update SLA"
+      );
     } finally {
-      setSaving(false);
+      setSlaSaving(false);
     }
   };
-
-  const removeLogo = () => {
-    setLogoFile(null);
-    setLogoPreview("");
-    localStorage.removeItem("adminLogo");
-  };
-  // --- end logo prototype ---
 
   useEffect(() => {
     // fetch current VAT once on mount
@@ -124,6 +191,24 @@ const AdminSettings = ({
     };
     fetchVat();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // fetch current logo on mount
+    const fetchLogo = async () => {
+      try {
+        const resp = await axios.get(`${API_BASE}/settings/logo`);
+        if (resp.data && resp.data.url) {
+          setLogoUrl(resp.data.url);
+        } else {
+          setLogoUrl("");
+        }
+      } catch (err) {
+        setLogoUrl("");
+        // Optionally: setError("Could not load logo.");
+      }
+    };
+    fetchLogo();
   }, []);
 
   const handleSave = async () => {
@@ -201,7 +286,6 @@ const AdminSettings = ({
               </button>
             </div>
 
-            {error && <div className="mt-3 text-sm text-rose-600">{error}</div>}
             {success && (
               <div className="mt-3 text-sm text-emerald-700">{success}</div>
             )}
@@ -216,10 +300,7 @@ const AdminSettings = ({
       {/* Branding / Logo (prototype) */}
       <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
         <h3 className="text-lg font-semibold mb-3">Company Logo</h3>
-        <p className="text-sm text-slate-500 mb-4">
-          Upload a system logo (prototype — no backend yet). Supported: PNG,
-          JPG, SVG.
-        </p>
+        <p className="text-sm text-slate-500 mb-4">Upload Company Logo</p>
 
         <div
           onDrop={handleLogoDrop}
@@ -248,15 +329,21 @@ const AdminSettings = ({
           {/* preview box */}
           <div className="flex items-center gap-4 w-full">
             <div className="w-28 h-28 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden border">
-              {logoPreview ? (
+              {logoFile ? (
                 <img
-                  src={logoPreview}
+                  src={URL.createObjectURL(logoFile)}
                   alt="logo preview"
+                  className="w-full h-full object-contain"
+                />
+              ) : logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="current logo"
                   className="w-full h-full object-contain"
                 />
               ) : (
                 <div className="text-xs text-slate-400 text-center px-2">
-                  No logo selected
+                  No logo uploaded
                 </div>
               )}
             </div>
@@ -266,34 +353,23 @@ const AdminSettings = ({
                 <button
                   onClick={handleLogoClickPick}
                   className="px-4 py-2 rounded-md bg-[#036173] text-white"
+                  disabled={logoUploading}
                 >
                   Choose File
                 </button>
                 <button
-                  onClick={saveLogoPrototype}
-                  disabled={saving}
+                  onClick={handleLogoUpload}
+                  disabled={!logoFile || logoUploading}
                   className={`px-4 py-2 rounded-md text-white ${
-                    saving
+                    !logoFile || logoUploading
                       ? "bg-slate-400 cursor-not-allowed"
                       : "bg-emerald-600"
                   }`}
                 >
-                  {saving ? "Saving…" : "Save Logo (prototype)"}
-                </button>
-                <button
-                  onClick={removeLogo}
-                  className="px-3 py-2 rounded-md bg-red-50 text-red-600"
-                >
-                  Remove
+                  {logoUploading ? "Uploading…" : "Upload Logo"}
                 </button>
               </div>
-              <div className="mt-2 text-xs text-slate-500">
-                Drag & drop an image, or click Choose File. The preview will be
-                saved locally in your browser.
-              </div>
-              {error && (
-                <div className="mt-2 text-sm text-rose-600">{error}</div>
-              )}
+
               {success && (
                 <div className="mt-2 text-sm text-emerald-700">{success}</div>
               )}
@@ -301,6 +377,71 @@ const AdminSettings = ({
           </div>
         </div>
       </div>
+
+
+        {/* Approval SLA Monitoring */}
+      <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-lg font-semibold">Request Monitoring Time</h3>
+          <button
+            type="button"
+            className="ml-1 text-slate-400 hover:text-slate-700"
+            onClick={() => setShowSlaInfo((v) => !v)}
+            aria-label="Show SLA info"
+            tabIndex={0}
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+              <text x="12" y="16" textAnchor="middle" fontSize="12" fill="currentColor">i</text>
+            </svg>
+          </button>
+        </div>
+        {showSlaInfo && (
+          <div className="mb-3 text-xs text-slate-600 bg-slate-50 rounded p-3 border">
+            <b>What is this?</b> <br />
+            This setting controls how many hours a request can remain in a pending approval state before the system sends an amber alert to stakeholders. <br />
+            <b>Set to 0</b> to disable monitoring. Alerts are sent only once per stage. <br />
+            Example: If set to 24, requests pending for more than 24 hours will trigger an alert.
+          </div>
+        )}
+        {slaLoading ? (
+          <div className="text-sm text-slate-500">Loading SLA…</div>
+        ) : (
+          <>
+          <div className="flex items-center gap-4">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={sla}
+                onChange={(e) => setSla(e.target.value.replace(/\D/, ""))}
+                className="px-4 py-2 rounded-xl border w-32"
+                disabled={slaSaving}
+              />
+              <button
+                onClick={handleSlaSave}
+                disabled={slaSaving}
+                className={`px-4 py-2 rounded-xl ${
+                  slaSaving
+                    ? "bg-slate-400 text-white cursor-not-allowed"
+                    : "bg-[#036173] text-white"
+                }`}
+              >
+                {slaSaving ? "Saving…" : "Save SLA"}
+              </button>
+              <span className={`ml-2 text-xs font-semibold ${sla === 0 || sla === "0" ? "text-rose-600" : "text-emerald-700"}`}>
+                {sla === 0 || sla === "0" ? "Monitoring is OFF" : `Monitoring: ${sla} hour${sla === 1 || sla === "1" ? "" : "s"}`}
+              </span>
+            </div>
+            {slaSuccess && (
+              <div className="mt-3 text-sm text-emerald-700">{slaSuccess}</div>
+            )}
+            {slaError && (
+              <div className="mt-3 text-sm text-rose-600">{slaError}</div>
+            )}
+          </>
+        )}
+        </div>
 
       <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
         <h3 className="text-lg font-semibold mb-3">Other Admin Settings</h3>

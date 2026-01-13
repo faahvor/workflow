@@ -9,198 +9,49 @@ const ClearingTable = ({
   selectedRequest = null,
   onEditItem = async () => {},
   onRefreshRequest = async () => {},
-    onFilesChanged = () => {},
-
+  onFilesChanged = () => {},
 }) => {
   const [editedRequests, setEditedRequests] = useState([]);
-  const [clearingFees, setClearingFees] = useState({});
+  const [clearingFee, setClearingFee] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const { getToken } = useAuth(); // add this line to get auth token
+  const { getToken } = useAuth();
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
-  // ...existing code...
   useEffect(() => {
-    // Read clearingFee from request level, not item level
-    const requestClearingFee = selectedRequest?.clearingFee;
-
-    const fees = {};
-    const initial = (items || []).map((it, idx) => {
-      const itemId = it.itemId || it._id || it.id || `gen-${idx}`;
-      const vendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
-
-      // If request-level clearingFee exists, use it
-      if (requestClearingFee !== undefined && fees[vendorKey] === undefined) {
-        if (
-          typeof requestClearingFee === "object" &&
-          requestClearingFee !== null
-        ) {
-          // clearingFee is an object keyed by vendor
-          fees[vendorKey] = requestClearingFee[vendorKey] ?? 0;
-        } else if (typeof requestClearingFee === "number") {
-          // clearingFee is a single number (applies to first/only vendor)
-          fees[vendorKey] = requestClearingFee;
-        }
-      } else if (
-        it.clearingFee !== undefined &&
-        fees[vendorKey] === undefined
-      ) {
-        // Fallback to item-level clearingFee
-        fees[vendorKey] = it.clearingFee;
-      }
-
-      return {
+    setEditedRequests(
+      (items || []).map((it, idx) => ({
         ...it,
-        itemId,
+        itemId: it.itemId || it._id || it.id || `gen-${idx}`,
         vendor: it.vendor || it.vendorName || "",
         vendorId: it.vendorId ?? null,
-        clearingFee: fees[vendorKey] ?? 0,
         _dirty: false,
-      };
-    });
-
-    setClearingFees(fees);
-    setEditedRequests(initial);
-  }, [items, selectedRequest?.clearingFee]);
-  // ...existing code...
-
-  const groupByVendor = (list) => {
-    const groups = {};
-    list.forEach((it, idx) => {
-      const key = it.vendorId ?? it.vendor ?? "No Vendor";
-      if (!groups[key]) groups[key] = { items: [], order: idx };
-      groups[key].items.push({ ...it, _groupIndex: idx });
-    });
-    return Object.values(groups).sort((a, b) => a.order - b.order);
-  };
-
-  const handleChangeFee = (vendorKey, value) => {
-    const parsed = value === "" ? 0 : Number(value) || 0;
-    setClearingFees((prev) => ({ ...prev, [vendorKey]: parsed }));
-    setEditedRequests((prev) =>
-      prev.map((it) =>
-        (it.vendorId ?? it.vendor ?? "No Vendor") === vendorKey
-          ? { ...it, clearingFee: parsed, _dirty: true }
-          : it
-      )
+      }))
     );
+    // Set clearingFee from request-level
+    setClearingFee(
+      typeof selectedRequest?.clearingFee === "number"
+        ? selectedRequest.clearingFee
+        : ""
+    );
+  }, [items, selectedRequest?.clearingFee]);
+
+  const handleChangeFee = (value) => {
+    setClearingFee(value === "" ? "" : Number(value) || 0);
   };
 
-  const buildChangesForItem = (editedItem) => {
-    const orig =
-      (items || []).find(
-        (r) => (r.itemId || r._id) === (editedItem.itemId || editedItem._id)
-      ) || {};
-    const fields = ["clearingFee"];
-    const changes = {};
-    fields.forEach((f) => {
-      const a = orig[f];
-      const b = editedItem[f];
-      const aNorm = a === undefined ? "" : String(a);
-      const bNorm = b === undefined ? "" : String(b);
-      if (aNorm !== bNorm) {
-        if (["clearingFee"].includes(f)) {
-          changes[f] = b === "" ? 0 : Number(b) || 0;
-        } else {
-          changes[f] = b;
-        }
-      }
-    });
-    return changes;
-  };
-
-  const handleUnifiedEdit = async (updates) => {
-    if (!onEditItem) return;
-    const reqId = selectedRequest?.requestId;
-    if (!reqId) {
-      console.error("No selectedRequest.requestId for clearing edits");
-      return;
-    }
-    const promises = updates.map(async (u) => {
-      const itemId = u.itemId;
-      const payload = { ...u.changes, requestId: reqId };
-      return onEditItem({ ...payload, itemId });
-    });
-    return Promise.all(promises);
-  };
-
-  // ...existing code...
   const handleSaveAll = async () => {
     if (!window.confirm("Save clearing fee changes?")) return;
 
-    const dirty = editedRequests.filter((it) => it._dirty);
-    const hasDirtyItems = dirty.length > 0;
-
-    // Build item-level updates
-    const snapshot = editedRequests.slice();
-    const updates = snapshot
-      .filter((it) => it._dirty)
-      .map((it) => {
-        const changes = buildChangesForItem(it);
-        return {
-          itemId: it.itemId || it._id,
-          changes,
-        };
-      })
-      .filter((u) => Object.keys(u.changes).length > 0);
-
-    // Determine if request-level clearingFee needs update (compare clearingFees state vs selectedRequest.clearingFee)
-    let requestNeedsUpdate = false;
-    let requestPayload = null;
-
-    if (selectedRequest && typeof selectedRequest.requestId !== "undefined") {
-      const currentReqFee = selectedRequest.clearingFee;
-      const localFees = { ...clearingFees };
-
-      if (typeof currentReqFee === "number") {
-        const keys = Object.keys(localFees);
-        if (keys.length === 1) {
-          const onlyVal = Number(localFees[keys[0]] || 0);
-          requestNeedsUpdate = Number(currentReqFee || 0) !== onlyVal;
-          requestPayload = onlyVal;
-        } else {
-          // current is number but local is multi-vendor -> update to object
-          requestNeedsUpdate = true;
-          requestPayload = localFees;
-        }
-      } else if (currentReqFee && typeof currentReqFee === "object") {
-        // both objects: compare JSON
-        requestNeedsUpdate =
-          JSON.stringify(currentReqFee || {}) !==
-          JSON.stringify(localFees || {});
-        requestPayload = localFees;
-      } else {
-        // no value on request yet
-        requestNeedsUpdate = Object.keys(localFees).length > 0;
-        requestPayload =
-          Object.keys(localFees).length === 1
-            ? Number(localFees[Object.keys(localFees)[0]] || 0)
-            : localFees;
-      }
-    }
-
-    if (!hasDirtyItems && !requestNeedsUpdate) {
-      alert("No changes to save.");
-      return;
-    }
-
     setIsSaving(true);
     try {
-      // First: apply item-level updates (if any) via existing handler
-      let itemResults = [];
-      if (updates.length > 0) {
-        itemResults = await handleUnifiedEdit(updates);
-      }
-
-      // Then: apply request-level clearingFee update if needed
-      if (requestNeedsUpdate) {
-        if (!selectedRequest || !selectedRequest.requestId) {
-          throw new Error(
-            "No selectedRequest.requestId to update request-level clearingFee"
-          );
-        }
+      // Save clearingFee at request-level
+      if (
+        selectedRequest &&
+        typeof selectedRequest.requestId !== "undefined"
+      ) {
         const token = await getToken();
         const url = `${API_BASE_URL}/requests/${selectedRequest.requestId}`;
-        const body = { clearingFee: requestPayload };
+        const body = { clearingFee: clearingFee === "" ? 0 : Number(clearingFee) };
         const resp = await fetch(url, {
           method: "PATCH",
           headers: {
@@ -217,22 +68,17 @@ const ClearingTable = ({
         }
       }
 
-      // Clear local dirty flags (server may not return items)
-      setEditedRequests((prev) => prev.map((it) => ({ ...it, _dirty: false })));
-
       // Refresh request data to get latest from server
       if (typeof onRefreshRequest === "function") {
         await onRefreshRequest();
       }
       try {
-  if (typeof onFilesChanged === "function") onFilesChanged();
-} catch (cbErr) {
-  console.error("onFilesChanged callback error after save:", cbErr);
-}
+        if (typeof onFilesChanged === "function") onFilesChanged();
+      } catch (cbErr) {
+        console.error("onFilesChanged callback error after save:", cbErr);
+      }
 
       alert("Saved successfully");
-
-      return { itemResults, requestUpdated: requestNeedsUpdate };
     } catch (err) {
       console.error("Error saving clearing edits:", err);
       alert("Error saving changes. See console.");
@@ -241,7 +87,6 @@ const ClearingTable = ({
       setIsSaving(false);
     }
   };
-  // ...existing code...
 
   if (!editedRequests || editedRequests.length === 0) {
     return (
@@ -251,8 +96,6 @@ const ClearingTable = ({
     );
   }
 
-  const groups = groupByVendor(editedRequests);
-
   return (
     <div className="p-4 w-full mx-auto overflow-x-auto">
       {isSaving && (
@@ -261,118 +104,58 @@ const ClearingTable = ({
         </div>
       )}
 
-      {groups.map((g, gi) => {
-        const vendorKey =
-          g.items[0]?.vendorId ?? g.items[0]?.vendor ?? "No Vendor";
-        const vendorLabel = g.items[0]?.vendor || vendorKey;
-
-        return (
-          <div key={gi} className="overflow-x-auto mb-4">
-            <div className="mb-2 text-sm font-semibold">{vendorLabel}</div>
-            <table className="w-full border-collapse border-2 border-slate-200 text-sm">
-              <thead>
-                <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
-                  <th className="p-3 border border-slate-200 text-center">
-                    SN
-                  </th>
-                  <th className="p-3 border border-slate-200 text-left">
-                    Description
-                  </th>
-                  <th className="p-3 border border-slate-200 text-left">
-                    Item Type
-                  </th>
-                  <th className="p-3 border border-slate-200 text-left">
-                    Maker
-                  </th>
-                  <th className="p-3 border border-slate-200 text-left">
-                    Maker's Part No
-                  </th>
-                  <th className="p-3 border border-slate-200 text-center">
-                    Vendor
-                  </th>
-                  <th className="p-3 border border-slate-200 text-center">
-                    Quantity
-                  </th>
-                  <th className="p-3 border border-slate-200 text-center">
-                    Shipping Quantity
-                  </th>
-                  <th className="p-3 border border-slate-200 text-center">
-                    Shipping Fee
-                  </th>
-
-                  <th className="p-3 border border-slate-200 text-center">
-                    Clearing Fee
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.items.map((it, idx) => {
-                  const itemId = it.itemId || it._id;
-                  return (
-                    <tr
-                      key={itemId}
-                      className="hover:bg-emerald-50 transition-colors duration-150"
-                    >
-                      <td className="border p-3 border-slate-200 text-center">
-                        {idx + 1}
-                      </td>
-                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
-                        {it.name || "N/A"}
-                      </td>
-                      <td className="border p-3 border-slate-200">
-                        {it.itemType || "N/A"}
-                      </td>
-                      <td className="border p-3 border-slate-200">
-                        {it.maker || "N/A"}
-                      </td>
-                      <td className="border p-3 border-slate-200">
-                        {it.makersPartNo || "N/A"}
-                      </td>
-                      <td className="border p-3 border-slate-200 text-center">
-                        {it.vendor || "N/A"}
-                      </td>
-                      <td className="border p-3 border-slate-200 text-center">
-                        {it.quantity ?? it.qty ?? "0"}
-                      </td>
-                      <td className="border p-3 border-slate-200 text-center">
-                        {it.shippingQuantity ?? it.qty ?? "0"}
-                      </td>
-                     <td className="border p-3 border-slate-200 text-center">
-  {selectedRequest?.shippingFee ?? "N/A"}
-</td>
-                      {idx === 0 ? (
-                        <td
-                          className="border p-3 border-slate-200 text-center"
-                          rowSpan={g.items.length}
-                          style={{ verticalAlign: "middle" }}
-                        >
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="0"
-                            value={
-                              clearingFees[vendorKey] === 0 ||
-                              clearingFees[vendorKey] === undefined ||
-                              clearingFees[vendorKey] === null
-                                ? ""
-                                : clearingFees[vendorKey]
-                            }
-                            onChange={(e) =>
-                              handleChangeFee(vendorKey, e.target.value)
-                            }
-                            className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
-                          />
-                        </td>
-                      ) : null}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
+      <table className="w-full border-collapse border-2 border-slate-200 text-sm">
+        <thead>
+          <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
+            <th className="p-3 border border-slate-200 text-center">SN</th>
+            <th className="p-3 border border-slate-200 text-left">Description</th>
+            <th className="p-3 border border-slate-200 text-left">Item Type</th>
+            <th className="p-3 border border-slate-200 text-left">Maker</th>
+            <th className="p-3 border border-slate-200 text-left">Maker's Part No</th>
+            <th className="p-3 border border-slate-200 text-center">Vendor</th>
+            <th className="p-3 border border-slate-200 text-center">Quantity</th>
+            <th className="p-3 border border-slate-200 text-center">Shipping Quantity</th>
+            <th className="p-3 border border-slate-200 text-center">Shipping Fee</th>
+         
+          </tr>
+        </thead>
+        <tbody>
+          {editedRequests.map((it, idx) => (
+            <tr key={it.itemId} className="hover:bg-emerald-50 transition-colors duration-150">
+              <td className="border p-3 border-slate-200 text-center">{idx + 1}</td>
+              <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
+                {it.name || "N/A"}
+              </td>
+              <td className="border p-3 border-slate-200">{it.itemType || "N/A"}</td>
+              <td className="border p-3 border-slate-200">{it.maker || "N/A"}</td>
+              <td className="border p-3 border-slate-200">{it.makersPartNo || "N/A"}</td>
+              <td className="border p-3 border-slate-200 text-center">{it.vendor || "N/A"}</td>
+              <td className="border p-3 border-slate-200 text-center">{it.quantity ?? it.qty ?? "0"}</td>
+              <td className="border p-3 border-slate-200 text-center">{it.shippingQuantity ?? it.qty ?? "0"}</td>
+              <td className="border p-3 border-slate-200 text-center">{selectedRequest?.shippingFee ?? "N/A"}</td>
+          
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={8} className="border p-3 border-slate-200 text-right font-semibold">
+              Clearing Fee:
+            </td>
+            <td className="border p-3 border-slate-200 text-center">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                value={clearingFee === 0 || clearingFee === "" ? "" : clearingFee}
+                onChange={(e) => handleChangeFee(e.target.value)}
+                className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
+              />
+            </td>
+          </tr>
+        </tfoot>
+      </table>
 
       <div className="flex items-center justify-center mt-4">
         <button

@@ -69,7 +69,7 @@ const AdminUserManagement = () => {
         setOpenActionMenuId(null);
       }
       // Close role dropdown if clicking outside
-      if (!e.target.closest('[data-role-dropdown]')) {
+      if (!e.target.closest("[data-role-dropdown]")) {
         setShowRoleDropdown(false);
       }
     };
@@ -141,6 +141,7 @@ const AdminUserManagement = () => {
     accessLevel: "User",
     department: "",
     status: "active",
+    procurementScope: "",
   };
   const [form, setForm] = useState(blankForm);
   const [formError, setFormError] = useState("");
@@ -149,7 +150,7 @@ const AdminUserManagement = () => {
   // saving + success message
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-    const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
   const successTimerRef = useRef(null);
 
@@ -242,6 +243,7 @@ const AdminUserManagement = () => {
       accessLevel: u.accessLevel || "User",
       department: u.department || "",
       status: (u.status || "active").toString(),
+      procurementScope: u.procurementScope?.type || "",
     });
     setFormError("");
     setModalOpen(true);
@@ -252,6 +254,11 @@ const AdminUserManagement = () => {
     setSaving(true);
     if (!form.username || !form.displayName || !form.email || !form.password) {
       setFormError("username, display name, email and password are required");
+      setSaving(false);
+      return;
+    }
+    if (form.role === "Procurement Officer" && !form.procurementScope) {
+      setFormError("Procurement scope is required for Procurement Officer");
       setSaving(false);
       return;
     }
@@ -274,7 +281,12 @@ const AdminUserManagement = () => {
         displayName: form.displayName,
         role: form.role,
         department: form.department,
+        procurementScope:
+          form.role === "Procurement Officer" && form.procurementScope
+            ? { type: form.procurementScope }
+            : undefined,
       };
+      console.log("Payload:", payload);
       await axios.post(`${API_BASE}/admin/users`, payload, {
         headers: getAuthHeaders(),
       });
@@ -305,6 +317,11 @@ const AdminUserManagement = () => {
       setSaving(false);
       return;
     }
+    if (form.role === "Procurement Officer" && !form.procurementScope) {
+      setFormError("Procurement scope is required for Procurement Officer");
+      setSaving(false);
+      return;
+    }
     if (form.password || form.confirmPassword) {
       if (form.password.length < 6) {
         setFormError("Password must be at least 6 characters");
@@ -325,7 +342,14 @@ const AdminUserManagement = () => {
         role: form.role,
         department: form.department,
         status: form.status,
+        procurementScope:
+          form.role === "Procurement Officer" && form.procurementScope
+            ? { type: form.procurementScope }
+            : undefined,
       };
+      console.log("Patch payload:", patch);
+      console.log("PATCH payload (JSON):", JSON.stringify(patch, null, 2));
+
       await axios.patch(
         `${API_BASE}/admin/users/${encodeURIComponent(userId)}`,
         patch,
@@ -414,6 +438,12 @@ const AdminUserManagement = () => {
     if (editing) updateUser();
     else createUser();
   };
+
+  useEffect(() => {
+    if (form.role !== "Procurement Officer" && form.procurementScope) {
+      setForm((f) => ({ ...f, procurementScope: "" }));
+    }
+  }, [form.role]);
 
   return (
     <div className="space-y-6">
@@ -606,7 +636,7 @@ const AdminUserManagement = () => {
                       {openActionMenuId === (u.userId || u.id || idx) && (
                         <div
                           ref={actionMenuRef}
-                          className="absolute left-0 top-full mt-1 bg-white border rounded-lg shadow-lg z-50 overflow-hidden"
+                          className="absolute left-0 top-full mt-1 bg-white border rounded-lg shadow-lg z-1000 overflow-hidden"
                           style={{ width: 140, maxWidth: 220 }}
                         >
                           <button
@@ -843,14 +873,14 @@ const AdminUserManagement = () => {
                         />
                       </svg>
                     </button>
-                        {showRoleDropdown && (
-                      <div 
+                    {showRoleDropdown && (
+                      <div
                         className="absolute left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto"
-                        style={{ 
-                          position: 'fixed',
-                          width: '18rem',
+                        style={{
+                          position: "fixed",
+                          width: "18rem",
                           zIndex: 9999,
-                          marginTop: '4px'
+                          marginTop: "4px",
                         }}
                       >
                         {defaultRoleTypes.map((rt) => (
@@ -891,6 +921,27 @@ const AdminUserManagement = () => {
                       ))}
                     </select>
                   </div>
+                  {form.role === "Procurement Officer" && (
+                    <div>
+                      <label className="text-xs text-slate-500">
+                        Procurement Scope{" "}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={form.procurementScope}
+                        onChange={(e) =>
+                          setForm({ ...form, procurementScope: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border rounded-lg"
+                        required
+                      >
+                        <option value="">Select scope</option>
+                        <option value="base">Base</option>
+                        <option value="jetty">Jetty</option>
+                        <option value="vessel">Vessel</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

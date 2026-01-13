@@ -150,13 +150,25 @@ const PurchaseOrderPreview = forwardRef(
             })
           );
           if (!mounted) return;
-          // keep only procurement officer signatures (case-insensitive, also allow 'procurement' substring)
-          const procurementOnly = prepared.filter((p) => {
-            const r = (p.role || "").toString().toLowerCase();
-            // require "procurement" and either "officer" or "manager"
-            return r.includes("procurement") && r.includes("manager");
-          });
-          setSignaturesPrepared(procurementOnly);
+          const allowedRoles = [
+            "procurement manager",
+            "invoice controller",
+            "accounting officer",
+            "delivery base",
+            "delivery jetty",
+            "delivery vessel",
+            // Also allow case variations
+            "Procurement Manager",
+            "Invoice Controller",
+            "Accounting Officer",
+            "Delivery Base",
+            "Delivery Jetty",
+            "Delivery Vessel",
+          ];
+          const filtered = prepared.filter((p) =>
+            allowedRoles.includes(String(p.role).trim())
+          );
+          setSignaturesPrepared(filtered);
         } catch (err) {
         } finally {
           if (mounted) setLoading(false);
@@ -386,7 +398,7 @@ const PurchaseOrderPreview = forwardRef(
             </div>
             <div>
               {getShipToBlock(req) ? (
-                getShipToBlock(req)
+                <div className="ml-[3rem]">{getShipToBlock(req)}</div>
               ) : (
                 <>
                   <div className="text-base font-semibold text-slate-800 ml-[3rem]">
@@ -521,7 +533,7 @@ const PurchaseOrderPreview = forwardRef(
                       {/* ✅ VAT - hide for shipping/clearing */}
                       {!showFeeColumns && (
                         <td className="py-3 text-right text-slate-700">
-                          {it.vat ? `${it.vat}%` : "-"}
+                          {it.vatAmount ? `${it.vatAmount}` : "-"}
                         </td>
                       )}
 

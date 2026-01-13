@@ -14,6 +14,7 @@ export const ROLES = {
   PROJECT_MANAGER: "Project Manager",
   PURCHASE_MANAGER: "Purchase Manager",
   
+  
   // Heads/Directors
   HEAD_PROCUREMENT: "Head of Procurement",
   HEAD_OF_PROJECT: "Head of Project",
@@ -26,7 +27,7 @@ export const ROLES = {
   CFO: "CFO",
   
   // Specialized Roles
-  PROCUREMENT: "Procurement",
+  PROCUREMENT: "Procurement Officer",
   ACCOUNTING: "Accounting",
   SHIPPING: "Shipping",
   DELIVERY_BASE: "Delivery Base",
@@ -48,13 +49,15 @@ export const DEPARTMENTS = {
   IT: "IT",
   ACCOUNT: "Account",
   OPERATIONS: "Operations",
-  PROCUREMENT: "Procurement",
   PROJECT: "Project",
   PURCHASE: "Purchase",
   COMPLIANCE_QHSE: "Compliance/QHSE",
   HR: "HR",
   PROTOCOL: "Protocol",
-  MANAGEMENT: "Management",
+  LEGAL: "Legal",
+  ADMIN: "Admin",
+  FREIGHT:"freight",
+
 };
 
 // Helper function to check if a role is a requester

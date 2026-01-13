@@ -1,194 +1,266 @@
 import React, { useState, useRef, useEffect } from "react";
 import { IoMdMenu, IoMdClose } from "react-icons/io";
-import {
-  MdDashboard,
-  MdPendingActions,
-  MdCheckCircle,
-  MdHistory,
-  MdPerson,
-  MdChat,
-  MdSend,
-  MdNotifications,
-} from "react-icons/md";
+import { MdPerson, MdSend } from "react-icons/md";
+import { io } from "socket.io-client";
+import { useAuth } from "../../context/AuthContext";
 
-// Demo user and chat data
-const demoUser = {
-  name: "Procurement Officer",
-  email: "officer@gemz.com",
-  initials: "PO",
-  avatarColor: "from-emerald-500 to-teal-600",
-};
-
-// Demo users to chat with
-const demoUsers = [
-  {
-    id: "john",
-    name: "John Smith",
-    role: "Fleet Manager",
-    initials: "JS",
-    avatarColor: "from-cyan-500 to-blue-600",
-    online: true,
-    unread: 2,
-  },
-  {
-    id: "marineops",
-    name: "Marine Ops",
-    role: "Operations",
-    initials: "MO",
-    avatarColor: "from-indigo-500 to-purple-600",
-    online: true,
-    unread: 0,
-  },
-  {
-    id: "engineer",
-    name: "Chief Engineer",
-    role: "Chief Engineer",
-    initials: "CE",
-    avatarColor: "from-amber-500 to-yellow-600",
-    online: false,
-    unread: 1,
-  },
-  {
-    id: "captain",
-    name: "Captain Rivers",
-    role: "Vessel Captain",
-    initials: "CR",
-    avatarColor: "from-green-500 to-emerald-600",
-    online: true,
-    unread: 0,
-  },
-];
-
-// Demo chat history per user
-const demoChatsPerUser = {
-  john: [
-    {
-      id: 1,
-      author: "John Smith",
-      authorInitials: "JS",
-      time: "09:30 AM",
-      text: "Good morning team, please confirm ETA for the spare parts delivery.",
-      self: false,
-    },
-    {
-      id: 2,
-      author: "You",
-      authorInitials: "PO",
-      time: "09:32 AM",
-      text: "Received, John. ETA is 3 days. Will update if there are changes.",
-      self: true,
-    },
-  ],
-  marineops: [
-    {
-      id: 1,
-      author: "Marine Ops",
-      authorInitials: "MO",
-      time: "09:35 AM",
-      text: "Noted. Please ensure all documentation is ready for customs.",
-      self: false,
-    },
-    {
-      id: 2,
-      author: "You",
-      authorInitials: "PO",
-      time: "09:36 AM",
-      text: "All documentation will be ready before arrival.",
-      self: true,
-    },
-  ],
-  engineer: [
-    {
-      id: 1,
-      author: "Chief Engineer",
-      authorInitials: "CE",
-      time: "08:10 AM",
-      text: "Please check the hydraulic oil levels before departure.",
-      self: false,
-    },
-  ],
-  captain: [
-    {
-      id: 1,
-      author: "Captain Rivers",
-      authorInitials: "CR",
-      time: "Yesterday",
-      text: "Weather looks clear for the next 48 hours.",
-      self: false,
-    },
-  ],
-};
-
+const API_BASE = "https://hdp-backend-1vcl.onrender.com/api/chat";
 const ChatRoom = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { user, getToken } = useAuth();
+  const [conversations, setConversations] = useState([]);
   const [search, setSearch] = useState("");
-  const [selectedUser, setSelectedUser] = useState(demoUsers[0]);
-  const [messages, setMessages] = useState(
-    demoChatsPerUser[demoUsers[0].id] || []
-  );
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [notified, setNotified] = useState(true);
+  const [typing, setTyping] = useState(false);
+  const [otherTyping, setOtherTyping] = useState(false);
+  const [pagination, setPagination] = useState({});
   const chatEndRef = useRef(null);
+  const socketRef = useRef(null);
 
-  // Filter users by search
-  const filteredUsers = demoUsers.filter(
-    (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // Change chat when user is selected
+  // Connect to WebSocket
   useEffect(() => {
-    if (selectedUser.unread) {
-      demoUsers.forEach((u) => {
-        if (u.id === selectedUser.id) u.unread = 0;
-      });
-    }
-    setMessages(demoChatsPerUser[selectedUser.id] || []);
+    const token = getToken();
+    if (!token) return;
+    const socket = io(
+      import.meta.env.VITE_WS_URL || "wss://hdp-backend-1vcl.onrender.com",
+      {
+        auth: { token },
+        transports: ["websocket"],
+      }
+    );
+    socketRef.current = socket;
+
+    socket.on("connect", () => {});
+    socket.on("disconnect", () => {});
+    socket.on("error", (err) => {});
+
+    // New message received
+    socket.on("new_message", ({ message, conversationId }) => {
+      if (selectedConversation?.conversationId === conversationId) {
+        setMessages((prev) => [...prev, message]);
+        socket.emit("mark_read", { conversationId });
+      } else {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.conversationId === conversationId
+              ? { ...c, unreadCount: (c.unreadCount || 0) + 1 }
+              : c
+          )
+        );
+      }
+    });
+
+    // Read receipts
+    socket.on("messages_read", ({ conversationId, readBy, readAt }) => {
+      // Optionally update UI for read receipts
+    });
+
+    // Conversation updated
+    socket.on("conversation_updated", (data) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.conversationId === data.conversationId ? { ...c, ...data } : c
+        )
+      );
+    });
+
+    // Typing events
+    socket.on("user_typing", ({ conversationId, userId, isTyping }) => {
+      if (
+        selectedConversation &&
+        selectedConversation.conversationId === conversationId &&
+        userId !== user?.userId
+      ) {
+        setOtherTyping(isTyping);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
     // eslint-disable-next-line
-  }, [selectedUser]);
+  }, [user]);
+
+  // Fetch conversations
+  useEffect(() => {
+    const fetchConversations = async () => {
+      const token = getToken();
+      if (!token) return;
+      const resp = await fetch(`${API_BASE}/conversations?limit=20`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await resp.json();
+      setConversations(data.conversations || []);
+    };
+    fetchConversations();
+    // eslint-disable-next-line
+  }, [user]);
+
+  // Fetch messages for selected conversation
+  useEffect(() => {
+    if (!selectedConversation) return;
+    const token = getToken();
+    const fetchMessages = async () => {
+      const resp = await fetch(
+        `${API_BASE}/conversations/${selectedConversation.conversationId}/messages?limit=50`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await resp.json();
+      setMessages(data.messages || []);
+      setPagination(data.pagination || {});
+      // Mark as read
+      socketRef.current?.emit("join_conversation", {
+        conversationId: selectedConversation.conversationId,
+      });
+      socketRef.current?.emit("mark_read", {
+        conversationId: selectedConversation.conversationId,
+      });
+    };
+    fetchMessages();
+    setSelectedUser(selectedConversation.otherParticipant);
+    // eslint-disable-next-line
+  }, [selectedConversation]);
 
   // Auto-scroll to bottom on new message
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Simulate notification
+  // Search users
   useEffect(() => {
-    if (!notified) {
-      setTimeout(() => setNotified(true), 2000);
+    if (search.length < 2) {
+      setSearchResults([]);
+      return;
     }
-  }, [notified]);
+    const token = getToken();
+    const fetchUsers = async () => {
+      const resp = await fetch(
+        `${API_BASE}/users/search?q=${encodeURIComponent(search)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await resp.json();
+      setSearchResults(data.users || []);
+    };
+    fetchUsers();
+    // eslint-disable-next-line
+  }, [search]);
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        author: "You",
-        authorInitials: demoUser.initials,
-        time: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        text: input,
-        self: true,
+  // Start conversation with searched user
+  const handleStartConversation = async (userObj) => {
+    const token = getToken();
+    const resp = await fetch(`${API_BASE}/conversations/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
-    ]);
+      body: JSON.stringify({ userId: userObj.userId }),
+    });
+    const data = await resp.json();
+
+    // 1. Refresh conversations from backend
+    const fetchConversations = async () => {
+      const token = getToken();
+      if (!token) return;
+      const resp = await fetch(`${API_BASE}/conversations?limit=20`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const convData = await resp.json();
+      setConversations(convData.conversations || []);
+      // 2. Find the conversation for the selected user and open it
+      const found = (convData.conversations || []).find(
+        (c) =>
+          c.conversationId === data.conversation.conversationId ||
+          (c.otherParticipant && c.otherParticipant.userId === userObj.userId)
+      );
+      if (found) {
+        setSelectedConversation(found);
+        setSelectedUser(found.otherParticipant);
+      } else {
+        // fallback: open the just-created conversation
+        setSelectedConversation(data.conversation);
+        setSelectedUser(data.otherParticipant);
+      }
+    };
+    await fetchConversations();
+
+    // 3. Clear search UI
+    setSearch("");
+    setSearchResults([]);
+  };
+
+  // Send message
+  const sendMessage = async () => {
+    if (!input.trim() || !selectedConversation) return;
+    const token = getToken();
+    // Send via REST
+    const resp = await fetch(`${API_BASE}/messages/send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        conversationId: selectedConversation.conversationId,
+        content: input,
+      }),
+    });
+    const data = await resp.json();
+    setMessages((prev) => [...prev, data.message]);
     setInput("");
-    setNotified(false);
+    // Optionally emit via socket for instant delivery
+    // socketRef.current?.emit("send_message", {
+    //   conversationId: selectedConversation.conversationId,
+    //   content: input,
+    // });
+  };
+
+  // Typing indicator
+  useEffect(() => {
+    if (!selectedConversation) return;
+    if (typing) {
+      socketRef.current?.emit("typing_start", {
+        conversationId: selectedConversation.conversationId,
+      });
+    } else {
+      socketRef.current?.emit("typing_stop", {
+        conversationId: selectedConversation.conversationId,
+      });
+    }
+    // eslint-disable-next-line
+  }, [typing]);
+
+  // Sidebar: show conversations, allow search for new users
+  // User list: conversations + search results
+  const userList =
+    search.length >= 2
+      ? searchResults
+      : conversations
+          .filter((c) => c.otherParticipant) // <-- add this filter
+          .map((c) => ({
+            ...c.otherParticipant,
+            unread: c.unreadCount,
+            online: c.otherParticipant.isOnline,
+            conversationId: c.conversationId,
+            lastMessagePreview: c.lastMessagePreview,
+            lastMessageAt: c.lastMessageAt,
+          }));
+
+  const markConversationAsRead = (conversationId) => {
+    if (socketRef.current && conversationId) {
+      socketRef.current.emit("mark_read", { conversationId });
+    }
   };
 
   return (
-    <div className="relative w-full  bg-grey-300">
-      
-{/* Glassmorphic animated orbs */}
+    <div className="relative w-full bg-grey-300">
+      {/* Glassmorphic animated orbs */}
       <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-400/20 rounded-full filter blur-3xl animate-pulse" />
       <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full filter blur-3xl animate-pulse delay-1000" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-400/20 rounded-full filter blur-3xl animate-pulse delay-500" />
-
-      {/* Grid pattern overlay */}
       <div
         className="absolute inset-0 opacity-[0.015]"
         style={{
@@ -197,8 +269,6 @@ const ChatRoom = () => {
         }}
       />
       <div className="relative z-10 flex w-full h-full ">
-       
-
         {/* Users Sidebar */}
         <div className="hidden md:flex flex-col w-72 bg-white/80 backdrop-blur-xl border-r border-gray-200/60 shadow-lg z-20">
           <div className="px-6 py-4 border-b border-gray-200/60 flex items-center gap-2">
@@ -219,32 +289,68 @@ const ChatRoom = () => {
             />
           </div>
           <div className="flex-1 overflow-y-auto px-2 py-2">
-            {filteredUsers.length === 0 && (
+            {userList.length === 0 && (
               <div className="text-center text-gray-400 text-sm mt-8">
                 No users found.
               </div>
             )}
             <ul className="space-y-2">
-              {filteredUsers.map((user) => (
-                <li key={user.id}>
+              {userList.map((user) => (
+                <li key={user.userId || user.conversationId}>
                   <button
-                    onClick={() => setSelectedUser(user)}
+                    onClick={() => {
+                      if (user.conversationId) {
+                        setSelectedConversation(
+                          conversations.find(
+                            (c) => c.conversationId === user.conversationId
+                          )
+                        );
+                        setSelectedUser(user);
+                        // Mark as read immediately when opening the conversation
+                        markConversationAsRead(user.conversationId);
+
+                        // --- Add this: update local unread count immediately ---
+                        setConversations((prev) =>
+                          prev.map((c) =>
+                            c.conversationId === user.conversationId
+                              ? { ...c, unreadCount: 0 }
+                              : c
+                          )
+                        );
+                      } else {
+                        handleStartConversation(user);
+                      }
+                    }}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 ${
-                      selectedUser.id === user.id
+                      selectedUser?.userId === user.userId
                         ? "bg-gradient-to-r from-emerald-500/90 to-teal-500/90 text-white shadow"
                         : "hover:bg-emerald-50 text-gray-700"
                     }`}
                   >
                     <div
-                      className={`w-10 h-10 bg-gradient-to-br ${user.avatarColor} rounded-full flex items-center justify-center text-white font-semibold text-sm`}
+                      className={`w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold text-sm`}
                     >
-                      {user.initials}
+                      {user.displayName
+                        ? user.displayName
+                            .split(" ")
+                            .map((s) => s[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()
+                        : "U"}
                     </div>
                     <div className="flex-1 min-w-0 text-left">
-                      <div className="font-semibold truncate">{user.name}</div>
+                      <div className="font-semibold truncate">
+                        {user.displayName || user.name}
+                      </div>
                       <div className="text-xs truncate opacity-70">
                         {user.role}
                       </div>
+                      {user.lastMessagePreview && (
+                        <div className="text-xs text-gray-400 truncate">
+                          {user.lastMessagePreview}
+                        </div>
+                      )}
                     </div>
                     {user.online && (
                       <span
@@ -252,7 +358,6 @@ const ChatRoom = () => {
                         title="Online"
                       ></span>
                     )}
-                    {/* Notification badge for unread messages */}
                     {user.unread > 0 && (
                       <span className="relative ml-2">
                         <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white shadow">
@@ -274,26 +379,37 @@ const ChatRoom = () => {
           <div className="px-8 py-6 border-b border-gray-200/60 bg-white/80 backdrop-blur-xl shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div
-                className={`w-10 h-10 bg-gradient-to-br ${selectedUser.avatarColor} rounded-full flex items-center justify-center text-white font-semibold text-lg`}
+                className={`w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold text-lg`}
               >
-                {selectedUser.initials}
+                {selectedUser?.displayName
+                  ? selectedUser.displayName
+                      .split(" ")
+                      .map((s) => s[0])
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase()
+                  : "U"}
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">
-                  {selectedUser.name}
+                  {selectedUser?.displayName || selectedUser?.name || ""}
                 </h2>
-                <div className="text-xs text-gray-400">{selectedUser.role}</div>
+                <div className="text-xs text-gray-400">
+                  {selectedUser?.role}
+                </div>
               </div>
-              {selectedUser.online && (
+              {selectedUser?.online && (
                 <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                   Online
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">
-                {messages.length} messages
-              </span>
+              {otherTyping && (
+                <span className="text-xs text-emerald-500 animate-pulse">
+                  Typing...
+                </span>
+              )}
             </div>
           </div>
 
@@ -302,24 +418,33 @@ const ChatRoom = () => {
             className="flex-1 overflow-y-auto px-4 md:px-12 py-8 bg-gradient-to-br from-white/80 via-slate-50/80 to-emerald-50/60"
             style={{ minHeight: 0 }}
           >
-            <div className=" mx-auto flex flex-col gap-6">
+            <div className="mx-auto flex flex-col gap-6">
               {messages.map((msg) => (
                 <div
-                  key={msg.id}
+                  key={msg.messageId || msg.id}
                   className={`flex items-end gap-3 ${
-                    msg.self ? "justify-end" : "justify-start"
+                    msg.senderId === user?.userId
+                      ? "justify-end"
+                      : "justify-start"
                   }`}
                 >
-                  {!msg.self && (
+                  {msg.senderId !== user?.userId && (
                     <div
-                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${selectedUser.avatarColor} flex items-center justify-center text-white font-semibold text-sm shadow`}
+                      className={`w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm shadow`}
                     >
-                      {msg.authorInitials}
+                      {selectedUser?.displayName
+                        ? selectedUser.displayName
+                            .split(" ")
+                            .map((s) => s[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()
+                        : "U"}
                     </div>
                   )}
                   <div
                     className={`rounded-2xl px-5 py-3 shadow-md border ${
-                      msg.self
+                      msg.senderId === user?.userId
                         ? "bg-gradient-to-br from-emerald-100/80 to-white/80 border-emerald-200/60 text-emerald-900"
                         : "bg-white/80 border-slate-200/60 text-gray-900"
                     }`}
@@ -329,16 +454,37 @@ const ChatRoom = () => {
                     }}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-bold">{msg.author}</span>
-                      <span className="text-xs text-gray-400">{msg.time}</span>
+                      <span className="text-xs font-bold">
+                        {msg.senderId === user?.userId
+                          ? "You"
+                          : selectedUser?.displayName || "User"}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {msg.createdAt
+                          ? new Date(msg.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : ""}
+                      </span>
+                      {msg.isRead && (
+                        <span className="text-xs text-emerald-400 ml-2">✓</span>
+                      )}
                     </div>
-                    <div className="text-sm leading-relaxed">{msg.text}</div>
+                    <div className="text-sm leading-relaxed">{msg.content}</div>
                   </div>
-                  {msg.self && (
+                  {msg.senderId === user?.userId && (
                     <div
-                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${demoUser.avatarColor} flex items-center justify-center text-white font-semibold text-sm shadow`}
+                      className={`w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm shadow`}
                     >
-                      {demoUser.initials}
+                      {user?.displayName
+                        ? user.displayName
+                            .split(" ")
+                            .map((s) => s[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()
+                        : "U"}
                     </div>
                   )}
                 </div>
@@ -352,19 +498,27 @@ const ChatRoom = () => {
             <input
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setTyping(e.target.value.length > 0);
+              }}
               onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder={`Message ${selectedUser.name}…`}
+              placeholder={
+                selectedUser
+                  ? `Message ${selectedUser.displayName || selectedUser.name}…`
+                  : "Select a user to chat…"
+              }
               className="flex-1 rounded-xl bg-slate-50/80 border border-slate-200/60 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-200 transition"
               style={{
                 backdropFilter: "blur(6px)",
                 boxShadow: "0 2px 8px 0 rgba(31, 38, 135, 0.04)",
               }}
               maxLength={1000}
+              disabled={!selectedConversation}
             />
             <button
               onClick={sendMessage}
-              disabled={!input.trim()}
+              disabled={!input.trim() || !selectedConversation}
               className="px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold shadow-lg hover:from-emerald-600 hover:to-teal-600 transition-all duration-150 flex items-center gap-2 disabled:opacity-50"
               style={{
                 boxShadow: "0 4px 24px 0 rgba(31, 38, 135, 0.09)",

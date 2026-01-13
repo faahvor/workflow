@@ -402,6 +402,11 @@ const showShippingFee = request?.logisticsType === "international";
     const vatRate = 0.075;
     return (item.total / (1 + vatRate)) * vatRate;
   };
+const showSrcReqId = React.useMemo(
+  () => (items || []).some((it) => it.movedFromRequestId),
+  [items]
+);
+
 const shouldHideSaveButton =
   (requestType === "pettyCash" &&
     currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL");
@@ -429,7 +434,7 @@ const shouldHideSaveButton =
               </th>
               {hasMovedFromRequestId && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[150px]">
-                  Source Request
+                  srcReqId
                 </th>
               )}
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">

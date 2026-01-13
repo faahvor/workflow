@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-const CostControllerTable = ({
+const HeadOfProjectTable = ({
   items = [],
   onEditItem,
   isReadOnly = false,
@@ -13,7 +13,6 @@ const CostControllerTable = ({
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
 
-  // ✅ ADD shipping/clearing fee logic
   const tagLower = String(tag || "").toLowerCase();
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
@@ -39,43 +38,21 @@ const CostControllerTable = ({
     const key = String(vendorField);
     const found = vendorsById.get(key);
     if (found) return found.name || found.vendorName || key;
-    // fallback: if vendorField already looks like a name, return it
     return vendorField;
   };
+
   React.useEffect(() => {
     const checkScroll = () => {
-      const container = document.getElementById("cost-controller-table-container");
+      const container = document.getElementById("head-of-project-table-container");
       if (!container) {
         setNeedsScroll(false);
         return;
       }
-      const scrollW = container.scrollWidth;
-      const clientW = container.clientWidth;
-      setNeedsScroll(scrollW > clientW + 1);
+      setNeedsScroll(container.scrollWidth > container.clientWidth + 1);
     };
-
-    const runCheck = () => {
-      requestAnimationFrame(checkScroll);
-      setTimeout(checkScroll, 50);
-    };
-
-    runCheck();
-    window.addEventListener("resize", runCheck);
-
-    return () => window.removeEventListener("resize", runCheck);
-  }, [editedItems]);
-
-  React.useEffect(() => {
-    const checkScroll = () => {
-      const container = document.getElementById("cost-controller-table-container");
-      if (container) {
-        setNeedsScroll(container.scrollWidth > container.clientWidth);
-      }
-    };
-
-    checkScroll();
+    requestAnimationFrame(checkScroll);
+    setTimeout(checkScroll, 50);
     window.addEventListener("resize", checkScroll);
-
     return () => window.removeEventListener("resize", checkScroll);
   }, [editedItems]);
 
@@ -83,18 +60,14 @@ const CostControllerTable = ({
     setEditedItems(items);
   }, [items]);
 
-  const handleEditClick = (index) => {
-    setEditingIndex(index);
-  };
+  const handleEditClick = (index) => setEditingIndex(index);
 
   const handleSaveClick = async (index) => {
     const item = editedItems[index];
-
     if (!item.quantity || item.quantity < 1) {
       alert("Quantity must be at least 1");
       return;
     }
-
     try {
       await onEditItem(item);
       setEditingIndex(null);
@@ -105,7 +78,7 @@ const CostControllerTable = ({
   };
 
   const handleCancelEdit = () => {
-    setEditedItems(items); // Reset to original
+    setEditedItems(items);
     setEditingIndex(null);
   };
 
@@ -119,7 +92,6 @@ const CostControllerTable = ({
     const quantity = parseFloat(item.quantity) || 0;
     const unitPrice = parseFloat(item.unitPrice) || 0;
     const discount = parseInt(item.discount) || 0;
-
     const baseTotal = quantity * unitPrice;
     const discountFactor =
       discount >= 1 && discount <= 100 ? (100 - discount) / 100 : 1;
@@ -136,7 +108,7 @@ const CostControllerTable = ({
 
   return (
     <div className="relative">
-      <div className="overflow-x-auto" id="cost-controller-table-container">
+      <div className="overflow-x-auto" id="head-of-project-table-container">
         <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
           <thead>
             <tr className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
@@ -186,7 +158,7 @@ const CostControllerTable = ({
                   PRN
                 </th>
               )}
-             
+              
             </tr>
           </thead>
           <tbody>
@@ -288,7 +260,7 @@ const CostControllerTable = ({
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
               const container = document.getElementById(
-                "cost-controller-table-container"
+                "head-of-project-table-container"
               );
               if (container) {
                 container.scrollLeft -= 100;
@@ -301,7 +273,7 @@ const CostControllerTable = ({
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
               const container = document.getElementById(
-                "cost-controller-table-container"
+                "head-of-project-table-container"
               );
               if (container) {
                 container.scrollLeft += 100;
@@ -316,4 +288,4 @@ const CostControllerTable = ({
   );
 };
 
-export default CostControllerTable;
+export default HeadOfProjectTable;

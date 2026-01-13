@@ -1215,16 +1215,7 @@ useEffect(() => {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
-              <div className="md:col-span-2">
-                <label className="text-xs text-slate-500">Service Type</label>
-                <input
-                  value={form.serviceType}
-                  onChange={(e) =>
-                    setForm({ ...form, serviceType: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
+             
 
               {/* Document upload dropzone (Add Vendor) */}
               <div className="md:col-span-2">

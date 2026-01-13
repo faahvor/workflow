@@ -271,6 +271,103 @@ const RequisitionPreview = forwardRef(
     const issuedToLines = [vendorNameLine, addressPart]
       .filter(Boolean)
       .join("\n");
+
+      let filteredSignatures = signaturesPrepared;
+if (
+  (String(req.department || "").toLowerCase() === "marine" ||
+  String(req.department || "").toLowerCase() === "freight") &&
+  (String(req.destination || "").toLowerCase() === "marine" ||
+  String(req.destination || "").toLowerCase() === "freight")
+) {
+  const allowedRoles = [
+    "vessel manager",
+    "technical manager",
+    "fleet manager",
+    "procurement officer",
+    "managing director",
+    "Vessel Manager",
+    "Technical Manager",
+    "Fleet Manager",
+    "Procurement Officer",
+    "Managing Director",
+  ];
+  filteredSignatures = signaturesPrepared.filter((s) =>
+    allowedRoles.includes(String(s.role).trim())
+  );
+}
+if (
+  (String(req.department || "").toLowerCase() === "project" ||
+  String(req.department || "").toLowerCase() === "freight") &&
+  (String(req.destination || "").toLowerCase() === "project" ||
+  String(req.destination || "").toLowerCase() === "freight")
+) {
+  const allowedRoles = [
+    "cost controller",
+    "head of project",
+    "managing director",
+    "Cost Controller",
+    "Head of Project",
+    "Managing Director",
+  ];
+  filteredSignatures = signaturesPrepared.filter((s) =>
+    allowedRoles.includes(String(s.role).trim())
+  );
+}
+if (
+  (String(req.department || "").toLowerCase() === "legal" ||
+  String(req.department || "").toLowerCase() === "freight") &&
+  (String(req.destination || "").toLowerCase() === "legal" ||
+  String(req.destination || "").toLowerCase() === "freight")
+) {
+  const allowedRoles = [
+    "procurement officer",
+    "legal head",
+     "managing director",
+    "Procurement Officer",
+    "Legal Head",
+    "Managing Director",
+  ];
+  filteredSignatures = signaturesPrepared.filter((s) =>
+    allowedRoles.includes(String(s.role).trim())
+  );
+}
+if (
+  (String(req.department || "").toLowerCase() === "admin" ||
+  String(req.department || "").toLowerCase() === "freight") &&
+  (String(req.destination || "").toLowerCase() === "admin" ||
+  String(req.destination || "").toLowerCase() === "freight")
+) {
+  const allowedRoles = [
+    "procurement officer",
+    "director of admin",
+     "managing director",
+    "Procurement Officer",
+    "Director of Admin",
+    "Managing Director",
+  ];
+  filteredSignatures = signaturesPrepared.filter((s) =>
+    allowedRoles.includes(String(s.role).trim())
+  );
+}
+if (
+  (String(req.department || "").toLowerCase() === "hr" ||
+  String(req.department || "").toLowerCase() === "freight") &&
+  (String(req.destination || "").toLowerCase() === "hr" ||
+  String(req.destination || "").toLowerCase() === "freight")
+) {
+  const allowedRoles = [
+    "procurement officer",
+    "hr manager",
+     "managing director",
+    "Procurement Officer",
+    "HR Manager",
+    "Managing Director",
+  ];
+  filteredSignatures = signaturesPrepared.filter((s) =>
+    allowedRoles.includes(String(s.role).trim())
+  );
+}
+
     return (
       <div
         ref={ref}
@@ -514,7 +611,7 @@ const RequisitionPreview = forwardRef(
                       {/* ✅ VAT - hide for shipping/clearing */}
                       {!showFeeColumns && (
                         <td className="py-3 text-right text-slate-700">
-                          {it.vat ? `${it.vat}%` : "-"}
+                          {it.vatAmount ? `${it.vatAmount}` : "-"}
                         </td>
                       )}
 
@@ -566,7 +663,7 @@ const RequisitionPreview = forwardRef(
                     Loading signatures…
                   </div>
                 ) : (
-                  signaturesPrepared.map((s, idx) => {
+  filteredSignatures.map((s, idx) => {
                     const ts = s.timestamp
                       ? new Date(s.timestamp).toLocaleString()
                       : "";

@@ -10,6 +10,8 @@ import {
   MdShoppingCart,
   MdAttachMoney,
   MdInventory,
+  MdPriorityHigh,
+  MdHelpOutline,
 } from "react-icons/md";
 import { useAuth } from "../../context/AuthContext";
 import { HiClock } from "react-icons/hi";
@@ -44,25 +46,25 @@ const RequesterHistory = ({
   }, [filterType]);
 
   const fetchVessels = async () => {
-  try {
-    const token = getToken();
-    const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setVessels(response.data.data || []);
-  } catch (err) {
-    console.error("❌ Error fetching vessels:", err);
-  }
-};
-useEffect(() => {
-  fetchVessels();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+    try {
+      const token = getToken();
+      const response = await axios.get(`${API_BASE_URL}/vessels?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVessels(response.data.data || []);
+    } catch (err) {
+      console.error("❌ Error fetching vessels:", err);
+    }
+  };
+  useEffect(() => {
+    fetchVessels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-const getVesselName = (vesselId) => {
-  const vessel = vessels.find((v) => v.vesselId === vesselId);
-  return vessel?.name || vesselId;
-};
+  const getVesselName = (vesselId) => {
+    const vessel = vessels.find((v) => v.vesselId === vesselId);
+    return vessel?.name || vesselId;
+  };
 
   const buildUrl = (p, s, f) => {
     const params = new URLSearchParams();
@@ -148,7 +150,7 @@ const getVesselName = (vesselId) => {
     }
   };
 
-    const getTagColor = (tag) => {
+  const getTagColor = (tag) => {
     if (!tag) return "bg-slate-100 text-slate-600 border-slate-200";
     switch (String(tag).toLowerCase()) {
       case "shipping":
@@ -157,6 +159,9 @@ const getVesselName = (vesselId) => {
         return "bg-purple-100 text-blue-700 border-purple-200";
     }
   };
+
+const isServiceRequest = (request) =>
+  request?.isService === true;
 
   // Get icon for tag
   const getTagIcon = (tag) => {
@@ -188,19 +193,15 @@ const getVesselName = (vesselId) => {
     );
   }
 
-  const sortedRequests = [
-    // High priority requests first
-    ...requests.filter((r) => r.priority === "high"),
-    // Then all others, sorted by requestId descending
-    ...requests
-      .filter((r) => r.priority !== "high")
-      .sort((a, b) => {
-        // If requestId is numeric, sort numerically
-        const numA = Number(String(a.requestId).replace(/\D/g, ""));
-        const numB = Number(String(b.requestId).replace(/\D/g, ""));
-        return numB - numA;
-      }),
-  ];
+const sortedRequests = [...requests].sort((a, b) => {
+  // High priority always comes first
+  if (a.priority === "high" && b.priority !== "high") return -1;
+  if (a.priority !== "high" && b.priority === "high") return 1;
+  // If same priority, sort by requestId descending
+  const numA = Number(String(a.requestId).replace(/\D/g, ""));
+  const numB = Number(String(b.requestId).replace(/\D/g, ""));
+  return numB - numA;
+});
   return (
     <div>
       <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 mb-6">
@@ -244,30 +245,40 @@ const getVesselName = (vesselId) => {
                       <span className="text-slate-500 text-xs font-mono font-semibold">
                         {request.requestId || request.id}
                       </span>
-                      {hasProcurementOfficerApproved(request) && (
+{request.isService === true && (
+  <span
+    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 ml-1"
+    style={{ marginLeft: 4 }}
+  >
+    <MdHelpOutline className="text-sm" />
+    <span>Services</span>
+  </span>
+)}
+
+                  {request.requestType === "inStock" || hasProcurementOfficerApproved(request) ? (
+  <span
+    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+      request.requestType
+    )}`}
+  >
+    {getTypeIcon(request.requestType)}
+    <span>{getTypeLabel(request.requestType)}</span>
+  </span>
+) : null}
+                      {request.tag && (
                         <span
-                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
-                            request.requestType
+                          className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTagColor(
+                            request.tag
                           )}`}
                         >
-                          {getTypeIcon(request.requestType)}
-                          <span>{getTypeLabel(request.requestType)}</span>
+                          {getTagIcon(request.tag)}
+                          <span>
+                            {String(request.tag).replace(/(^\w|\s\w)/g, (m) =>
+                              m.toUpperCase()
+                            )}
+                          </span>
                         </span>
                       )}
-                        {request.tag && (
-                  <span
-                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getTagColor(
-                      request.tag
-                    )}`}
-                  >
-                    {getTagIcon(request.tag)}
-                    <span>
-                      {String(request.tag).replace(/(^\w|\s\w)/g, (m) =>
-                        m.toUpperCase()
-                      )}
-                    </span>
-                  </span>
-                )}
                       {request.offshoreReqNumber && (
                         <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
                           <MdDirectionsBoat className="text-sm" />
@@ -279,10 +290,12 @@ const getVesselName = (vesselId) => {
                           Queried
                         </span>
                       )}
-                      {/* <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-100 text-emerald-700">
-                        <MdPendingActions className="text-sm" />
-                        <span>{request.requestType === "purchaseOrder" ? "Purchase Order" : "Petty Cash"}</span>
-                      </span> */}
+                       {request.priority === "high" && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-600 border-2 border-red-200 animate-pulse">
+                    <MdPriorityHigh className="text-sm" />
+                    <span>URGENT</span>
+                  </span>
+                )}
                     </div>
 
                     <p className="text-slate-600 text-sm mb-3">
@@ -307,18 +320,21 @@ const getVesselName = (vesselId) => {
                         <div className="flex items-center gap-1.5 text-slate-600">
                           <MdDirectionsBoat className="text-base" />
                           <span className="text-xs md:text-sm font-medium">
-  {getVesselName(request.vesselId)}
-</span>
+                            {getVesselName(request.vesselId)}
+                          </span>
                         </div>
                       )}
 
-                     <div className="flex items-center gap-1.5 text-slate-600">
-  <HiClock className="text-base" />
-  <span className="text-xs md:text-sm font-medium">
-    {new Date(request.createdAt).toLocaleDateString()}{" "}
-    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-  </span>
-</div>
+                      <div className="flex items-center gap-1.5 text-slate-600">
+                        <HiClock className="text-base" />
+                        <span className="text-xs md:text-sm font-medium">
+                          {new Date(request.createdAt).toLocaleDateString()}{" "}
+                          {new Date(request.createdAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

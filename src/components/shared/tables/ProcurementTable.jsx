@@ -72,6 +72,7 @@ const ProcurementTable = ({
   const [activeTableIndex, setActiveTableIndex] = useState(0);
   const tableRefs = useRef([]);
   const { getToken } = useAuth();
+  const [hoveredRow, setHoveredRow] = useState(null);
 
   const departments = [
     "marine",
@@ -213,6 +214,7 @@ const ProcurementTable = ({
               ? changes.quantity
               : localItem?.quantity || 0
           );
+
           const discountRaw =
             changes.discount !== undefined
               ? changes.discount
@@ -227,7 +229,26 @@ const ProcurementTable = ({
               ? Number(changes.shippingFee)
               : Number(localItem?.shippingFee || 0);
 
-          const baseTotal = unitPrice * quantity;
+          let pendingQuantity = quantity;
+          if (
+            (changes.inStock !== undefined
+              ? changes.inStock
+              : localItem?.inStock) &&
+            (changes.inStockQuantity !== undefined
+              ? changes.inStockQuantity
+              : localItem?.inStockQuantity) > 0
+          ) {
+            const reqQty = quantity;
+            const inStockQty =
+              Number(
+                changes.inStockQuantity !== undefined
+                  ? changes.inStockQuantity
+                  : localItem?.inStockQuantity || 0
+              ) || 0;
+            pendingQuantity = Math.max(0, reqQty - inStockQty);
+          }
+
+          const baseTotal = unitPrice * pendingQuantity;
           const discountFactor =
             discount >= 0 && discount <= 100 ? (100 - discount) / 100 : 1;
           const discountedTotal = baseTotal * discountFactor;
@@ -274,37 +295,39 @@ const ProcurementTable = ({
         }
       });
 
-    const results = await Promise.all(promises);
+      const results = await Promise.all(promises);
 
-// ✅ If parent returns the full updated request, use its items to refresh UI
-const updatedRequest =
-  results.find((r) => r && (r.items || r.data?.items)) || results[0] || null;
+      // ✅ If parent returns the full updated request, use its items to refresh UI
+      const updatedRequest =
+        results.find((r) => r && (r.items || r.data?.items)) ||
+        results[0] ||
+        null;
 
-const itemsFromServer =
-  updatedRequest?.items ||
-  updatedRequest?.data?.items ||
-  selectedRequest?.items ||
-  [];
+      const itemsFromServer =
+        updatedRequest?.items ||
+        updatedRequest?.data?.items ||
+        selectedRequest?.items ||
+        [];
 
-if (itemsFromServer && itemsFromServer.length > 0) {
-  setEditedRequests(
-    itemsFromServer.map((it) => ({
-      ...it,
-      itemId: it.itemId || it._id,
-      total: it.totalPrice ?? it.total ?? 0,
-      totalPrice: it.totalPrice ?? it.total ?? 0,
-    }))
-  );
-} else {
-  // Server didn't return items — keep local edits but clear dirty flags (they were saved)
-  setEditedRequests((prev) =>
-    prev.map((it) => ({
-      ...it,
-      _dirty: false,
-      _pendingVendor: undefined,
-    }))
-  );
-}
+      if (itemsFromServer && itemsFromServer.length > 0) {
+        setEditedRequests(
+          itemsFromServer.map((it) => ({
+            ...it,
+            itemId: it.itemId || it._id,
+            total: it.totalPrice ?? it.total ?? 0,
+            totalPrice: it.totalPrice ?? it.total ?? 0,
+          }))
+        );
+      } else {
+        // Server didn't return items — keep local edits but clear dirty flags (they were saved)
+        setEditedRequests((prev) =>
+          prev.map((it) => ({
+            ...it,
+            _dirty: false,
+            _pendingVendor: undefined,
+          }))
+        );
+      }
 
       console.log("✅ Autosave completed");
     } catch (error) {
@@ -435,7 +458,7 @@ if (itemsFromServer && itemsFromServer.length > 0) {
     });
     if (!window.confirm("Save all changes to the items?")) return;
 
-    const dirty = editedRequests.filter((it) => it._dirty);
+    const dirty = editedRequests;
     console.log("handleSaveAll - editedRequests snapshot:", editedRequests);
     console.log("handleSaveAll - dirty items:", dirty);
 
@@ -602,9 +625,9 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                 updatedItem,
               });
             }
-             if (field === "logisticsType" && value === "local") {
-    updatedItem.shippingFee = 0;
-  }
+            if (field === "logisticsType" && value === "local") {
+              updatedItem.shippingFee = 0;
+            }
           }
 
           const currentUnitPrice = parseFloat(updatedItem.unitPrice) || 0;
@@ -615,14 +638,21 @@ if (itemsFromServer && itemsFromServer.length > 0) {
               : 0;
           const isVatted = !!updatedItem.vatted;
           const shippingFee = parseFloat(updatedItem.shippingFee) || 0;
-
-          const baseTotal = currentUnitPrice * currentQuantity;
+          let pendingQuantity = currentQuantity;
+          if (
+            updatedItem.inStock &&
+            parseInt(updatedItem.inStockQuantity, 10) > 0
+          ) {
+            const reqQty = parseInt(updatedItem.quantity, 10) || 0;
+            const inStockQty = parseInt(updatedItem.inStockQuantity, 10) || 0;
+            pendingQuantity = Math.max(0, reqQty - inStockQty);
+          }
+          const baseTotal = currentUnitPrice * pendingQuantity;
           const discountFactor =
             currentDiscount >= 0 && currentDiscount <= 100
               ? (100 - currentDiscount) / 100
               : 1;
           const discountedTotal = baseTotal * discountFactor;
-
           // VAT calculation must happen after discountedTotal is known
           const vatAmount = isVatted ? discountedTotal * calculatedVat : 0;
 
@@ -960,6 +990,28 @@ if (itemsFromServer && itemsFromServer.length > 0) {
     );
   }
 
+  // ...existing code...
+  // Helper to determine if price/vendor/vat/discount fields should be disabled
+  const isPettyCashPOFieldsDisabled = (request) => {
+    // Case 1: purchaseOrder + pettyCash => disable
+    if (
+      selectedRequest?.requestType === "purchaseOrder" &&
+      request.itemType === "pettyCash"
+    ) {
+      return true;
+    }
+    // Case 2: pettyCash + pettyCash => enable
+    if (
+      selectedRequest?.requestType === "pettyCash" &&
+      request.itemType === "pettyCash"
+    ) {
+      return false;
+    }
+    // Default: not disabled
+    return false;
+  };
+  // ...existing code...
+
   return (
     <div className="p-4 w-full mx-auto overflow-x-auto">
       {isSaving && (
@@ -1029,11 +1081,7 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                         Store Quantity
                       </th>
                     )}
-                    {showItemTypeAndDept && hasAnyInStock && (
-                      <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
-                        Stock Location
-                      </th>
-                    )}
+
                     {showItemTypeAndDept && (
                       <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                         Logistics Type
@@ -1086,10 +1134,23 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                 <tbody>
                   {vendorGroup.items.map((request, index) => {
                     const itemId = request.itemId || request._id;
+                    const showGreenBorder =
+                      request.foundInInventory === true &&
+                      Number(request.inventoryStockLevel) > 0;
+                    const showPopup = showGreenBorder && hoveredRow === itemId;
+
                     return (
                       <tr
                         key={itemId}
-                        className="hover:bg-emerald-50 transition-colors duration-150"
+                        className={`hover:bg-emerald-50 transition-colors duration-150 relative`}
+                        style={{
+                          boxShadow: showGreenBorder
+                            ? "0 0 0 2px #22c55e"
+                            : undefined,
+                          borderRadius: showGreenBorder ? "8px" : undefined,
+                        }}
+                        onMouseEnter={() => setHoveredRow(itemId)}
+                        onMouseLeave={() => setHoveredRow(null)}
                       >
                         <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                           {index + 1}
@@ -1217,7 +1278,9 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                 );
                               }}
                               className={`w-[170px] text-black ${
-                                request.itemType === "pettyCash"
+                                request.inStock &&
+                                parseInt(request.inStockQuantity, 10) ===
+                                  parseInt(request.quantity, 10)
                                   ? "bg-gray-200 cursor-not-allowed"
                                   : ""
                               }`}
@@ -1226,14 +1289,6 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                   ...provided,
                                   minWidth: "100px",
                                   fontSize: "14px",
-                                  backgroundColor:
-                                    request.itemType === "pettyCash"
-                                      ? "#e5e7eb"
-                                      : provided.backgroundColor,
-                                  cursor:
-                                    request.itemType === "pettyCash"
-                                      ? "not-allowed"
-                                      : provided.cursor,
                                 }),
                                 menuPortal: (base) => ({
                                   ...base,
@@ -1244,7 +1299,12 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                               menuPlacement="auto"
                               placeholder="Select Vendor"
                               isClearable
-                              isDisabled={request.itemType === "pettyCash"}
+                              isDisabled={
+                                isPettyCashPOFieldsDisabled(request) ||
+                                (request.inStock &&
+                                  parseInt(request.inStockQuantity, 10) ===
+                                    parseInt(request.quantity, 10))
+                              }
                             />
                           )}
                         </td>
@@ -1426,35 +1486,6 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                           </td>
                         )}
 
-                        {showItemTypeAndDept && hasAnyInStock && (
-                          <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
-                            {request.inStock &&
-                            parseInt(request.inStockQuantity, 10) > 0 ? (
-                              <select
-                                value={request.storeLocation || ""}
-                                onChange={(e) =>
-                                  handleChange(
-                                    itemId,
-                                    "storeLocation",
-                                    e.target.value
-                                  )
-                                }
-                                disabled={isPreview || readOnly}
-                                className="border px-2 py-1 rounded-md w-40 text-black"
-                              >
-                                <option value="">Select store location</option>
-                                {STORE_LOCATIONS.map((loc) => (
-                                  <option key={loc} value={loc}>
-                                    {loc}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <div className="text-sm text-slate-500">N/A</div>
-                            )}
-                          </td>
-                        )}
-
                         {showItemTypeAndDept && (
                           <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                             <select
@@ -1578,10 +1609,8 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                     ) || null
                                   }
                                   onChange={(selectedOption) => {
-                                    // ignore changes when item is inStock
                                     const newCurrency =
                                       selectedOption?.value || "";
-
                                     setEditedRequests((prev) =>
                                       prev.map((item) =>
                                         item.itemId === request.itemId
@@ -1589,20 +1618,43 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                           : item
                                       )
                                     );
-
                                     handleChange(
                                       request.itemId,
                                       "currency",
                                       newCurrency
                                     );
                                   }}
-                                  className={`w-32 `}
+                                  className={`w-32 ${
+                                    request.inStock &&
+                                    parseInt(request.inStockQuantity, 10) ===
+                                      parseInt(request.quantity, 10)
+                                      ? "bg-gray-200 cursor-not-allowed"
+                                      : ""
+                                  }`}
                                   styles={{
-                                    control: (provided) => ({
+                                    control: (provided, state) => ({
                                       ...provided,
                                       minWidth: "80px",
                                       fontSize: "14px",
                                       zIndex: 500,
+                                      backgroundColor:
+                                        state.isDisabled ||
+                                        (request.inStock &&
+                                          parseInt(
+                                            request.inStockQuantity,
+                                            10
+                                          ) === parseInt(request.quantity, 10))
+                                          ? "#e5e7eb"
+                                          : provided.backgroundColor,
+                                      cursor:
+                                        state.isDisabled ||
+                                        (request.inStock &&
+                                          parseInt(
+                                            request.inStockQuantity,
+                                            10
+                                          ) === parseInt(request.quantity, 10))
+                                          ? "not-allowed"
+                                          : provided.cursor,
                                     }),
                                     menuPortal: (base) => ({
                                       ...base,
@@ -1612,13 +1664,25 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                   menuPortalTarget={document.body}
                                   menuPlacement="auto"
                                   isClearable
-                                  isDisabled={false}
+                                  isDisabled={
+                                    isPettyCashPOFieldsDisabled(request) ||
+                                    (request.inStock &&
+                                      parseInt(request.inStockQuantity, 10) ===
+                                        parseInt(request.quantity, 10))
+                                  }
                                   placeholder="Select"
                                 />
                                 <input
                                   type="number"
                                   min="0"
-                                  className={`border px-2 py-1 rounded-md w-24`}
+                                  className={`border px-2 py-1 rounded-md w-24 ${
+                                    isPettyCashPOFieldsDisabled(request) ||
+                                    (request.inStock &&
+                                      parseInt(request.inStockQuantity, 10) ===
+                                        parseInt(request.quantity, 10))
+                                      ? "bg-gray-200 cursor-not-allowed border-0"
+                                      : ""
+                                  }`}
                                   placeholder="Unit Price"
                                   value={
                                     editedRequests.find(
@@ -1639,7 +1703,12 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                     }
                                   }}
                                   step="any"
-                                  disabled={false}
+                                  disabled={
+                                    isPettyCashPOFieldsDisabled(request) ||
+                                    (request.inStock &&
+                                      parseInt(request.inStockQuantity, 10) ===
+                                        parseInt(request.quantity, 10))
+                                  }
                                 />
                               </div>
                             ) : (
@@ -1679,8 +1748,20 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                       handleChange(itemId, "discount", value);
                                     }
                                   }}
-                                  className={`border px-2 py-1 rounded-md w-16 text-black`}
-                                  disabled={false}
+                                  className={`border px-2 py-1 rounded-md w-16 text-black ${
+                                    isPettyCashPOFieldsDisabled(request) ||
+                                    (request.inStock &&
+                                      parseInt(request.inStockQuantity, 10) ===
+                                        parseInt(request.quantity, 10))
+                                      ? "bg-gray-200 cursor-not-allowed border-0"
+                                      : ""
+                                  }`}
+                                  disabled={
+                                    isPettyCashPOFieldsDisabled(request) ||
+                                    (request.inStock &&
+                                      parseInt(request.inStockQuantity, 10) ===
+                                        parseInt(request.quantity, 10))
+                                  }
                                 />
                                 <span>%</span>
                               </div>
@@ -1711,17 +1792,20 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                                 );
                               }}
                               disabled={
-                                isPreview ||
-                                readOnly ||
-                                request.itemType === "pettyCash"
+                                isPettyCashPOFieldsDisabled(request) ||
+                                (request.inStock &&
+                                  parseInt(request.inStockQuantity, 10) ===
+                                    parseInt(request.quantity, 10))
                               }
-                              className={
+                              className={`${
                                 isPreview ||
-                                request.inStock ||
-                                request.itemType === "pettyCash"
-                                  ? "cursor-not-allowed"
+                                isPettyCashPOFieldsDisabled(request) ||
+                                (request.inStock &&
+                                  parseInt(request.inStockQuantity, 10) ===
+                                    parseInt(request.quantity, 10))
+                                  ? "bg-gray-200 cursor-not-allowed"
                                   : ""
-                              }
+                              }`}
                             />
                           </td>
                         )}
@@ -1835,6 +1919,66 @@ if (itemsFromServer && itemsFromServer.length > 0) {
                               request.purchaseOrderNumber || "N/A"
                             )}
                           </td>
+                        )}
+                        {showPopup && (
+                          <>
+                            {/* Top Right */}
+                            <td
+                              colSpan={100}
+                              style={{
+                                position: "absolute",
+                                top: 0,
+                                right: 0,
+                                zIndex: 10,
+                                pointerEvents: "none",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  background: "#22c55e",
+                                  color: "#fff",
+                                  padding: "4px 12px",
+                                  borderRadius: "0 8px 0 8px",
+                                  fontWeight: "bold",
+                                  fontSize: "14px",
+                                  boxShadow: "0 2px 8px rgba(34,197,94,0.15)",
+                                  marginTop: "4px",
+                                  marginRight: "4px",
+                                  display: "inline-block",
+                                }}
+                              >
+                                {request.inventoryStockLevel}
+                              </div>
+                            </td>
+                            {/* Top Left */}
+                            <td
+                              colSpan={100}
+                              style={{
+                                position: "absolute",
+                                top: 0,
+                                left: 0,
+                                zIndex: 10,
+                                pointerEvents: "none",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  background: "#22c55e",
+                                  color: "#fff",
+                                  padding: "4px 12px",
+                                  borderRadius: "8px 0 8px 0",
+                                  fontWeight: "bold",
+                                  fontSize: "14px",
+                                  boxShadow: "0 2px 8px rgba(34,197,94,0.15)",
+                                  marginTop: "4px",
+                                  marginLeft: "4px",
+                                  display: "inline-block",
+                                }}
+                              >
+                                {request.inventoryStockLevel}
+                              </div>
+                            </td>
+                          </>
                         )}
                       </tr>
                     );

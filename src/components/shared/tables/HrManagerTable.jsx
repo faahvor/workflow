@@ -1,10 +1,8 @@
-// src/components/tables/VesselManagerTable.jsx
-
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { MdDelete } from "react-icons/md";
 
-const VesselManagerTable = ({
+const HrManagerTable = ({
   items = [],
   onEditItem,
   onDeleteItem,
@@ -13,14 +11,14 @@ const VesselManagerTable = ({
   currentState = "",
   requestType = "",
   vendors = [],
-  tag = "", // ✅ ADD THIS PROP
+  tag = "",
   clearingFee,
   request,
 }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
-  const isSecondApproval = currentState === "PENDING_VESSEL_MANAGER_APPROVAL_2";
+  const isSecondApproval = currentState === "PENDING_HR_MANAGER_APPROVAL_2";
   const isPettyCash = requestType === "pettyCash";
   const tagLower = String(tag || "").toLowerCase();
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
@@ -31,7 +29,6 @@ const VesselManagerTable = ({
   const getFeeValue = (item) => {
     if (!item) return 0;
     const v = item[feeFieldName];
-    // If clearingFee is not on item, fallback to request.clearingFee
     if (feeFieldName === "clearingFee" && (v === undefined || v === null)) {
       return typeof clearingFee === "number"
         ? clearingFee
@@ -40,10 +37,7 @@ const VesselManagerTable = ({
     return typeof v === "number" ? v : Number(v || 0);
   };
 
-  // ✅ Hide actions when showing fee columns (first approval with shipping/clearing tag)
   const hideActionsForFee = showFeeColumns && !isSecondApproval;
-
-  // ✅ Check if we're in second approval stage
 
   const vendorsById = React.useMemo(() => {
     const map = new Map();
@@ -54,11 +48,8 @@ const VesselManagerTable = ({
     return map;
   }, [vendors]);
 
-  // ...existing code...
   const resolveVendorName = (vendorField) => {
     if (!vendorField) return "N/A";
-
-    // if an object, prefer name then try vendorId/id fallback
     if (typeof vendorField === "object") {
       const name =
         vendorField.name ||
@@ -74,8 +65,6 @@ const VesselManagerTable = ({
       }
       return "N/A";
     }
-
-    // string or id
     const key = String(vendorField);
     if (vendorsById.has(key)) {
       const found = vendorsById.get(key);
@@ -83,8 +72,7 @@ const VesselManagerTable = ({
     }
     return key;
   };
-  // ...existing code...
-  // Update editedItems when items prop changes
+
   React.useEffect(() => {
     setEditedItems(items);
   }, [items]);
@@ -93,25 +81,18 @@ const VesselManagerTable = ({
     setEditingIndex(index);
   };
 
-  // ...existing code...
   const handleSaveClick = async (index) => {
     const item = editedItems[index];
-
-    // ensure a valid quantity
     const quantity = Number(item.quantity) || 0;
     if (quantity < 1) {
       alert("Quantity must be at least 1");
       return;
     }
-
-    // Build minimal, sanitized payload (only send fields you intend to change)
     const payload = {
       itemId: item.itemId || item._id,
       quantity,
-      requestId, // include requestId explicitly
+      requestId,
     };
-
-    // optionally include vendorId if present
     if (
       item.vendorId !== undefined &&
       item.vendorId !== null &&
@@ -119,48 +100,20 @@ const VesselManagerTable = ({
     ) {
       payload.vendorId = item.vendorId;
     }
-
-    console.log("VesselManagerTable -> sending PATCH payload:", payload);
-
     try {
-      const result = await onEditItem(payload);
-
-      console.log("VesselManagerTable -> edit result:", result);
-
-      // Update local copy immediately so UI reflects saved quantity
+      await onEditItem(payload);
       setEditedItems((prev) =>
         prev.map((it, i) => (i === index ? { ...it, quantity } : it))
       );
-
       setEditingIndex(null);
       alert("✅ Item updated successfully!");
     } catch (error) {
-      console.error("❌ Error saving item:", {
-        message: error.message,
-        status: error.response?.status,
-        responseData: error.response?.data,
-        payload,
-      });
-
-      const serverErrors = error.response?.data?.errors;
-      if (Array.isArray(serverErrors) && serverErrors.length) {
-        const msgs = serverErrors
-          .map((e) => {
-            const field = e.path || e.param || e.location || "field";
-            const msg = e.msg || e.message || JSON.stringify(e);
-            return `${field}: ${msg}`;
-          })
-          .join("; ");
-        alert(`Server validation errors: ${msgs}`);
-      } else {
-        alert("❌ Failed to update item");
-      }
+      alert("❌ Failed to update item");
     }
   };
-  // ...existing code...
 
   const handleCancelEdit = () => {
-    setEditedItems(items); // Reset to original
+    setEditedItems(items);
     setEditingIndex(null);
   };
 
@@ -171,11 +124,8 @@ const VesselManagerTable = ({
   };
 
   const handleDeleteClick = (item) => {
-    // delegate deletion flow to parent (parent will open modal and call API)
     if (typeof onDeleteItem === "function") {
       onDeleteItem(item);
-    } else {
-      console.warn("onDeleteItem not provided");
     }
   };
 
@@ -187,30 +137,21 @@ const VesselManagerTable = ({
     );
   }
 
-  // ✅ Calculate VAT amount
   const calculateVatAmount = (item) => {
     if (!item.vatted || !item.total) return 0;
-    // Assuming VAT is included in total, extract it
-    // If total includes VAT, VAT = total - (total / (1 + vatRate))
-    // For now, using a standard 7.5% VAT rate
     const vatRate = 0.075;
     return (item.total / (1 + vatRate)) * vatRate;
   };
-  // Check if table needs horizontal scrolling
+
   React.useEffect(() => {
     const checkScroll = () => {
-      const container = document.getElementById("vessel-table-container");
+      const container = document.getElementById("hr-table-container");
       if (container) {
         setNeedsScroll(container.scrollWidth > container.clientWidth);
       }
     };
-
-    // Check on mount and when items change
     checkScroll();
-
-    // Also check on window resize
     window.addEventListener("resize", checkScroll);
-
     return () => window.removeEventListener("resize", checkScroll);
   }, [editedItems, isSecondApproval]);
 
@@ -232,14 +173,15 @@ const VesselManagerTable = ({
         ))
     );
   }
+
   return (
     <div className="relative">
-      {/* ✅ Scrollable table container */}
-      <div className="overflow-x-auto" id="vessel-table-container">
-<table
-  className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-visible"
-  style={{ borderCollapse: "collapse" }}
->          <thead>
+      <div className="overflow-x-auto" id="hr-table-container">
+        <table
+          className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-visible"
+          style={{ borderCollapse: "collapse" }}
+        >
+          <thead>
             <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                 SN
@@ -264,15 +206,11 @@ const VesselManagerTable = ({
                   Shipping Qty
                 </th>
               )}
-
-              {/* ✅ Shipping/Clearing Fee column - only in first approval when tag is shipping/clearing */}
               {showFeeColumns && !isSecondApproval && (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
                   {feeLabel}
                 </th>
               )}
-
-              {/* ✅ Show pricing columns in second approval */}
               {(isSecondApproval || isPettyCash) && (
                 <>
                   {!isPettyCash && (
@@ -285,11 +223,9 @@ const VesselManagerTable = ({
                       Shipping Fee
                     </th>
                   )}
-
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Unit Price
                   </th>
-
                   {!isPettyCash && (
                     <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                       Discount (%)
@@ -298,7 +234,6 @@ const VesselManagerTable = ({
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Total Price
                   </th>
-
                   {!isPettyCash && (
                     <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                       VAT Amount
@@ -311,8 +246,6 @@ const VesselManagerTable = ({
                   PRN
                 </th>
               )}
-
-              {/* ✅ Hide Actions column in second approval */}
               {!isReadOnly &&
                 !isSecondApproval &&
                 !isPettyCash &&
@@ -325,32 +258,27 @@ const VesselManagerTable = ({
           </thead>
           <tbody>
             {editedItems.map((item, index) => (
-<tr
-  key={item.itemId || index}
-  className="hover:bg-emerald-50 transition-colors duration-150"
-  style={
-    item.isDuplicateItem
-      ? {
-          boxShadow: "0 0 0 2px #ef5858",
-          borderRadius: "8px",
-          background: "#f4f1f1",
-          zIndex: 2,
-          position: "relative",
-        }
-      : undefined
-  }
->
-                {/* Serial Number */}
+              <tr
+                key={item.itemId || index}
+                className="hover:bg-emerald-50 transition-colors duration-150"
+                style={
+                  item.isDuplicateItem
+                    ? {
+                        boxShadow: "0 0 0 2px #ef5858",
+                        borderRadius: "8px",
+                        background: "#f4f1f1",
+                        zIndex: 2,
+                        position: "relative",
+                      }
+                    : undefined
+                }
+              >
                 <td className="border border-slate-200 px-4 text-center text-sm font-medium text-slate-900">
                   {index + 1}
                 </td>
-
-                {/* Description */}
                 <td className="border border-slate-200 px-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                   {item.name || "N/A"}
                 </td>
-
-                {/* Item Type */}
                 <td
                   className="border border-slate-200 px-4  text-center text-sm font-medium text-slate-900"
                   style={{ minWidth: "100px" }}
@@ -359,18 +287,12 @@ const VesselManagerTable = ({
                     ? item.makersType || item.itemType || "N/A"
                     : "N/A"}
                 </td>
-
-                {/* Maker */}
                 <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
                   {item.maker || "N/A"}
                 </td>
-
-                {/* Maker's Part No */}
                 <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
                   {item.makersPartNo || "N/A"}
                 </td>
-
-                {/* Quantity - Editable only in first approval */}
                 <td className="border border-slate-200 px-4 py-[5px] text-center">
                   {editingIndex === index && !isSecondApproval ? (
                     <input
@@ -388,8 +310,6 @@ const VesselManagerTable = ({
                     </span>
                   )}
                 </td>
-
-                {/* ✅ Shipping Qty - only in first approval when tag is shipping/clearing */}
                 {showFeeColumns && !isSecondApproval && (
                   <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
                     <span className="font-semibold text-slate-900">
@@ -397,8 +317,6 @@ const VesselManagerTable = ({
                     </span>
                   </td>
                 )}
-
-                {/* ✅ Shipping/Clearing Fee - only in first approval when tag is shipping/clearing */}
                 {showFeeColumns && !isSecondApproval && (
                   <td className="border border-slate-200 px-4 py-[5px] text-right text-sm text-slate-700">
                     {item.currency || "NGN"}{" "}
@@ -408,31 +326,25 @@ const VesselManagerTable = ({
                     })}
                   </td>
                 )}
-
-                {/* ✅ Pricing Columns (only in second approval) */}
                 {(isSecondApproval || isPettyCash) && (
                   <>
-                    {/* ✅ Vendor Column */}
-
                     {!isPettyCash && (
                       <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
                         {resolveVendorName(item.vendor)}
                       </td>
                     )}
-
                     {showShippingFee && (
-  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-    {request?.shippingFee ? (
-      <>
-        {item.currency || "NGN"}{" "}
-        {parseFloat(request.shippingFee).toFixed(2)}
-      </>
-    ) : (
-      "N/A"
-    )}
-  </td>
-)}
-                    {/* Unit Price */}
+                      <td className="border border-slate-200 px-4 py-[5px] text-right text-sm text-slate-700">
+                        {item.shippingFee ? (
+                          <>
+                            {item.currency || "NGN"}{" "}
+                            {parseFloat(item.shippingFee).toFixed(2)}
+                          </>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                    )}
                     <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
                       {item.currency || "NGN"}{" "}
                       {Number(item.unitPrice || 0).toLocaleString(undefined, {
@@ -440,15 +352,11 @@ const VesselManagerTable = ({
                         maximumFractionDigits: 2,
                       })}
                     </td>
-
-                    {/* Discount */}
                     {!isPettyCash && (
                       <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
                         {item.discount ? `${item.discount}%` : "0%"}
                       </td>
                     )}
-
-                    {/* Total Price */}
                     <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-900">
                       <span className="font-semibold">
                         {item.currency || "NGN"}{" "}
@@ -460,13 +368,10 @@ const VesselManagerTable = ({
                         })}
                       </span>
                     </td>
-
-                    {/* VAT Amount */}
                     {!isPettyCash && (
                       <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
                         {item.currency || "NGN"}{" "}
-
-                                             {item.vatAmount ? `${item.vatAmount}` : "-"}
+                        {item.vatAmount ? `${item.vatAmount}` : "-"}
                       </td>
                     )}
                   </>
@@ -479,8 +384,6 @@ const VesselManagerTable = ({
                       "N/A"}
                   </td>
                 )}
-
-                {/* ✅ Actions (hidden in second approval) */}
                 {!isReadOnly &&
                   !isSecondApproval &&
                   !isPettyCash &&
@@ -530,16 +433,12 @@ const VesselManagerTable = ({
           </tbody>
         </table>
       </div>
-
-      {/* ✅ Fixed scroll arrows - stays in place while table scrolls */}
       {needsScroll && (
         <div className="flex justify-between mt-4">
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById(
-                "vessel-table-container"
-              );
+              const container = document.getElementById("hr-table-container");
               if (container) {
                 container.scrollLeft -= 100;
               }
@@ -550,9 +449,7 @@ const VesselManagerTable = ({
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {
-              const container = document.getElementById(
-                "vessel-table-container"
-              );
+              const container = document.getElementById("hr-table-container");
               if (container) {
                 container.scrollLeft += 100;
               }
@@ -566,4 +463,4 @@ const VesselManagerTable = ({
   );
 };
 
-export default VesselManagerTable;
+export default HrManagerTable;

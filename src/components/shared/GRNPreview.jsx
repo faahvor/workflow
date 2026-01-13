@@ -128,6 +128,11 @@ useEffect(() => {
     
 
     const req = liveRequest || {};
+    const isPurchaseOrder = String(req.requestType || "").toLowerCase() === "purchaseorder";
+   
+
+// Helper: delivery roles for purchase order signatures
+const deliveryRoles = ["delivery base", "delivery jetty", "delivery vessel"];
     const usedItems =
       Array.isArray(liveItems) && liveItems.length > 0
         ? liveItems
@@ -175,7 +180,22 @@ const vendorName =
           : Number(it.unitPrice || 0) * Number(it.quantity || 0);
       return s + (isNaN(total) ? 0 : total);
     }, 0);
-
+    
+ let approvedBySignatures = [];
+if (isPurchaseOrder) {
+  approvedBySignatures = signaturesPrepared.filter(
+    (s) =>
+      deliveryRoles.includes(String(s.role || "").trim().toLowerCase())
+  );
+} else {
+  // Default: store base/jetty/vessel for inStock and others
+  approvedBySignatures = signaturesPrepared.filter(
+    (s) =>
+      ["store base", "store jetty", "store vessel"].includes(
+        String(s.role || "").trim().toLowerCase()
+      )
+  );
+}
     return (
   <div
     ref={ref}
@@ -361,7 +381,7 @@ const vendorName =
     </table>
     {/* Footer */}
     <div className="grid grid-cols-2 gap-[4rem] mt-8 text-xs">
- {/* Left: Approved by */}
+{/* Left: Approved by */}
 <div>
   <div className="mb-2 text-slate-700 font-semibold">Approved by:</div>
   <div>
@@ -369,134 +389,126 @@ const vendorName =
       <div className="text-sm text-slate-500">
         Loading signatures…
       </div>
-    ) : signaturesPrepared.filter((s) =>
-        ["store base", "store jetty", "store vessel"].includes(
-          (s.role || "").toLowerCase()
-        )
-      ).length === 0 ? (
+    ) : approvedBySignatures.length === 0 ? (
       <div className="text-sm text-slate-500">
         No signatures yet
       </div>
     ) : (
-      signaturesPrepared
-        .filter((s) =>
-          ["store base", "store jetty", "store vessel"].includes(
-            (s.role || "").toLowerCase()
-          )
-        )
-        .map((s, idx) => {
-          const ts = s.timestamp
-            ? new Date(s.timestamp).toLocaleString()
-            : "";
-          return (
-            <div
-              key={s.userId || idx}
-              className="bg-white p-3 rounded-xl border border-slate-100"
-            >
-              {s.imageData ? (
-                <div style={{ height: 40 }}>
-                  <img
-                    src={s.imageData}
-                    alt={s.name}
-                    style={{
-                      maxWidth: 160,
-                      height: 36,
-                      objectFit: "contain",
-                    }}
-                  />
-                </div>
-              ) : (
-                <div
+      approvedBySignatures.map((s, idx) => {
+        const ts = s.timestamp
+          ? new Date(s.timestamp).toLocaleString()
+          : "";
+        return (
+          <div
+            key={s.userId || idx}
+            className="bg-white p-3 rounded-xl border border-slate-100"
+          >
+            {s.imageData ? (
+              <div style={{ height: 40 }}>
+                <img
+                  src={s.imageData}
+                  alt={s.name}
                   style={{
-                    height: 25,
-                    fontFamily:
-                      "Brush Script MT, Lucida Handwriting, cursive",
-                    fontSize: 15,
-                    color: "#036173",
+                    maxWidth: 160,
+                    height: 36,
+                    objectFit: "contain",
                   }}
-                >
-                  {s.name}
-                </div>
-              )}
-              <div className="mt-2">
-                <div className="text-sm font-semibold">{s.name}</div>
-                <div className="text-xs text-slate-500">{s.role}</div>
-                <div className="text-xs text-slate-400">{ts}</div>
+                />
               </div>
+            ) : (
+              <div
+                style={{
+                  height: 25,
+                  fontFamily:
+                    "Brush Script MT, Lucida Handwriting, cursive",
+                  fontSize: 15,
+                  color: "#036173",
+                }}
+              >
+                {s.name}
+              </div>
+            )}
+            <div className="mt-2">
+              <div className="text-sm font-semibold">{s.name}</div>
+              <div className="text-xs text-slate-500">{s.role}</div>
+              <div className="text-xs text-slate-400">{ts}</div>
             </div>
-          );
-        })
+          </div>
+        );
+      })
     )}
   </div>
 </div>
 {/* Right: Received by */}
-<div>
-  <div className="mb-2 text-slate-700 font-semibold">Received by:</div>
-  <div className="">
-    {loading ? (
-      <div className="text-sm text-slate-500">
-        Loading signatures…
-      </div>
-    ) : signaturesPrepared.filter(
-        (s) =>
-          (s.role || "").toLowerCase() === "requester" &&
-          (s.action === "APPROVE" || !s.action)
-      ).length === 0 ? (
-      <div className="text-sm text-slate-500">
-        No signatures
-      </div>
-    ) : (
-      signaturesPrepared
-        .filter(
+{!isPurchaseOrder && (
+  <div>
+    <div className="mb-2 text-slate-700 font-semibold">Received by:</div>
+    <div className="">
+      {loading ? (
+        <div className="text-sm text-slate-500">
+          Loading signatures…
+        </div>
+      ) : signaturesPrepared.filter(
           (s) =>
             (s.role || "").toLowerCase() === "requester" &&
             (s.action === "APPROVE" || !s.action)
-        )
-        .map((s, idx) => {
-          const ts = s.timestamp
-            ? new Date(s.timestamp).toLocaleString()
-            : "";
-          return (
-            <div
-              key={s.userId || idx}
-              className="bg-white p-3 rounded-xl border border-slate-100"
-            >
-              {s.imageData ? (
-                <div style={{ height: 40 }}>
-                  <img
-                    src={s.imageData}
-                    alt={s.name}
+        ).length === 0 ? (
+        <div className="text-sm text-slate-500">
+          No signatures
+        </div>
+      ) : (
+        signaturesPrepared
+          .filter(
+            (s) =>
+              (s.role || "").toLowerCase() === "requester" &&
+              (s.action === "APPROVE" || !s.action)
+          )
+          .map((s, idx) => {
+            const ts = s.timestamp
+              ? new Date(s.timestamp).toLocaleString()
+              : "";
+            return (
+              <div
+                key={s.userId || idx}
+                className="bg-white p-3 rounded-xl border border-slate-100"
+              >
+                {s.imageData ? (
+                  <div style={{ height: 40 }}>
+                    <img
+                      src={s.imageData}
+                      alt={s.name}
+                      style={{
+                        maxWidth: 160,
+                        height: 36,
+                        objectFit: "contain",
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div
                     style={{
-                      maxWidth: 160,
-                      height: 36,
-                      objectFit: "contain",
+                      height: 25,
+                      fontFamily:
+                        "Brush Script MT, Lucida Handwriting, cursive",
+                      fontSize: 15,
+                      color: "#036173",
                     }}
-                  />
+                  >
+                    {s.name}
+                  </div>
+                )}
+                <div className="mt-2">
+                  <div className="text-sm font-semibold">{s.name}</div>
+                  <div className="text-xs text-slate-500">{s.role}</div>
+                  <div className="text-xs text-slate-400">{ts}</div>
                 </div>
-              ) : (
-                <div
-                  style={{
-                    height: 25,
-                    fontFamily:
-                      "Brush Script MT, Lucida Handwriting, cursive",
-                    fontSize: 15,
-                    color: "#036173",
-                  }}
-                >
-                  {s.name}
-                </div>
-              )}
-              <div className="mt-2">
-                <div className="text-sm font-semibold">{s.name}</div>
-                <div className="text-xs text-slate-500">{s.role}</div>
-                <div className="text-xs text-slate-400">{ts}</div>
               </div>
-            </div>
-          );
-        })
-    )}
+            );
+          })
+      )}
+    </div>
   </div>
-</div>
+)}
 </div>
     {loading && (
       <div className="text-xs text-slate-500 mt-2">Refreshing preview…</div>

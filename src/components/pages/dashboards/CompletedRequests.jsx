@@ -10,6 +10,7 @@ import {
   MdPriorityHigh,
   MdInventory,
   MdLocalShipping,
+  MdHelpOutline,
 } from "react-icons/md";
 import RequestDetailView from "../../pages/dashboards/RequestDetailView";
 import { HiClock } from "react-icons/hi";
@@ -210,6 +211,25 @@ const getTypeIcon = (type) => {
     setSelectedRequest(null);
   };
 
+   function hasProcurementOfficerApproved(request) {
+    return (
+      Array.isArray(request.history) &&
+      (request.history.some(
+        (h) =>
+          h.action === "APPROVE" &&
+          h.role === "Procurement Officer" &&
+          h.info === "Procurement Officer Approved"
+      ) ||
+        request.history.some(
+          (h) =>
+            h.action === "SPLIT" &&
+            h.role === "SYSTEM" &&
+            typeof h.info === "string" &&
+            h.info.includes("Petty Cash items moved to Petty Cash flow")
+        ))
+    );
+  }
+
   return (
     <div className="">
       <div className="mb-6 flex items-start justify-between gap-4">
@@ -271,14 +291,26 @@ const getTypeIcon = (type) => {
                     )}
 
                     {/* Request type badge */}
-                    <span
-                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
-                        request.requestType
-                      )}`}
-                    >
-                      {getTypeIcon(request.requestType)}
-                      <span>{getTypeLabel(request.requestType)}</span>
-                    </span>
+                     {request.isService === true && (
+                                     <span
+                                       className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 ml-1"
+                                       style={{ marginLeft: 4 }}
+                                     >
+                                       <MdHelpOutline className="text-sm" />
+                                       <span>Services</span>
+                                     </span>
+                                   )}
+                                   {request.requestType === "inStock" ||
+                                   hasProcurementOfficerApproved(request) ? (
+                                     <span
+                                       className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+                                         request.requestType
+                                       )}`}
+                                     >
+                                       {getTypeIcon(request.requestType)}
+                                       <span>{getTypeLabel(request.requestType)}</span>
+                                     </span>
+                                   ) : null}
 
                     {/* Priority/Urgent badge */}
                     {request.priority === "high" && (

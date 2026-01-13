@@ -282,6 +282,134 @@ const RequestFormPreview = forwardRef(
 
     const isInStock = req.requestType === "inStock";
 
+    let filteredSignatures = signaturesPrepared;
+
+    // If marine department/destination, filter to allowed roles
+    if (
+      (String(req.department || "").toLowerCase() === "marine" ||
+        String(req.department || "").toLowerCase() === "freight") &&
+      (String(req.destination || "").toLowerCase() === "marine" ||
+        String(req.destination || "").toLowerCase() === "freight")
+    ) {
+      const allowedRoles = [
+        "requester",
+        "vesselmanager",
+        "Requester",
+        "Vessel Manager",
+        "Vessel Manager",
+      ];
+      filteredSignatures = signaturesPrepared.filter((s) =>
+        allowedRoles.includes(String(s.role).trim())
+      );
+    }
+    if (
+      (String(req.department || "").toLowerCase() === "project" ||
+        String(req.department || "").toLowerCase() === "freight") &&
+      (String(req.destination || "").toLowerCase() === "project" ||
+        String(req.destination || "").toLowerCase() === "freight")
+    ) {
+      const allowedRoles = [
+        "requester",
+        "project manager",
+        "Requester",
+        "Project Manager",
+      ];
+      filteredSignatures = signaturesPrepared.filter((s) =>
+        allowedRoles.includes(String(s.role).trim())
+      );
+    }
+    if (
+      (String(req.department || "").toLowerCase() === "legal" ||
+        String(req.department || "").toLowerCase() === "freight") &&
+      (String(req.destination || "").toLowerCase() === "legal" ||
+        String(req.destination || "").toLowerCase() === "freight")
+    ) {
+      const allowedRoles = [
+        "requester",
+        "legal head",
+        "Requester",
+        "Legal Head",
+      ];
+      filteredSignatures = signaturesPrepared.filter((s) =>
+        allowedRoles.includes(String(s.role).trim())
+      );
+    }
+    if (
+      (String(req.department || "").toLowerCase() === "admin" ||
+        String(req.department || "").toLowerCase() === "freight") &&
+      (String(req.destination || "").toLowerCase() === "admin" ||
+        String(req.destination || "").toLowerCase() === "freight")
+    ) {
+      const allowedRoles = [
+        "requester",
+        "director of admin",
+        "Requester",
+        "Director of Admin",
+      ];
+      filteredSignatures = signaturesPrepared.filter((s) =>
+        allowedRoles.includes(String(s.role).trim())
+      );
+    }
+    if (
+      (String(req.department || "").toLowerCase() === "hr" ||
+        String(req.department || "").toLowerCase() === "freight") &&
+      (String(req.destination || "").toLowerCase() === "hr" ||
+        String(req.destination || "").toLowerCase() === "freight")
+    ) {
+      const allowedRoles = [
+        "requester",
+        "hr manager",
+        "Requester",
+        "HR Manager",
+      ];
+      filteredSignatures = signaturesPrepared.filter((s) =>
+        allowedRoles.includes(String(s.role).trim())
+      );
+    }
+
+    // If inStock, always include procurement manager, store base, store jetty, store vessel signatures
+    if (isInStock) {
+      const extraRoles = [
+        "procurementmanager",
+        "storebase",
+        "storejetty",
+        "storevessel",
+      ];
+      const extraSignatures = signaturesPrepared.filter((s) =>
+        extraRoles.includes(
+          String(s.role || "")
+            .toLowerCase()
+            .replace(/\s/g, "")
+        )
+      );
+      // Add any extra signatures not already in filteredSignatures
+      const filteredIds = new Set(filteredSignatures.map((s) => s.userId));
+      extraSignatures.forEach((sig) => {
+        if (!filteredIds.has(sig.userId)) {
+          filteredSignatures.push(sig);
+        }
+      });
+    }
+    if (req.requestType === "pettyCash") {
+      const extraRoles = ["accountinglead", "accountingofficer", "cfo"];
+      const extraSignatures = signaturesPrepared.filter((s) =>
+        extraRoles.includes(
+          String(s.role || "")
+            .toLowerCase()
+            .replace(/\s/g, "")
+        )
+      );
+      const filteredIds = new Set(filteredSignatures.map((s) => s.userId));
+      extraSignatures.forEach((sig) => {
+        if (!filteredIds.has(sig.userId)) {
+          filteredSignatures.push(sig);
+        }
+      });
+    }
+
+    const isServicePettyCash = (req) =>
+      req?.isService === true &&
+      (req?.requestType || "").toLowerCase() === "pettycash";
     return (
       <div
         ref={ref}
@@ -389,25 +517,49 @@ const RequestFormPreview = forwardRef(
                 </p>
               </div>
             </div>
-            <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Request Type
-              </p>
-              <p className="text-sm font-semibold">
-                <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
-                  {isProcurementOfficerApproved(req)
-                    ? req.requestType === "purchaseOrder" ||
-                      req.type === "purchase-order"
-                      ? "Purchase Order"
-                      : req.requestType === "pettyCash"
-                      ? "Petty Cash"
-                      : req.requestType === "inStock"
-                      ? "INSTOCK"
-                      : req.requestType || "N/A"
-                    : "N/A"}
-                </span>
-              </p>
-            </div>
+
+            {isServicePettyCash(req) ? (
+              <div className="px-4 py-3 border-b border-r border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-0.5">
+                  Request
+                </p>
+                <p className="text-sm font-semibold">
+                  <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+                    Service
+                  </span>
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="px-4 py-3 border-b border-r border-slate-200">
+                  <p className="text-xs text-slate-500 font-medium mb-0.5">
+                    Request Type
+                  </p>
+                  <p className="text-sm font-semibold">
+                    <span className="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">
+                      {req.requestType === "inStock"
+                        ? "INSTOCK"
+                        : isProcurementOfficerApproved(req)
+                        ? req.requestType === "purchaseOrder" ||
+                          req.type === "purchase-order"
+                          ? "Purchase Order"
+                          : req.requestType === "pettyCash"
+                          ? "Petty Cash"
+                          : req.requestType || "N/A"
+                        : "N/A"}
+                    </span>
+                  </p>
+                </div>
+                <div className="px-4 py-3 border-r border-b  border-slate-200">
+                  <p className="text-xs text-slate-500 font-medium mb-0.5">
+                    Logistics Type
+                  </p>
+                  <p className="text-sm text-slate-900 font-semibold capitalize">
+                    {req.logisticsType || "N/A"}
+                  </p>
+                </div>
+              </>
+            )}
             <div className="px-4 py-3 border-r border-slate-200">
               <p className="text-xs text-slate-500 font-medium mb-0.5">
                 Asset ID
@@ -418,27 +570,16 @@ const RequestFormPreview = forwardRef(
             </div>
 
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium ">
-                Priority
-              </p>
+              <p className="text-xs text-slate-500 font-medium ">Priority</p>
               <p className="text-sm font-semibold text-left">
-                <span
-                  className={`inline-block   rounded text-xs capitalize `}
-                >
+                <span className={`inline-block   rounded text-xs capitalize `}>
                   {String(req.priority || "").toLowerCase() === "urgent"
                     ? "URGENT"
                     : req.priority || "Normal"}
                 </span>
               </p>
             </div>
-            <div className="px-4 py-3 border-r border-b  border-slate-200">
-              <p className="text-xs text-slate-500 font-medium mb-0.5">
-                Logistics Type
-              </p>
-              <p className="text-sm text-slate-900 font-semibold capitalize">
-                {req.logisticsType || "N/A"}
-              </p>
-            </div>
+
             {String(req.destination || "").toLowerCase() === "marine" ? (
               <div className="px-4 py-3 border-r border-b  border-slate-200">
                 <p className="text-xs text-slate-500 font-medium mb-0.5">
@@ -472,58 +613,95 @@ const RequestFormPreview = forwardRef(
 
           <div className="bg-white border-2 border-slate-200 rounded-2xl p-3">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="text-left text-xs text-slate-500">
-                    <th className="px-3 py-2">#</th>
-                    <th className="px-3 py-2">Description</th>
-                    <th className="px-3 py-2">Qty</th>
+              {isServicePettyCash(req) ? (
+                <div className="bg-white border-2 border-slate-200 rounded-2xl p-3 mb-6">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="text-left text-xs text-slate-500">
+                          <th className="px-3 py-2">#</th>
+                          <th className="px-3 py-2">Description</th>
+                          <th className="px-3 py-2">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usedItems.map((it, i) => (
+                          <tr
+                            key={it.itemId || it.id || i}
+                            className="border-b last:border-b-0 border-slate-200"
+                          >
+                            <td className="px-3 py-2 align-top">{i + 1}</td>
+                            <td className="px-3 py-2 align-top text-slate-900 max-w-[180px] md:max-w-[180px] break-words whitespace-normal">
+                              {it.name}
+                            </td>
+                            <td className="px-3 py-2 align-top font-semibold text-slate-900">
+                              NGN{" "}
+                              {Number(
+                                it.unitPrice || it.amount || 0
+                              ).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500">
+                      <th className="px-3 py-2">#</th>
+                      <th className="px-3 py-2">Description</th>
+                      <th className="px-3 py-2">Qty</th>
 
-                    {/* ✅ Shipping Qty - only for shipping/clearing */}
-                    {/* {showFeeColumns && (
-                      <th className="px-3 py-2 text-center">Shipping Qty</th>
-                    )} */}
+                      {/* ✅ Shipping Qty - only for shipping/clearing */}
+                      {showFeeColumns && (
+                        <th className="px-3 py-2 text-center">Shipping Qty</th>
+                      )}
 
-                    {/* ✅ Shipping Fee - only for shipping/clearing */}
-                    {/* {showFeeColumns && (
+                      {/* ✅ Shipping Fee - only for shipping/clearing */}
+                      {/* {showFeeColumns && (
                       <th className="px-3 py-2 text-right">Shipping Fee</th>
                     )} */}
 
-                    {/* ✅ Clearing Fee - only for clearing */}
-                    {/* {isClearingTag && (
+                      {/* ✅ Clearing Fee - only for clearing */}
+                      {/* {isClearingTag && (
                       <th className="px-3 py-2 text-right">Clearing Fee</th>
                     )} */}
 
-                    {/* ✅ Unit Price - hide for shipping/clearing and before procurement */}
-                    {/* {!showFeeColumns && showPriceColumns && !isInStock && (
+                      {/* ✅ Unit Price - hide for shipping/clearing and before procurement */}
+                      {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                       <th className="px-3 py-2 text-right">Unit Price</th>
                     )}
                     {!showFeeColumns && showPriceColumns && !isInStock && (
                       <th className="px-3 py-2 text-right">Total</th>
                     )} */}
-                  </tr>
-                </thead>
-                <tbody>
-                  {usedItems.map((it, i) => (
-                    <tr
-                      key={it.itemId || it.id || i}
-                      className="border-b last:border-b-0 border-slate-200"
-                    >
-                      <td className="px-3 py-2 align-top">{i + 1}</td>
-                      <td className="px-3 py-2 align-top text-slate-900  max-w-[180px] md:max-w-[180px] break-words whitespace-normal">
-                        {it.name}
-                      </td>
-                      <td className="px-3 py-2 align-top">{it.quantity}</td>
-
-                      {/* ✅ Shipping Qty - only for shipping/clearing */}
-                      {showFeeColumns && (
-                        <td className="px-3 py-2 align-top text-center">
-                          {it.shippingQuantity ?? 0}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usedItems.map((it, i) => (
+                      <tr
+                        key={it.itemId || it.id || i}
+                        className="border-b last:border-b-0 border-slate-200"
+                      >
+                        <td className="px-3 py-2 align-top">{i + 1}</td>
+                        <td className="px-3 py-2 align-top text-slate-900  max-w-[180px] md:max-w-[180px] break-words whitespace-normal">
+                          {it.name}
                         </td>
-                      )}
+                        <td className="px-3 py-2 align-top">{it.quantity}</td>
 
-                      {/* ✅ Shipping Fee - only for shipping/clearing */}
-                   {/* {showFeeColumns && (
+                        {/* ✅ Shipping Qty - only for shipping/clearing */}
+                        {showFeeColumns && (
+                          <td className="px-3 py-2 align-top text-center">
+                            {it.shippingQuantity ?? 0}
+                          </td>
+                        )}
+
+                        {/* ✅ Shipping Fee - only for shipping/clearing */}
+                        {/* {showFeeColumns && (
   <td className="py-3 text-right text-slate-700">
     {formatCurrency(
       isClearingTag
@@ -534,8 +712,8 @@ const RequestFormPreview = forwardRef(
   </td>
 )} */}
 
-                      {/* ✅ Clearing Fee - only for clearing */}
-                      {/* {isClearingTag && (
+                        {/* ✅ Clearing Fee - only for clearing */}
+                        {/* {isClearingTag && (
                         <td className="px-3 py-2 align-top text-right text-slate-700">
                           {formatCurrency(
                             it.clearingFee || 0,
@@ -544,8 +722,8 @@ const RequestFormPreview = forwardRef(
                         </td>
                       )} */}
 
-                      {/* ✅ Unit Price - hide for shipping/clearing and before procurement */}
-                      {/* {!showFeeColumns && showPriceColumns && !isInStock && (
+                        {/* ✅ Unit Price - hide for shipping/clearing and before procurement */}
+                        {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                         <td className="px-3 py-2 align-top text-right text-slate-700">
                           {formatCurrency(
                             it.unitPrice,
@@ -554,8 +732,8 @@ const RequestFormPreview = forwardRef(
                         </td>
                       )} */}
 
-                      {/* ✅ Total - hide for shipping/clearing and before procurement */}
-                      {/* {!showFeeColumns && showPriceColumns && !isInStock && (
+                        {/* ✅ Total - hide for shipping/clearing and before procurement */}
+                        {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                         <td className="px-3 py-2 align-top text-right font-semibold text-slate-900">
                           {formatCurrency(
                             it.totalPrice !== undefined
@@ -568,11 +746,11 @@ const RequestFormPreview = forwardRef(
                           )}
                         </td>
                       )} */}
-                    </tr>
-                  ))}
-                </tbody>
-                {/* ✅ Grand Total - only show if price columns are visible */}
-                {/* {!showFeeColumns && showPriceColumns && !isInStock && (
+                      </tr>
+                    ))}
+                  </tbody>
+                  {/* ✅ Grand Total - only show if price columns are visible */}
+                  {/* {!showFeeColumns && showPriceColumns && !isInStock && (
                   <tfoot>
                     <tr>
                       <td colSpan={6} className="pt-4 text-right font-bold">
@@ -584,7 +762,8 @@ const RequestFormPreview = forwardRef(
                     </tr>
                   </tfoot>
                 )} */}
-              </table>
+                </table>
+              )}
             </div>
           </div>
         </div>
@@ -605,7 +784,7 @@ const RequestFormPreview = forwardRef(
                       No signatures yet
                     </div>
                   ) : (
-                    signaturesPrepared.map((s, idx) => {
+                    filteredSignatures.map((s, idx) => {
                       const ts = s.timestamp
                         ? new Date(s.timestamp).toLocaleString()
                         : "";

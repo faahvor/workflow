@@ -118,7 +118,7 @@ const OverviewDashboard = ({
       },
       {
         id: "approved",
-        label: "Approved PO",
+        label: "Approved Requests",
         value: approvedTodayCount,
         icon: MdCheckCircle,
         bgColor: "bg-purple-500",
