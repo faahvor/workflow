@@ -358,7 +358,7 @@ const Sidebar = ({
                     }`}
                     title="Pending Requests"
                   >
-                    <MdPendingActions className="md:text-lg text-[12px] " />
+                    <MdPendingActions className="md:text-lg text-[12px] shrink-0 " />
                     <span className="font-medium md:text-sm text-[9px]">
                       {isRequester
                         ? "My Requests"
@@ -367,7 +367,7 @@ const Sidebar = ({
                         : "Pending Requests"}
                     </span>
                     {pendingCount > 0 && (
-                      <span className="ml-auto bg-orange-500/20 text-orange-400 md:text-xs text-[9px] font-bold md:px-2 px-1.5 md:py-0.5 py-0.2 rounded-full">
+                      <span className="ml-auto bg-orange-500/20 text-orange-400 md:text-xs text-[9px] font-bold md:px-1.5 px-1.5 md:py-0.5 py-0.2 rounded-full">
                         {pendingCount}
                       </span>
                     )}

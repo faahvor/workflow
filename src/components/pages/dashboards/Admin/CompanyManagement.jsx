@@ -8,6 +8,8 @@ import {
   MdInsertDriveFile,
 } from "react-icons/md";
 import { useAuth } from "../../../context/AuthContext";
+import { useGlobalAlert } from "../../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../../shared/GlobalPrompt";
 
 const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -22,6 +24,7 @@ const CompanyManagement = () => {
   const [limit, setLimit] = useState(10);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const { showPrompt } = useGlobalPrompt(); // Add this line
 
   // modal / form state
   const [modalOpen, setModalOpen] = useState(false);
@@ -29,6 +32,7 @@ const CompanyManagement = () => {
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
   const [logoFile, setLogoFile] = useState(null);
+  const { showAlert } = useGlobalAlert();
 
   const blank = {
     companyId: "",
@@ -169,7 +173,7 @@ const CompanyManagement = () => {
       setEditing(null);
       setForm(blank);
       setLogoFile(null);
-      alert("Company saved.");
+      showAlert("Company saved.");
     } catch (err) {
       console.error("Save company error:", err);
       setError(err?.response?.data?.message || "Failed to save company");
@@ -181,22 +185,20 @@ const CompanyManagement = () => {
   const deleteCompany = async (c) => {
     const id = c.companyId || c.id;
     if (!id) return;
-    if (
-      !window.confirm(
-        `Permanently delete company "${c.name}"? This cannot be undone.`
-      )
-    )
-      return;
+   const ok = await showPrompt(
+      `Permanently delete company "${c.name}"? This cannot be undone.`
+    );
+    if (!ok) return;
     try {
       setLoading(true);
       await axios.delete(`${API_BASE}/companies/${encodeURIComponent(id)}`, {
         headers: getAuthHeaders(),
       });
       await fetchCompanies(page, search, limit);
-      alert("Company deleted.");
+      showAlert("Company deleted.");
     } catch (err) {
       console.error("Delete company error:", err);
-      alert(err?.response?.data?.message || "Failed to delete company");
+      showAlert(err?.response?.data?.message || "Failed to delete company");
     } finally {
       setLoading(false);
     }

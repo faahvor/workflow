@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { MdAttachFile } from "react-icons/md";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 const InvoiceUpload = ({
   requestId,
@@ -11,7 +12,7 @@ const InvoiceUpload = ({
   const fileInputRef = useRef(null);
   const [files, setFiles] = useState([]); // { id, file, previewUrl, progress, uploaded }
   const [isUploading, setIsUploading] = useState(false);
-
+const { showAlert } = useGlobalAlert();
   useEffect(() => {
     return () => {
       files.forEach((f) => {
@@ -74,7 +75,7 @@ const InvoiceUpload = ({
       }, 700);
     } catch (err) {
       console.error("Invoice upload failed:", err);
-      alert(err?.response?.data?.message || "Invoice upload failed");
+      showAlert(err?.response?.data?.message || "Invoice upload failed");
       setFiles((prev) => prev.map((p) => (p.id === id ? { ...p, uploaded: false } : p)));
     } finally {
       setIsUploading(false);

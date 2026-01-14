@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { MdDelete } from "react-icons/md";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const ProjectManagerTable = ({
   items = [],
@@ -20,7 +21,7 @@ const ProjectManagerTable = ({
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
-
+const { showAlert } = useGlobalAlert();
   const getFeeValue = (item) => {
     if (!item) return 0;
     const v = item[feeFieldName];
@@ -42,7 +43,7 @@ const ProjectManagerTable = ({
     const item = editedItems[index];
     const quantity = Number(item.quantity) || 0;
     if (quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
     const payload = {
@@ -56,9 +57,9 @@ const ProjectManagerTable = ({
         prev.map((it, i) => (i === index ? { ...it, quantity } : it))
       );
       setEditingIndex(null);
-      alert("✅ Item updated successfully!");
+      showAlert("✅ Item updated successfully!");
     } catch (error) {
-      alert("❌ Failed to update item");
+      showAlert("❌ Failed to update item");
     }
   };
 

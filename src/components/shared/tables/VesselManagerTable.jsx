@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { MdDelete } from "react-icons/md";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const VesselManagerTable = ({
   items = [],
@@ -27,7 +28,7 @@ const VesselManagerTable = ({
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
   const showShippingFee = request?.logisticsType === "international";
-
+  const { showAlert } = useGlobalAlert();
   const getFeeValue = (item) => {
     if (!item) return 0;
     const v = item[feeFieldName];
@@ -100,7 +101,7 @@ const VesselManagerTable = ({
     // ensure a valid quantity
     const quantity = Number(item.quantity) || 0;
     if (quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
 
@@ -133,7 +134,7 @@ const VesselManagerTable = ({
       );
 
       setEditingIndex(null);
-      alert("✅ Item updated successfully!");
+      showAlert("✅ Item updated successfully!");
     } catch (error) {
       console.error("❌ Error saving item:", {
         message: error.message,
@@ -151,9 +152,9 @@ const VesselManagerTable = ({
             return `${field}: ${msg}`;
           })
           .join("; ");
-        alert(`Server validation errors: ${msgs}`);
+        showAlert(`Server validation errors: ${msgs}`);
       } else {
-        alert("❌ Failed to update item");
+        showAlert("❌ Failed to update item");
       }
     }
   };
@@ -232,14 +233,37 @@ const VesselManagerTable = ({
         ))
     );
   }
+  const allSameVendor =
+    editedItems.length > 0 &&
+    editedItems.every(
+      (it) =>
+        (it.vendorId ?? it.vendor) ===
+        (editedItems[0].vendorId ?? editedItems[0].vendor)
+    );
+  const singleVendorName = resolveVendorName(
+    editedItems[0]?.vendor || editedItems[0]?.vendorName
+  );
+  const groupByVendor = (list) => {
+    const groups = {};
+    list.forEach((it, index) => {
+      const key = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (!groups[key]) groups[key] = { items: [], order: index };
+      groups[key].items.push({ ...it, _groupIndex: index });
+    });
+    return Object.values(groups).sort((a, b) => a.order - b.order);
+  };
+  const groups = groupByVendor(editedItems);
+
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
       <div className="overflow-x-auto" id="vessel-table-container">
-<table
-  className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-visible"
-  style={{ borderCollapse: "collapse" }}
->          <thead>
+        <table
+          className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-visible"
+          style={{ borderCollapse: "collapse" }}
+        >
+          {" "}
+          <thead>
             <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
               <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider">
                 SN
@@ -266,7 +290,7 @@ const VesselManagerTable = ({
               )}
 
               {/* ✅ Shipping/Clearing Fee column - only in first approval when tag is shipping/clearing */}
-              {showFeeColumns && !isSecondApproval && (
+              {showFeeColumns && !isSecondApproval && !allSameVendor && (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
                   {feeLabel}
                 </th>
@@ -324,210 +348,243 @@ const VesselManagerTable = ({
             </tr>
           </thead>
           <tbody>
-            {editedItems.map((item, index) => (
-<tr
-  key={item.itemId || index}
-  className="hover:bg-emerald-50 transition-colors duration-150"
-  style={
-    item.isDuplicateItem
-      ? {
-          boxShadow: "0 0 0 2px #ef5858",
-          borderRadius: "8px",
-          background: "#f4f1f1",
-          zIndex: 2,
-          position: "relative",
-        }
-      : undefined
-  }
->
-                {/* Serial Number */}
-                <td className="border border-slate-200 px-4 text-center text-sm font-medium text-slate-900">
-                  {index + 1}
-                </td>
-
-                {/* Description */}
-                <td className="border border-slate-200 px-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
-                  {item.name || "N/A"}
-                </td>
-
-                {/* Item Type */}
-                <td
-                  className="border border-slate-200 px-4  text-center text-sm font-medium text-slate-900"
-                  style={{ minWidth: "100px" }}
+            {groups.map((g, gi) =>
+              g.items.map((item, index) => (
+                <tr
+                  key={item.itemId || index}
+                  className="hover:bg-emerald-50 transition-colors duration-150"
+                  style={
+                    item.isDuplicateItem
+                      ? {
+                          boxShadow: "0 0 0 2px #ef5858",
+                          borderRadius: "8px",
+                          background: "#f4f1f1",
+                          zIndex: 2,
+                          position: "relative",
+                        }
+                      : undefined
+                  }
                 >
-                  {isProcurementOfficerApproved(request)
-                    ? item.makersType || item.itemType || "N/A"
-                    : "N/A"}
-                </td>
-
-                {/* Maker */}
-                <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
-                  {item.maker || "N/A"}
-                </td>
-
-                {/* Maker's Part No */}
-                <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
-                  {item.makersPartNo || "N/A"}
-                </td>
-
-                {/* Quantity - Editable only in first approval */}
-                <td className="border border-slate-200 px-4 py-[5px] text-center">
-                  {editingIndex === index && !isSecondApproval ? (
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity || ""}
-                      onChange={(e) =>
-                        handleQuantityChange(index, e.target.value)
-                      }
-                      className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    />
-                  ) : (
-                    <span className="font-semibold text-slate-900">
-                      {item.quantity}
-                    </span>
-                  )}
-                </td>
-
-                {/* ✅ Shipping Qty - only in first approval when tag is shipping/clearing */}
-                {showFeeColumns && !isSecondApproval && (
-                  <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
-                    <span className="font-semibold text-slate-900">
-                      {item.shippingQuantity ?? 0}
-                    </span>
+                  {/* Serial Number */}
+                  <td className="border border-slate-200 px-4 text-center text-sm font-medium text-slate-900">
+                    {index + 1}
                   </td>
-                )}
 
-                {/* ✅ Shipping/Clearing Fee - only in first approval when tag is shipping/clearing */}
-                {showFeeColumns && !isSecondApproval && (
-                  <td className="border border-slate-200 px-4 py-[5px] text-right text-sm text-slate-700">
-                    {item.currency || "NGN"}{" "}
-                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                  {/* Description */}
+                  <td className="border border-slate-200 px-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
+                    {item.name || "N/A"}
                   </td>
-                )}
 
-                {/* ✅ Pricing Columns (only in second approval) */}
-                {(isSecondApproval || isPettyCash) && (
-                  <>
-                    {/* ✅ Vendor Column */}
+                  {/* Item Type */}
+                  <td
+                    className="border border-slate-200 px-4  text-center text-sm font-medium text-slate-900"
+                    style={{ minWidth: "100px" }}
+                  >
+                    {isProcurementOfficerApproved(request)
+                      ? item.makersType || item.itemType || "N/A"
+                      : "N/A"}
+                  </td>
 
-                    {!isPettyCash && (
-                      <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
-                        {resolveVendorName(item.vendor)}
-                      </td>
+                  {/* Maker */}
+                  <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
+                    {item.maker || "N/A"}
+                  </td>
+
+                  {/* Maker's Part No */}
+                  <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
+                    {item.makersPartNo || "N/A"}
+                  </td>
+
+                  {/* Quantity - Editable only in first approval */}
+                  <td className="border border-slate-200 px-4 py-[5px] text-center">
+                    {editingIndex === index && !isSecondApproval ? (
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity || ""}
+                        onChange={(e) =>
+                          handleQuantityChange(index, e.target.value)
+                        }
+                        className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      />
+                    ) : (
+                      <span className="font-semibold text-slate-900">
+                        {item.quantity}
+                      </span>
                     )}
+                  </td>
 
-                    {showShippingFee && (
-  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-    {request?.shippingFee ? (
-      <>
-        {item.currency || "NGN"}{" "}
-        {parseFloat(request.shippingFee).toFixed(2)}
-      </>
-    ) : (
-      "N/A"
-    )}
-  </td>
-)}
-                    {/* Unit Price */}
-                    <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
-                      {item.currency || "NGN"}{" "}
-                      {Number(item.unitPrice || 0).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                  {/* ✅ Shipping Qty - only in first approval when tag is shipping/clearing */}
+                  {showFeeColumns && !isSecondApproval && (
+                    <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
+                      <span className="font-semibold text-slate-900">
+                        {item.shippingQuantity ?? 0}
+                      </span>
                     </td>
+                  )}
 
-                    {/* Discount */}
-                    {!isPettyCash && (
-                      <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
-                        {item.discount ? `${item.discount}%` : "0%"}
-                      </td>
-                    )}
+                  {/* ✅ Shipping/Clearing Fee - only in first approval when tag is shipping/clearing */}
+                  {showFeeColumns && !isSecondApproval && !allSameVendor && (
+                    <td className="border border-slate-200 px-4 py-[5px] text-right text-sm text-slate-700">
+                      {item.currency || "NGN"}{" "}
+                      {Number(getFeeValue(item) || 0).toLocaleString(
+                        undefined,
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}
+                    </td>
+                  )}
 
-                    {/* Total Price */}
-                    <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-900">
-                      <span className="font-semibold">
+                  {/* ✅ Pricing Columns (only in second approval) */}
+                  {(isSecondApproval || isPettyCash) && (
+                    <>
+                      {/* ✅ Vendor Column */}
+
+                      {!isPettyCash && (
+                        <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
+                          {resolveVendorName(item.vendor)}
+                        </td>
+                      )}
+
+                      {showShippingFee && (
+                        <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                          {request?.shippingFee ? (
+                            <>
+                              {item.currency || "NGN"}{" "}
+                              {parseFloat(request.shippingFee).toFixed(2)}
+                            </>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                      )}
+                      {/* Unit Price */}
+                      <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
                         {item.currency || "NGN"}{" "}
-                        {Number(
-                          item.totalPrice || item.total || 0
-                        ).toLocaleString(undefined, {
+                        {Number(item.unitPrice || 0).toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
-                      </span>
-                    </td>
+                      </td>
 
-                    {/* VAT Amount */}
-                    {!isPettyCash && (
-                      <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
-                        {item.currency || "NGN"}{" "}
+                      {/* Discount */}
+                      {!isPettyCash && (
+                        <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
+                          {item.discount ? `${item.discount}%` : "0%"}
+                        </td>
+                      )}
 
-                                             {item.vatAmount ? `${item.vatAmount}` : "-"}
+                      {/* Total Price */}
+                      <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-900">
+                        <span className="font-semibold">
+                          {item.currency || "NGN"}{" "}
+                          {Number(
+                            item.totalPrice || item.total || 0
+                          ).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+
+                      {/* VAT Amount */}
+                      {!isPettyCash && (
+                        <td className="border border-slate-200 px-4 py-[5px] text-center text-sm text-slate-700">
+                          {item.currency || "NGN"}{" "}
+                          {item.vatAmount ? `${item.vatAmount}` : "-"}
+                        </td>
+                      )}
+                    </>
+                  )}
+                  {(isSecondApproval ||
+                    (showFeeColumns && !isSecondApproval)) &&
+                    index === 0 && (
+                      <td
+                        className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700"
+                        rowSpan={g.items.length}
+                        style={{ verticalAlign: "middle" }}
+                      >
+                        {item.purchaseRequisitionNumber ||
+                          item.purchaseReqNumber ||
+                          item.prn ||
+                          "N/A"}
                       </td>
                     )}
-                  </>
-                )}
-                {(isSecondApproval ||
-                  (showFeeColumns && !isSecondApproval)) && (
-                  <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
-                    {item.purchaseRequisitionNumber ||
-                      item.purchaseRequisitionNumber ||
-                      "N/A"}
-                  </td>
-                )}
 
-                {/* ✅ Actions (hidden in second approval) */}
-                {!isReadOnly &&
-                  !isSecondApproval &&
-                  !isPettyCash &&
-                  !hideActionsForFee && (
-                    <td className="border border-slate-200 px-4 py-[5px]">
-                      <div className="flex items-center justify-center gap-2">
-                        {editingIndex === index ? (
-                          <>
-                            <button
-                              onClick={() => handleSaveClick(index)}
-                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-150"
-                              title="Save"
-                            >
-                              <FaSave className="text-lg" />
-                            </button>
-                            <button
-                              onClick={handleCancelEdit}
-                              className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors duration-150"
-                              title="Cancel"
-                            >
-                              <FaTimes className="text-lg" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleEditClick(index)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
-                              title="Edit"
-                            >
-                              <FaEdit className="text-lg" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteClick(item)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150"
-                              title="Delete"
-                            >
-                              <MdDelete className="text-lg" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  )}
-              </tr>
-            ))}
+                  {/* ✅ Actions (hidden in second approval) */}
+                  {!isReadOnly &&
+                    !isSecondApproval &&
+                    !isPettyCash &&
+                    !hideActionsForFee && (
+                      <td className="border border-slate-200 px-4 py-[5px]">
+                        <div className="flex items-center justify-center gap-2">
+                          {editingIndex === index ? (
+                            <>
+                              <button
+                                onClick={() => handleSaveClick(index)}
+                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-150"
+                                title="Save"
+                              >
+                                <FaSave className="text-lg" />
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors duration-150"
+                                title="Cancel"
+                              >
+                                <FaTimes className="text-lg" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleEditClick(index)}
+                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
+                                title="Edit"
+                              >
+                                <FaEdit className="text-lg" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteClick(item)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150"
+                                title="Delete"
+                              >
+                                <MdDelete className="text-lg" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                </tr>
+              ))
+            )}
           </tbody>
+          {showFeeColumns &&
+            !isSecondApproval &&
+            allSameVendor &&
+            editedItems.length > 0 && (
+              <tfoot>
+                <tr>
+                  <td colSpan={7} className="pt-4 text-right ">
+                    {feeLabel} - {singleVendorName}:
+                  </td>
+                  <td className="pt-4 text-right ">
+                    {(editedItems[0].currency || "NGN") +
+                      " " +
+                      Number(getFeeValue(editedItems[0]) || 0).toLocaleString(
+                        undefined,
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
         </table>
       </div>
 

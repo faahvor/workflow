@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const CFOTable = ({
   items = [],
@@ -16,6 +17,7 @@ const CFOTable = ({
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const { showAlert } = useGlobalAlert();
   const isSecondApproval = currentState === "PENDING_ACCOUNTING_APPROVAL_2";
   const isPettyCash = requestType === "pettyCash";
   const showPaymentColumns =
@@ -58,7 +60,7 @@ const CFOTable = ({
       .filter(Boolean);
 
     if (updates.length === 0) {
-      alert("No changes to save.");
+      showAlert("No changes to save.");
       return;
     }
 
@@ -77,7 +79,7 @@ const CFOTable = ({
         })
       );
 
-      alert("Saved successfully");
+      showAlert("Saved successfully");
       // refresh local editedItems from latest props to clear dirty state
       setEditedItems(
         items.map((item) => ({
@@ -90,7 +92,7 @@ const CFOTable = ({
       );
     } catch (err) {
       console.error("Error saving account items:", err);
-      alert("Error saving changes. See console for details.");
+      showAlert("Error saving changes. See console for details.");
     } finally {
       setIsSaving(false);
     }
@@ -197,7 +199,7 @@ const CFOTable = ({
     const changes = buildChangesForAccountItem(item);
 
     if (Object.keys(changes).length === 0) {
-      alert("No changes to save for this item.");
+      showAlert("No changes to save for this item.");
       setEditingIndex(null);
       return;
     }
@@ -220,7 +222,7 @@ const CFOTable = ({
         error?.response?.data ||
         error?.message;
       console.error("❌ Error saving item:", error);
-      alert(serverMsg || "Failed to update item. See console for details.");
+      showAlert(serverMsg || "Failed to update item. See console for details.");
     }
   };
 

@@ -14,6 +14,7 @@ import AttachedDocuments from "../../shared/AttachedDocuments";
 import WaybillUpload from "./WaybillUpload";
 import Select from "react-select";
 import CommentThread from "../../shared/CommentThread";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
 const formatCurrency = (v, currency = "NGN") => {
@@ -36,7 +37,7 @@ const DeliveryRequestView = ({
   const [vendors, setVendors] = useState([]);
   const [vessels, setVessels] = useState([]);
   const [filesRefreshCounter, setFilesRefreshCounter] = useState(0);
-
+const { showAlert } = useGlobalAlert();
   const [nextDeliveryStations, setNextDeliveryStations] = useState([]);
   const [isSavingNextStations, setIsSavingNextStations] = useState(false);
   const [comments, setComments] = useState([]);
@@ -330,7 +331,7 @@ const DeliveryRequestView = ({
       }
     } catch (err) {
       console.error("Error saving delivered quantity:", err);
-      alert(
+      showAlert(
         err?.response?.data?.message || "Failed to save delivered quantity"
       );
     }
@@ -356,7 +357,7 @@ const DeliveryRequestView = ({
       console.log("comments:", comments);
       console.log("currentUserId:", currentUserId);
       if (!hasCommentByUser(currentUserId)) {
-        alert("Please state a reason for approving delivery not completed");
+        showAlert("Please state a reason for approving delivery not completed");
         return;
       }
     }
@@ -377,7 +378,7 @@ const DeliveryRequestView = ({
 
       if (typeof onApprove === "function") onApprove(reqId);
     } catch (err) {
-      alert(
+      showAlert(
         err?.response?.data?.message || "Failed to approve delivery request"
       );
     }
@@ -788,7 +789,7 @@ const DeliveryRequestView = ({
               <button
                 onClick={() => {
                   if (!hasWaybill) {
-                    alert(
+                    showAlert(
                       "You must upload a waybill before confirming delivery."
                     );
                     return;

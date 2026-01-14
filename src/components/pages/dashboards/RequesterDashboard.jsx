@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import Select from "react-select";
 import {
   MdAdd,
   MdCheckCircle,
@@ -27,10 +28,12 @@ import Notification from "./Notification";
 import RejectedRequest from "./RejectedRequest";
 import ChatRoom from "./ChatRoom";
 import Support from "./Support";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
 // --- Place above the RequesterDashboard component ---
 
-function ServiceTable({ rows, setRows }) {
+function ServiceTable({ rows, setRows, currencies }) {
   const handleChange = (idx, field, value) => {
     const updated = [...rows];
     updated[idx][field] = value;
@@ -40,7 +43,10 @@ function ServiceTable({ rows, setRows }) {
     setRows(rows.filter((_, i) => i !== idx));
   };
   const handleAdd = () => {
-    setRows([...rows, { description: "", amount: "" }]);
+    setRows([
+      ...rows,
+      { description: "", amount: "", currency: "NGN" },
+    ]);
   };
   return (
     <div className="mb-6">
@@ -49,7 +55,7 @@ function ServiceTable({ rows, setRows }) {
       </div>
       <table className="w-full border border-[#036173] bg-[#f0f4ff]">
         <thead>
-          <tr className="">
+          <tr>
             <th className="p-2 border border-[#036173] text-left">
               Description
             </th>
@@ -60,22 +66,37 @@ function ServiceTable({ rows, setRows }) {
         <tbody>
           {rows.map((row, idx) => (
             <tr key={idx}>
-            <td className="p-2 border border-[#036173] max-w-[220px] whitespace-normal break-words overflow-hidden align-top">
-  <textarea
-    value={row.description}
-    onChange={(e) => handleChange(idx, "description", e.target.value)}
-    className="w-full bg-transparent outline-none resize-none"
-    rows={2}
-    style={{ wordBreak: "break-word" }}
-  />
-</td>
-              <td className="p-2 border border-[#036173]">
-                <input
-                  type="number"
-                  value={row.amount}
-                  onChange={(e) => handleChange(idx, "amount", e.target.value)}
-                  className="w-full bg-transparent outline-none"
+              <td className="p-2 border border-[#036173] max-w-[220px] whitespace-normal break-words overflow-hidden align-top">
+                <textarea
+                  value={row.description}
+                  onChange={(e) => handleChange(idx, "description", e.target.value)}
+                  className="w-full bg-transparent outline-none resize-none"
+                  rows={2}
+                  style={{ wordBreak: "break-word" }}
                 />
+              </td>
+              <td className="p-2 border border-[#036173]">
+                <div className="flex items-center gap-2">
+                  <Select
+                    options={currencies}
+                    value={currencies.find((c) => c.value === (row.currency || "NGN"))}
+                    onChange={(selected) =>
+                      handleChange(idx, "currency", selected.value)
+                    }
+                    className="w-32"
+                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                    styles={{
+                      control: (base) => ({ ...base, minHeight: 32, fontSize: 14 }),
+                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    }}
+                  />
+                  <input
+                    type="number"
+                    value={row.amount}
+                    onChange={(e) => handleChange(idx, "amount", e.target.value)}
+                    className="w-full bg-transparent outline-none"
+                  />
+                </div>
               </td>
               <td className="p-2 border border-[#036173] text-center">
                 <button
@@ -194,6 +215,8 @@ const RequesterDashboard = () => {
   const [selectedRequestReadOnly, setSelectedRequestReadOnly] = useState(false);
   const [vendors, setVendors] = useState([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -686,7 +709,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
 
   const submitAddInventory = async () => {
     if (!invName || invName.trim() === "") {
-      alert("Name is required to add an inventory item.");
+      showAlert("Name is required to add an inventory item.");
       return;
     }
 
@@ -694,7 +717,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       setCreatingInventory(true);
       const token = getToken();
       if (!token) {
-        alert("Authentication required.");
+        showAlert("Authentication required.");
         return;
       }
 
@@ -729,7 +752,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         // Refresh server inventory to keep consistent
         fetchInventory();
 
-        alert("Inventory added.");
+        showAlert("Inventory added.");
         closeAddInventoryModal();
         return;
       }
@@ -737,7 +760,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       throw new Error("Unexpected create response");
     } catch (err) {
       console.error("Error creating inventory item:", err);
-      alert(err?.response?.data?.message || "Failed to add inventory item");
+      showAlert(err?.response?.data?.message || "Failed to add inventory item");
     } finally {
       setCreatingInventory(false);
     }
@@ -804,12 +827,12 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
 
     // Validation
     if (!formData.destination) {
-      alert("Please select a destination");
+      showAlert("Please select a destination");
       return;
     }
 
     if (!formData.company) {
-      alert("Please select a company");
+      showAlert("Please select a company");
       return;
     }
 
@@ -818,12 +841,12 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         formData.destination === "Project") &&
       !formData.vesselId
     ) {
-      alert("Please select a vessel");
+      showAlert("Please select a vessel");
       return;
     }
 
     if (formData.destination === "Project" && !formData.projectManager) {
-      alert("Please select a project manager");
+      showAlert("Please select a project manager");
       return;
     }
 
@@ -836,20 +859,20 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         (row) => row.description && row.quantity
       );
       if (!hasService && !hasMaterial) {
-        alert("Please add at least one service or material item.");
+        showAlert("Please add at least one service or material item.");
         return;
       }
     } else {
       // --- INVENTORY REQUEST VALIDATION ---
       if (selectedItems.length === 0) {
-        alert("Please add at least one item from inventory");
+        showAlert("Please add at least one item from inventory");
         return;
       }
       const invalidItems = selectedItems.filter(
         (item) => !item.quantity || item.quantity < 1
       );
       if (invalidItems.length > 0) {
-        alert("All items must have a quantity of at least 1");
+        showAlert("All items must have a quantity of at least 1");
         return;
       }
     }
@@ -868,6 +891,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
             quantity: 1,
             unitPrice: Number(row.amount),
             description: row.description,
+            currency: row.currency || "NGN",
           }));
 
         const materialItems = materialRows
@@ -892,6 +916,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           serviceItems,
           materialItems,
         };
+  console.log("Submitting service request payload:", payload);
 
         if (formData.destination === "Marine") {
           payload.nextApproverAfterVesselManager =
@@ -936,7 +961,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
             "✅ Service Request Created (with images):",
             response.data
           );
-          alert("Service request created successfully!");
+          showAlert("Service request created successfully!");
         } else {
           // No images, send as JSON
           const response = await axios.post(
@@ -948,7 +973,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           );
 
           console.log("✅ Service Request Created:", response.data);
-          alert("Service request created successfully!");
+          showAlert("Service request created successfully!");
         }
 
         // Reset form
@@ -1045,7 +1070,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         });
 
         console.log("✅ Request Created (with files):", response.data);
-        alert("Request created successfully!");
+        showAlert("Request created successfully!");
       } else {
         // JSON path (no files)
         const payload = {
@@ -1096,7 +1121,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         });
 
         console.log("✅ Request Created:", response.data);
-        alert("Request created successfully!");
+        showAlert("Request created successfully!");
       }
 
       // Reset form
@@ -1122,7 +1147,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       setActiveView("myrequests");
     } catch (err) {
       console.error("❌ Error creating request:", err);
-      alert(err.response?.data?.message || "Failed to create request");
+      showAlert(err.response?.data?.message || "Failed to create request");
     } finally {
       setSubmitting(false);
     }
@@ -1163,8 +1188,10 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   }, [user, activeView]);
 
   const handleApprove = async (requestId) => {
-    const ok = window.confirm("Are you sure you want to approve this request?");
-    if (!ok) return;
+  const ok = await showPrompt(
+    "Are you sure you want to approve this request?"
+  );
+  if (!ok) return;
 
     try {
       setActionLoading(true);
@@ -1185,14 +1212,14 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
 
       if (resp?.status === 200 || resp?.status === 201) {
         await fetchMyRequests();
-        alert(resp.data?.message || "Request approved successfully");
+        showAlert(resp.data?.message || "Request approved successfully");
         setActiveView("pending");
         return;
       }
-      alert(resp.data?.message || "Unexpected response from server");
+      showAlert(resp.data?.message || "Unexpected response from server");
     } catch (err) {
       console.error("Error approving request:", err);
-      alert(err?.response?.data?.message || "Failed to approve request");
+      showAlert(err?.response?.data?.message || "Failed to approve request");
     } finally {
       setActionLoading(false);
     }
@@ -1215,7 +1242,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       setActiveView("pending");
     } catch (err) {
       console.error("Error rejecting request:", err);
-      alert(err?.response?.data?.message || "Failed to reject request");
+      showAlert(err?.response?.data?.message || "Failed to reject request");
     } finally {
       setActionLoading(false);
     }
@@ -1238,7 +1265,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       setActiveView("pending");
     } catch (err) {
       console.error("Error querying request:", err);
-      alert(err?.response?.data?.message || "Failed to send query");
+      showAlert(err?.response?.data?.message || "Failed to send query");
     } finally {
       setActionLoading(false);
     }
@@ -2040,6 +2067,8 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                       <ServiceTable
                         rows={serviceRows}
                         setRows={setServiceRows}
+                          currencies={currencies}
+
                       />
                       <MaterialTable
                         rows={materialRows}
@@ -2196,6 +2225,8 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                 onQuery={handleQuery}
                 vendors={vendors}
                 actionLoading={actionLoading}
+                  currencies={currencies}
+
               />
             )}
             {(activeView === "completed" || activeView === "rejected") && (

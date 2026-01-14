@@ -5,6 +5,8 @@ import { IoMdAdd } from "react-icons/io";
 import { MdPersonAdd, MdEdit, MdDelete, MdMoreVert } from "react-icons/md";
 import { useAuth } from "../../../context/AuthContext";
 import { ROLES } from "../../../utils/roles";
+import { useGlobalAlert } from "../../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../../shared/GlobalPrompt";
 
 const defaultRoleTypes = Object.values(ROLES).filter(Boolean);
 
@@ -62,6 +64,9 @@ const AdminUserManagement = () => {
   const [sortBy, setSortBy] = useState("createdAt_desc");
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
   const actionMenuRef = useRef(null);
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt(); // Add this line
+
   useEffect(() => {
     const handleDocClick = (e) => {
       // if there's an open menu and the click is outside it, close
@@ -99,19 +104,16 @@ const AdminUserManagement = () => {
     // prevent self-delete
     const currentId = user?.userId || user?.id;
     if (currentId && currentId === id) {
-      alert("You cannot delete your own account.");
+      showAlert("You cannot delete your own account.");
       return;
     }
     // confirm
-    if (
-      !window.confirm(
-        `Permanently delete user "${
-          u.displayName || u.username
-        }"? This action cannot be undone.`
-      )
-    ) {
-      return;
-    }
+    const ok = await showPrompt(
+      `Permanently delete user "${
+        u.displayName || u.username
+      }"? This action cannot be undone.`
+    );
+    if (!ok) return;
     try {
       setLoading(true);
       await axios.delete(`${API_BASE}/admin/users/${encodeURIComponent(id)}`, {
@@ -122,7 +124,7 @@ const AdminUserManagement = () => {
       showSuccess("User deleted successfully");
     } catch (err) {
       console.error("Delete user error:", err);
-      alert(err?.response?.data?.message || "Failed to delete user");
+      showAlert(err?.response?.data?.message || "Failed to delete user");
     } finally {
       setLoading(false);
     }
@@ -380,7 +382,8 @@ const AdminUserManagement = () => {
   const suspendUser = async (u) => {
     const id = u.userId || u.id;
     if (!id) return;
-    if (!window.confirm(`Suspend ${u.displayName || u.username}?`)) return;
+    const ok = await showPrompt(`Suspend ${u.displayName || u.username}?`);
+    if (!ok) return;
     try {
       await axios.patch(
         `${API_BASE}/admin/users/${encodeURIComponent(id)}/suspend`,
@@ -390,7 +393,7 @@ const AdminUserManagement = () => {
       fetchUsers({ page });
     } catch (err) {
       console.error("Suspend error:", err);
-      alert(err?.response?.data?.message || "Failed to suspend user");
+      showAlert(err?.response?.data?.message || "Failed to suspend user");
     }
   };
 
@@ -407,7 +410,7 @@ const AdminUserManagement = () => {
       showSuccess("User unsuspended successfully");
     } catch (err) {
       console.error("Unsuspend error:", err);
-      alert(err?.response?.data?.message || "Failed to unsuspend user");
+      showAlert(err?.response?.data?.message || "Failed to unsuspend user");
     }
   };
 

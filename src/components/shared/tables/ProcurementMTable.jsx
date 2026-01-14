@@ -5,6 +5,9 @@ import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { MdCheckCircle } from "react-icons/md";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
+import { useGlobalAlert } from "../GlobalAlert";
+import { useGlobalPrompt } from "../GlobalPrompt";
+import CreatableSelect from "react-select/creatable";
 
 const ProcurementMTable = ({
   items = [],
@@ -26,6 +29,16 @@ const ProcurementMTable = ({
   const [calculatedVat, setCalculatedVat] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const { getToken } = useAuth();
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt(); // Add this line
+  const { user } = useAuth(); // Add this to get user info
+
+  const [editMode, setEditMode] = useState(false); // Add edit mode state
+
+  const userRole = (user?.role || "").toLowerCase();
+  const canProcurementManagerEdit =
+    userRole === "procurement manager" && !isReadOnly;
+
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   const showShippingFee = request?.logisticsType === "international";
@@ -93,6 +106,19 @@ const ProcurementMTable = ({
       } else {
         item[field] = value;
       }
+      // Mark as dirty if vendorId or vendor changed
+      if (
+        [
+          "vendorId",
+          "vendor",
+          "unitPrice",
+          "discount",
+          "purchaseRequisitionNumber",
+          "purchaseOrderNumber",
+        ].includes(field)
+      ) {
+        item._dirty = true;
+      }
 
       // Recalculate totals
       const { totalPrice, vatAmount } = calculateItemTotal(item);
@@ -107,12 +133,12 @@ const ProcurementMTable = ({
   };
 
   const handleSaveAll = async () => {
-    if (!window.confirm("Save all changes to the items?")) return;
-
+    const ok = await showPrompt("Save all changes to the items?");
+    if (!ok) return;
     const dirtyItems = editedItems.filter((it) => it._dirty);
 
     if (!dirtyItems || dirtyItems.length === 0) {
-      alert("No changes to save.");
+      showAlert("No changes to save.");
       return;
     }
 
@@ -143,7 +169,7 @@ const ProcurementMTable = ({
         }))
       );
 
-      alert("Saved successfully!");
+      showAlert("Saved successfully!");
 
       // Refresh request details
       if (typeof onRefreshRequest === "function") {
@@ -151,7 +177,7 @@ const ProcurementMTable = ({
       }
     } catch (err) {
       console.error("Error saving items:", err);
-      alert("Error saving changes. See console for details.");
+      showAlert("Error saving changes. See console for details.");
     } finally {
       setIsSaving(false);
     }
@@ -238,17 +264,17 @@ const ProcurementMTable = ({
     const item = editedItems[index];
 
     if (!item.quantity || item.quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
 
     try {
       await onEditItem(item);
       setEditingIndex(null);
-      alert("✅ Item updated successfully!");
+      showAlert("✅ Item updated successfully!");
     } catch (error) {
       console.error("❌ Error saving item:", error);
-      alert("❌ Failed to update item");
+      showAlert("❌ Failed to update item");
     }
   };
 
@@ -287,9 +313,111 @@ const ProcurementMTable = ({
   }, [items]);
 
   const showSrcReqId = React.useMemo(
-  () => (items || []).some((it) => it.movedFromRequestId),
-  [items]
-);
+    () => (items || []).some((it) => it.movedFromRequestId),
+    [items]
+  );
+
+  const allSameVendor =
+    editedItems.length > 0 &&
+    editedItems.every(
+      (it) =>
+        (it.vendorId ?? it.vendor) ===
+        (editedItems[0].vendorId ?? editedItems[0].vendor)
+    );
+  const singleVendorName = resolveVendorName(
+    editedItems[0]?.vendor || editedItems[0]?.vendorName
+  );
+  const groupByVendor = (list) => {
+    const groups = {};
+    list.forEach((it, index) => {
+      const key = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (!groups[key]) groups[key] = { items: [], order: index };
+      groups[key].items.push({ ...it, _groupIndex: index });
+    });
+    return Object.values(groups).sort((a, b) => a.order - b.order);
+  };
+  const groups = groupByVendor(editedItems);
+
+  // ...existing code...
+
+  const handleProcurementManagerSave = async () => {
+    // Find all items that were edited
+    const changedItems = editedItems.filter((item, idx) => {
+      const orig = items[idx];
+      // Only check fields we allow to edit
+      return (
+        item._dirty &&
+        (item.vendorId !== orig.vendorId ||
+          item.unitPrice !== orig.unitPrice ||
+          item.discount !== orig.discount)
+      );
+    });
+
+    if (changedItems.length === 0) {
+      showAlert("No changes to save.");
+      return;
+    }
+
+    // Validate: unitPrice must not be higher than original
+    let hasInvalid = false;
+    const revertedItems = editedItems.map((item, idx) => {
+      const orig = items[idx];
+      if (
+        item.unitPrice !== undefined &&
+        orig.unitPrice !== undefined &&
+        parseFloat(item.unitPrice) > parseFloat(orig.unitPrice)
+      ) {
+        hasInvalid = true;
+        return { ...item, unitPrice: orig.unitPrice, _dirty: false };
+      }
+      return item;
+    });
+
+    if (hasInvalid) {
+      setEditedItems(revertedItems);
+      showAlert(
+        "Unit price cannot be higher than the original. Changes reverted."
+      );
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const token = getToken();
+      const payload = {
+        items: changedItems.map((item) => {
+          const { totalPrice } = calculateItemTotal(item);
+          return {
+            itemId: item.itemId || item._id,
+            vendorId: item.vendorId || item.vendor,
+            unitPrice: Number(item.unitPrice),
+            totalPrice, // Now defined!
+            discount: item.discount === "" ? 0 : Number(item.discount),
+            purchaseRequisitionNumber: item.purchaseRequisitionNumber,
+            purchaseOrderNumber: item.purchaseOrderNumber,
+          };
+        }),
+      };
+      await axios.patch(
+        `${API_BASE_URL}/procurement-manager/requests/${requestId}/edit`,
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      showAlert("Saved successfully!");
+      setEditMode(false);
+      // Clear dirty flags
+      setEditedItems((prev) => prev.map((itm) => ({ ...itm, _dirty: false })));
+      if (typeof onRefreshRequest === "function") {
+        await onRefreshRequest();
+      }
+    } catch (err) {
+      showAlert("Error saving changes. See console for details.");
+      console.error(err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  // ...existing code...
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -312,11 +440,11 @@ const ProcurementMTable = ({
               <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                 Maker's Part No
               </th>
-{showSrcReqId && (
-  <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-    Src Req ID
-  </th>
-)}
+              {showSrcReqId && (
+                <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Src Req ID
+                </th>
+              )}
               {!isAnyItemInStock && (
                 <th className="border border-slate-300 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[150px]">
                   Vendor
@@ -331,7 +459,7 @@ const ProcurementMTable = ({
                 </th>
               )}
 
-              {showFeeColumns && (
+              {showFeeColumns && !allSameVendor && (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
                   {feeLabel}
                 </th>
@@ -376,167 +504,294 @@ const ProcurementMTable = ({
             </tr>
           </thead>
           <tbody>
-            {editedItems.map((item, index) => (
-              <tr
-                key={item.itemId || index}
-                className="hover:bg-emerald-50 transition-colors duration-150"
-              >
-                {/* Serial Number */}
-                <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
-                  {index + 1}
-                </td>
+            {groups.map((g, gi) =>
+              g.items.map((item, index) => (
+                <tr
+                  key={item.itemId || index}
+                  className="hover:bg-emerald-50 transition-colors duration-150"
+                >
+                  {/* Serial Number */}
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
+                    {index + 1}
+                  </td>
 
-                {/* Description */}
-                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
-                  {item.name || "N/A"}
-                </td>
+                  {/* Description */}
+                  <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
+                    {item.name || "N/A"}
+                  </td>
 
-                {/* Item Type */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.makersType || "N/A"}
-                </td>
-
-                {/* Maker */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.maker || "N/A"}
-                </td>
-
-                {/* Maker's Part No */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.makersPartNo || "N/A"}
-                </td>
-{showSrcReqId && (
-  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700 font-mono">
-    {item.movedFromRequestId || "N/A"}
-  </td>
-)}
-                {/* ✅ Vendor Column */}
-                {!isAnyItemInStock && (
+                  {/* Item Type */}
                   <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                    {resolveVendorName(item.vendor)}
+                    {item.makersType || "N/A"}
                   </td>
-                )}
 
-                {/* Quantity - Editable */}
-                <td className="border border-slate-200 px-4 py-3 text-center">
-                  {isIncompleteDelivery ? (
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity || ""}
-                      onChange={(e) =>
-                        handleChange(index, "quantity", e.target.value)
-                      }
-                      className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    />
-                  ) : editingIndex === index ? (
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity || ""}
-                      onChange={(e) =>
-                        handleQuantityChange(index, e.target.value)
-                      }
-                      className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    />
-                  ) : (
-                    <span className="font-semibold text-slate-900">
-                      {item.quantity}
-                    </span>
+                  {/* Maker */}
+                  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    {item.maker || "N/A"}
+                  </td>
+
+                  {/* Maker's Part No */}
+                  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    {item.makersPartNo || "N/A"}
+                  </td>
+                  {showSrcReqId && (
+                    <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700 font-mono">
+                      {item.movedFromRequestId || "N/A"}
+                    </td>
                   )}
-                </td>
-                {showFeeColumns && (
-                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                    <span className="font-semibold text-slate-900">
-                      {item.shippingQuantity ?? 0}
-                    </span>
-                  </td>
-                )}
-                {showFeeColumns && (
-                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                    {item.currency || "NGN"}{" "}
-                    {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </td>
-                )}
+                  {/* ✅ Vendor Column */}
 
-                {/* Unit Price - Read Only */}
-                {!isAnyItemInStock && !showFeeColumns && (
-                  <>
-                    {showShippingFee && (
-                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                        {request?.shippingFee ? (
+                  {!isAnyItemInStock && (
+                    <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                      {editMode ? (
+                        <CreatableSelect
+                          options={vendors.map((v) => ({
+                            value: v.vendorId || v._id || v.id,
+                            label: v.name || v.vendorName,
+                          }))}
+                          value={(() => {
+                            const selected = vendors.find(
+                              (v) =>
+                                String(v.vendorId || v._id || v.id) ===
+                                String(item.vendorId || item.vendor)
+                            );
+                            return selected
+                              ? {
+                                  value:
+                                    selected.vendorId ||
+                                    selected._id ||
+                                    selected.id,
+                                  label: selected.name || selected.vendorName,
+                                }
+                              : item.vendor
+                              ? {
+                                  value: item.vendorId || item.vendor,
+                                  label: String(item.vendor),
+                                }
+                              : null;
+                          })()}
+                          onChange={(selectedOption) => {
+                            handleChange(
+                              index,
+                              "vendorId",
+                              selectedOption?.value || ""
+                            );
+                            handleChange(
+                              index,
+                              "vendor",
+                              selectedOption?.label || ""
+                            );
+                          }}
+                          onCreateOption={(inputValue) => {
+                            handleChange(index, "vendorId", inputValue);
+                            handleChange(index, "vendor", inputValue);
+                          }}
+                          className="w-[170px] text-black"
+                          styles={{
+                            control: (provided) => ({
+                              ...provided,
+                              minWidth: "100px",
+                              fontSize: "14px",
+                            }),
+                            menuPortal: (base) => ({
+                              ...base,
+                              zIndex: 9999,
+                            }),
+                          }}
+                          menuPortalTarget={
+                            typeof document !== "undefined"
+                              ? document.body
+                              : null
+                          }
+                          menuPlacement="auto"
+                          placeholder="Select or create vendor"
+                          isClearable
+                        />
+                      ) : (
+                        resolveVendorName(item.vendor)
+                      )}
+                    </td>
+                  )}
+
+                  {/* Quantity - Editable */}
+                  <td className="border border-slate-200 px-4 py-3 text-center">
+                    {isIncompleteDelivery ? (
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity || ""}
+                        onChange={(e) =>
+                          handleChange(index, "quantity", e.target.value)
+                        }
+                        className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      />
+                    ) : editingIndex === index ? (
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity || ""}
+                        onChange={(e) =>
+                          handleQuantityChange(index, e.target.value)
+                        }
+                        className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      />
+                    ) : (
+                      <span className="font-semibold text-slate-900">
+                        {item.quantity}
+                      </span>
+                    )}
+                  </td>
+                  {showFeeColumns && (
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      <span className="font-semibold text-slate-900">
+                        {item.shippingQuantity ?? 0}
+                      </span>
+                    </td>
+                  )}
+                  {showFeeColumns && !allSameVendor && (
+                    <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                      {item.currency || "NGN"}{" "}
+                      {Number(request?.shippingFee || 0).toLocaleString(
+                        undefined,
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}
+                    </td>
+                  )}
+
+                  {/* Unit Price - Read Only */}
+                  {!isAnyItemInStock && !showFeeColumns && (
+                    <>
+                      {showShippingFee && (
+                        <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                          {request?.shippingFee ? (
+                            <>
+                              {item.currency || "NGN"}{" "}
+                              {parseFloat(request.shippingFee).toFixed(2)}
+                            </>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                      )}
+                      <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                        {editMode ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.unitPrice || ""}
+                            onChange={(e) =>
+                              handleChange(index, "unitPrice", e.target.value)
+                            }
+                            className="w-24 px-2 py-1 border rounded text-right"
+                          />
+                        ) : item.unitPrice ? (
                           <>
                             {item.currency || "NGN"}{" "}
-                            {parseFloat(request.shippingFee).toFixed(2)}
+                            {parseFloat(item.unitPrice).toFixed(2)}
                           </>
                         ) : (
                           "N/A"
                         )}
                       </td>
-                    )}
-                    <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                      {item.unitPrice ? (
-                        <>
+
+                      {/* Total Price - Calculated */}
+                      <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
+                        <span className="font-semibold">
                           {item.currency || "NGN"}{" "}
-                          {parseFloat(item.unitPrice).toFixed(2)}
-                        </>
+                          {Number(
+                            isIncompleteDelivery
+                              ? calculateItemTotal(item).totalPrice
+                              : item.totalPrice || item.total || 0
+                          ).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                    </>
+                  )}
+                  {!isAnyItemInStock && !showFeeColumns && (
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      {editMode ? (
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={item.discount || ""}
+                          onChange={(e) =>
+                            handleChange(index, "discount", e.target.value)
+                          }
+                          className="w-16 px-2 py-1 border rounded text-center"
+                        />
+                      ) : item.discount !== "" &&
+                        item.discount !== null &&
+                        item.discount !== undefined ? (
+                        `${item.discount}%`
                       ) : (
-                        "N/A"
+                        "0%"
                       )}
                     </td>
+                  )}
 
-                    {/* Total Price - Calculated */}
-                    <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                      <span className="font-semibold">
+                  {/* VAT Amount Column - Only show when isIncompleteDelivery */}
+                  {!isPettyCash && !isAnyItemInStock && !showFeeColumns && (
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      <>
                         {item.currency || "NGN"}{" "}
-                        {Number(
-                          isIncompleteDelivery
-                            ? calculateItemTotal(item).totalPrice
-                            : item.totalPrice || item.total || 0
-                        ).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
+                        {item.vatAmount ? `${item.vatAmount}` : "-"}
+                      </>
                     </td>
-                  </>
-                )}
-                {!isAnyItemInStock && !showFeeColumns && (
-                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                    {item.discount !== "" &&
-                    item.discount !== null &&
-                    item.discount !== undefined
-                      ? `${item.discount}%`
-                      : "0%"}
-                  </td>
-                )}
+                  )}
 
-                {/* VAT Amount Column - Only show when isIncompleteDelivery */}
-                {!isPettyCash && !isAnyItemInStock && !showFeeColumns && (
-                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                  {requestType !== "pettyCash" && !isAnyItemInStock && (
                     <>
-                      {item.currency || "NGN"}{" "}
-                      {item.vatAmount ? `${item.vatAmount}` : "-"}
+                      {index === 0 && (
+                        <td
+                          className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700"
+                          rowSpan={g.items.length}
+                          style={{ verticalAlign: "middle" }}
+                        >
+                          {item.purchaseRequisitionNumber || "N/A"}
+                        </td>
+                      )}
+                      {index === 0 && (
+                        <td
+                          className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700"
+                          rowSpan={g.items.length}
+                          style={{ verticalAlign: "middle" }}
+                        >
+                          {item.purchaseOrderNumber || "N/A"}
+                        </td>
+                      )}
                     </>
-                  </td>
-                )}
-
-                {requestType !== "pettyCash" && !isAnyItemInStock && (
-                  <>
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseRequisitionNumber || "N/A"}
-                    </td>
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseOrderNumber || "N/A"}
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
+                  )}
+                </tr>
+              ))
+            )}
           </tbody>
+          {showFeeColumns && allSameVendor && editedItems.length > 0 && (
+            <tfoot>
+              <tr>
+                <td colSpan={9} className="pt-4 text-right ">
+                  {feeLabel} - {singleVendorName}:
+                </td>
+                <td className="pt-4 text-right ">
+                  {(editedItems[0].currency || "NGN") +
+                    " " +
+                    Number(request?.shippingFee || 0).toLocaleString(
+                      undefined,
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }
+                    )}
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
@@ -556,6 +811,34 @@ const ProcurementMTable = ({
           >
             ◄
           </button>
+
+          {/* Edit/Save Changes Button for Procurement Manager */}
+          {canProcurementManagerEdit && !isIncompleteDelivery && (
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={() => {
+                  if (editMode) {
+                    handleProcurementManagerSave();
+                  } else {
+                    setEditMode(true);
+                  }
+                }}
+                className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
+                  editMode
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-[#036173] text-white hover:bg-[#024f57]"
+                }`}
+              >
+                {editMode ? (
+                  <FaSave className="text-lg" />
+                ) : (
+                  <FaEdit className="text-lg" />
+                )}
+                {editMode ? "Save Changes" : "Edit"}
+              </button>
+            </div>
+          )}
+
           {isIncompleteDelivery && (
             <div className="flex justify-center mt-6">
               <button

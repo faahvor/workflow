@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useGlobalAlert } from "../GlobalAlert";
+import { useGlobalPrompt } from "../GlobalPrompt";
 
 const paymentStatusOptions = [
   { value: "notpaid", label: "Not Paid" },
@@ -17,8 +19,11 @@ const ServiceTable = ({
   const isAccounting =
     userRole === "accounting officer" || userRole === "accountingofficer";
   const isPettyCash = requestType === "pettyCash";
-  const isSecondApproval = currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2";
+  const isSecondApproval =
+    currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2";
   const showPaymentColumns = isAccounting && isPettyCash && isSecondApproval;
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt(); // Add this line
 
   const [editedItems, setEditedItems] = useState(items);
   const [isSaving, setIsSaving] = useState(false);
@@ -42,7 +47,8 @@ const ServiceTable = ({
     const item = newItems[index];
     item.paymentStatus = value;
 
-    const total = Number(item.unitPrice || item.amount || 0) * (item.quantity || 1);
+    const total =
+      Number(item.unitPrice || item.amount || 0) * (item.quantity || 1);
 
     if (value === "paid") {
       item.paid = total;
@@ -63,10 +69,12 @@ const ServiceTable = ({
   const handlePercentagePaidChange = (index, value) => {
     const newItems = [...editedItems];
     const item = newItems[index];
-    const pct = value === "" ? 0 : Math.max(0, Math.min(100, parseInt(value) || 0));
+    const pct =
+      value === "" ? 0 : Math.max(0, Math.min(100, parseInt(value) || 0));
     item.percentagePaid = pct;
 
-    const total = Number(item.unitPrice || item.amount || 0) * (item.quantity || 1);
+    const total =
+      Number(item.unitPrice || item.amount || 0) * (item.quantity || 1);
     item.paid = Math.round((pct / 100) * total * 100) / 100;
     item.balance = Math.round((total - item.paid) * 100) / 100;
     setEditedItems(newItems);
@@ -88,9 +96,9 @@ const ServiceTable = ({
           await onEditItem(payload);
         })
       );
-      alert("Saved successfully");
+      showAlert("Saved successfully");
     } catch (err) {
-      alert("Error saving changes");
+      showAlert("Error saving changes");
     } finally {
       setIsSaving(false);
     }
@@ -133,7 +141,10 @@ const ServiceTable = ({
           </thead>
           <tbody>
             {editedItems.map((item, idx) => (
-              <tr key={item.itemId || idx} className="hover:bg-emerald-50 transition-colors duration-150">
+              <tr
+                key={item.itemId || idx}
+                className="hover:bg-emerald-50 transition-colors duration-150"
+              >
                 <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
                   {idx + 1}
                 </td>
@@ -141,11 +152,14 @@ const ServiceTable = ({
                   {item.name || item.description || "N/A"}
                 </td>
                 <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                  NGN{" "}
-                  {Number(item.unitPrice || item.amount || 0).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                  {(item.currency || "NGN") + " "}
+                  {Number(item.unitPrice || item.amount || 0).toLocaleString(
+                    undefined,
+                    {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }
+                  )}
                 </td>
                 {showPaymentColumns && (
                   <>
@@ -184,21 +198,19 @@ const ServiceTable = ({
                         </div>
                       ) : (
                         <span className="font-semibold text-slate-900">
-                          {item.paymentStatus === "paid"
-                            ? "100%"
-                            : "0%"}
+                          {item.paymentStatus === "paid" ? "100%" : "0%"}
                         </span>
                       )}
                     </td>
                     <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-green-700">
-                      NGN{" "}
+                      {(item.currency || "NGN") + " "}
                       {Number(item.paid || 0).toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
                     </td>
                     <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-red-700">
-                      NGN{" "}
+                      {(item.currency || "NGN") + " "}
                       {Number(item.balance || 0).toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,

@@ -5,6 +5,9 @@ import CreatableSelect from "react-select/creatable";
 import axios from "axios";
 import { MdCheckCircle } from "react-icons/md";
 import { useAuth } from "../../context/AuthContext";
+import { useGlobalAlert } from "../GlobalAlert";
+import { useGlobalPrompt } from "../GlobalPrompt";
+
 
 const ProcurementTable = ({
   progressData,
@@ -73,6 +76,8 @@ const ProcurementTable = ({
   const tableRefs = useRef([]);
   const { getToken } = useAuth();
   const [hoveredRow, setHoveredRow] = useState(null);
+  const { showAlert } = useGlobalAlert();
+const { showPrompt } = useGlobalPrompt();
 
   const departments = [
     "marine",
@@ -456,14 +461,14 @@ const ProcurementTable = ({
       editedRequestsCount: editedRequests && editedRequests.length,
       onEditItemPresent: !!onEditItem,
     });
-    if (!window.confirm("Save all changes to the items?")) return;
-
+ const ok = await showPrompt("Save all changes to the items?");
+  if (!ok) return;
     const dirty = editedRequests;
     console.log("handleSaveAll - editedRequests snapshot:", editedRequests);
     console.log("handleSaveAll - dirty items:", dirty);
 
     if (!dirty || dirty.length === 0) {
-      alert("No changes to save.");
+      showAlert("No changes to save.");
       return;
     }
 
@@ -550,7 +555,7 @@ const ProcurementTable = ({
       console.log("handleSaveAll - updates payload:", updates);
 
       if (updates.length === 0) {
-        alert("No actual field changes detected to save.");
+        showAlert("No actual field changes detected to save.");
         setIsSaving(false);
         return;
       }
@@ -566,7 +571,7 @@ const ProcurementTable = ({
         }))
       );
 
-      alert("Saved successfully");
+      showAlert("Saved successfully");
 
       // Notify parent to refresh attached-files list / live preview (no uploads here)
       try {
@@ -576,7 +581,7 @@ const ProcurementTable = ({
       }
     } catch (err) {
       console.error("Error in handleSaveAll:", err);
-      alert("Error saving changes. See console for details.");
+      showAlert("Error saving changes. See console for details.");
     } finally {
       setIsSaving(false);
     }
@@ -2002,7 +2007,7 @@ const ProcurementTable = ({
               className="bg-red-500 h-[40px] text-white px-4 py-2 rounded-md"
               onClick={() => {
                 if (!deletingItem?.requestId || !deletingItem?.itemId) {
-                  alert("❌ No item selected for deletion.");
+                  showAlert("❌ No item selected for deletion.");
                   return;
                 }
                 handleDeleteItem(

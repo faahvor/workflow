@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const InvoiceControllerTable = ({
   items = [],
@@ -15,7 +16,7 @@ const InvoiceControllerTable = ({
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
-
+const { showAlert } = useGlobalAlert();
   // ✅ ADD shipping/clearing fee logic
   const tagLower = String(tag || "").toLowerCase();
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
@@ -112,17 +113,17 @@ const InvoiceControllerTable = ({
     const item = editedItems[index];
 
     if (!item.quantity || item.quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
 
     try {
       await onEditItem(item);
       setEditingIndex(null);
-      alert("✅ Item updated successfully!");
+      showAlert("✅ Item updated successfully!");
     } catch (error) {
       console.error("❌ Error saving item:", error);
-      alert("❌ Failed to update item");
+      showAlert("❌ Failed to update item");
     }
   };
 

@@ -3,6 +3,7 @@ import axios from "axios";
 import { IoChevronDown, IoChevronUp } from "react-icons/io5";
 import { MdReply } from "react-icons/md";
 import { FcComments } from "react-icons/fc";
+import { useGlobalAlert } from "./GlobalAlert";
 
 const COMMENTS_PER_PAGE = 3;
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
@@ -38,7 +39,7 @@ function CommentThread({ requestId, user, getToken }) {
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [postingComment, setPostingComment] = useState(false);
-
+const { showAlert } = useGlobalAlert();
   // For reply UI
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
@@ -102,7 +103,7 @@ function CommentThread({ requestId, user, getToken }) {
         onCommentPosted(); // <-- call the callback
       }
     } catch (err) {
-      alert("Failed to post comment");
+      showAlert("Failed to post comment");
     } finally {
       setPostingComment(false);
     }

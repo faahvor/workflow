@@ -9,6 +9,9 @@ import EmailComposer from "../pages/EmailComposer";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import GRNPreview from "./GRNPreview";
+import { useGlobalAlert } from "./GlobalAlert";
+import { useGlobalPrompt } from "./GlobalPrompt";
+import WaybillPreview from "./WaybillPreview";
 
 const formatBytes = (bytes) => {
   if (!bytes) return "";
@@ -43,9 +46,9 @@ const AttachedDocuments = ({
   files = [],
   filesRefreshCounter = 0,
   onFilesChanged = () => {},
-    isReadOnly = false,      
-  isReadOnlyMode = false, 
-    onGrnStatusChange = () => {},
+  isReadOnly = false,
+  isReadOnlyMode = false,
+  onGrnStatusChange = () => {},
 }) => {
   const failedHeadUrlsRef = useRef(new Set());
   const { getToken, user } = useAuth();
@@ -53,6 +56,8 @@ const AttachedDocuments = ({
 
   const [fileMeta, setFileMeta] = useState([]);
   const [active, setActive] = useState(null);
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt(); // Add this line
 
   const [requestData, setRequestData] = useState(null);
   const [requestItems, setRequestItems] = useState([]);
@@ -71,11 +76,11 @@ const AttachedDocuments = ({
     []
   );
 
-const handleGenerateStoreGrn = () => {
-  setStoreGrnGenerated(true);
-  alert("GRN has been generated and added to Attached Documents.");
-  // Do NOT call onFilesChanged here, or else state is reset
-};
+  const handleGenerateStoreGrn = () => {
+    setStoreGrnGenerated(true);
+    showAlert("GRN has been generated and added to Attached Documents.");
+    // Do NOT call onFilesChanged here, or else state is reset
+  };
   const [storeGrnGenerated, setStoreGrnGenerated] = useState(false);
   function isAtOrPastProcurementManager(request) {
     const states = [
@@ -189,17 +194,14 @@ const handleGenerateStoreGrn = () => {
               : "Request Form",
             vendorId: g.vendorId,
             vendorName: g.vendorName,
-            items:
-  requestData?.doVendorSplit
-    ? g.items
-    : (
-        requestData &&
-        Array.isArray(requestData.originalItemsSnapshot) &&
-        requestData.originalItemsSnapshot.length > 0 &&
-        isAtOrPastProcurementManager(requestData)
-      )
-      ? requestData.originalItemsSnapshot
-      : g.items,
+            items: requestData?.doVendorSplit
+              ? g.items
+              : requestData &&
+                Array.isArray(requestData.originalItemsSnapshot) &&
+                requestData.originalItemsSnapshot.length > 0 &&
+                isAtOrPastProcurementManager(requestData)
+              ? requestData.originalItemsSnapshot
+              : g.items,
           });
         });
       }
@@ -234,17 +236,14 @@ const handleGenerateStoreGrn = () => {
               displayName: `${g.vendorName} Requisition Preview`,
               vendorId: g.vendorId,
               vendorName: g.vendorName,
-              items:
-  requestData?.doVendorSplit
-    ? g.items // Always use items for vendor split
-    : (
-        requestData &&
-        Array.isArray(requestData.originalItemsSnapshot) &&
-        requestData.originalItemsSnapshot.length > 0 &&
-        isAtOrPastProcurementManager(requestData)
-      )
-      ? requestData.originalItemsSnapshot
-      : g.items,
+              items: requestData?.doVendorSplit
+                ? g.items // Always use items for vendor split
+                : requestData &&
+                  Array.isArray(requestData.originalItemsSnapshot) &&
+                  requestData.originalItemsSnapshot.length > 0 &&
+                  isAtOrPastProcurementManager(requestData)
+                ? requestData.originalItemsSnapshot
+                : g.items,
             });
           });
         }
@@ -286,61 +285,135 @@ const handleGenerateStoreGrn = () => {
         });
       });
     }
-   if (
-  Array.isArray(requestData?.jobCompletionCertificateFiles) &&
-  requestData.jobCompletionCertificateFiles.length > 0
-) {
-  docs.push({
-    type: "grn",
-    name: "Goods Received Note",
-    displayName: "Goods Received Note",
-    items: requestData?.items || requestItems || [],
-  });
-}
+    if (
+      Array.isArray(requestData?.jobCompletionCertificateFiles) &&
+      requestData.jobCompletionCertificateFiles.length > 0
+    ) {
+      docs.push({
+        type: "grn",
+        name: "Goods Received Note",
+        displayName: "Goods Received Note",
+        items: requestData?.items || requestItems || [],
+      });
+    }
 
-  // --- BEGIN: GRN logic update ---
-const grnRoles = ["store base", "store jetty", "store vessel", "requester"];
-const userRoleLower = (user?.role || "").toLowerCase();
-// Add all states where GRN should show
-const completedStates = [
-  "completed",
-  "approved",
-  "pending",
-  "pending_requester_delivery_confirmation", // <-- add this
-  "pending_store_base_approval", // <-- add this
-  "pendingstorebaseapproval",     // <-- add this for safety
-  "pendingrequesterdeliveryconfirmation"     // <-- add this for safety
-];
-const currentState =
-  (requestData?.currentState || requestData?.flow?.currentState || requestData?.status || "").toLowerCase();
+    // --- BEGIN: GRN logic update ---
+    const grnRoles = ["store base", "store jetty", "store vessel", "requester"];
+    const userRoleLower = (user?.role || "").toLowerCase();
+    // Add all states where GRN should show
+    const completedStates = [
+      "completed",
+      "approved",
+      "pending",
+      "pending_requester_delivery_confirmation", // <-- add this
+      "pending_store_base_approval", // <-- add this
+      "pendingstorebaseapproval", // <-- add this for safety
+      "pendingrequesterdeliveryconfirmation", // <-- add this for safety
+    ];
+    const currentState = (
+      requestData?.currentState ||
+      requestData?.flow?.currentState ||
+      requestData?.status ||
+      ""
+    ).toLowerCase();
+    const shouldShowWaybill =
+      requestData?.isInStock === true &&
+      grnRoles.includes(userRoleLower) &&
+      ([
+        "pending_store_base_approval",
+        "pending_store_jetty_approval",
+        "pending_store_vessel_approval",
+      ].includes(currentState) ||
+        // fallback for possible state naming
+        [
+          "pendingstorebaseapproval",
+          "pendingstorejettyapproval",
+          "pendingstorevesselapproval",
+        ].includes(currentState));
 
-if (grnRoles.includes(userRoleLower)) {
-  if (
-    completedStates.includes(currentState) &&
-    !docs.some((d) => d.type === "grn") &&
-    !requestData?.isService
-  ) {
-    docs.push({
-      type: "grn",
-      name: "Goods Received Note",
-      displayName: "Goods Received Note",
-      items: requestData?.items || requestItems || [],
-    });
-  }
-  if (
-    storeGrnGenerated &&
-    !docs.some((d) => d.type === "grn") &&
-    !requestData?.isService
-  ) {
-    docs.push({
-      type: "grn",
-      name: "Goods Received Note",
-      displayName: "Goods Received Note",
-      items: requestData?.items || requestItems || [],
-    });
-  }
-}
-  // --- END: GRN logic update ---
+    if (
+      String(requestData?.requestType).toLowerCase() === "instock" &&
+      !requestData?.isService
+    ) {
+      if (storeGrnGenerated || completedStates.includes(currentState)) {
+        if (!docs.some((d) => d.type === "waybill")) {
+          docs.push({
+            type: "waybill",
+            name: "Waybill",
+            displayName: "Waybill",
+            items: requestData?.items || requestItems || [],
+          });
+        }
+      }
+    } else if (grnRoles.includes(userRoleLower)) {
+      if (
+        completedStates.includes(currentState) &&
+        !docs.some((d) => d.type === "grn") &&
+        !requestData?.isService &&
+        String(requestData?.requestType).toLowerCase() !== "instock"
+      ) {
+        docs.push({
+          type: "grn",
+          name: "Goods Received Note",
+          displayName: "Goods Received Note",
+          items: requestData?.items || requestItems || [],
+        });
+      }
+      if (storeGrnGenerated && !requestData?.isService) {
+        if (String(requestData?.requestType).toLowerCase() === "instock") {
+          if (!docs.some((d) => d.type === "waybill")) {
+            docs.push({
+              type: "waybill",
+              name: "Waybill",
+              displayName: "Waybill",
+              items: requestData?.items || requestItems || [],
+            });
+          }
+        } else {
+          if (!docs.some((d) => d.type === "grn")) {
+            docs.push({
+              type: "grn",
+              name: "Goods Received Note",
+              displayName: "Goods Received Note",
+              items: requestData?.items || requestItems || [],
+            });
+          }
+        }
+      }
+    }
+
+    if (grnRoles.includes(userRoleLower)) {
+      if (
+        completedStates.includes(currentState) &&
+        !docs.some((d) => d.type === "grn") &&
+        !requestData?.isService &&
+        String(requestData?.requestType).toLowerCase() !== "instock"
+      ) {
+        if (String(requestData?.requestType).toLowerCase() !== "instock") {
+          docs.push({
+            type: "grn",
+            name: "Goods Received Note",
+            displayName: "Goods Received Note",
+            items: requestData?.items || requestItems || [],
+          });
+        }
+      }
+      if (
+        storeGrnGenerated &&
+        !docs.some((d) => d.type === "grn") &&
+        !requestData?.isService
+      ) {
+        if (String(requestData?.requestType).toLowerCase() !== "instock") {
+          docs.push({
+            type: "grn",
+            name: "Goods Received Note",
+            displayName: "Goods Received Note",
+            items: requestData?.items || requestItems || [],
+          });
+        }
+      }
+    }
+    // --- END: GRN logic update ---
 
     // Other files (quotations, payment advice, invoices, images, etc.)
     fileMeta.forEach((f) => {
@@ -359,17 +432,16 @@ if (grnRoles.includes(userRoleLower)) {
         (d) => d.type !== "requestForm" && d.type !== "requisition"
       );
     }
-if (
-  storeGrnGenerated &&
-  !docs.some((d) => d.type === "grn")
-) {
-  docs.push({
-    type: "grn",
-    name: "Goods Received Note",
-    displayName: "Goods Received Note",
-    items: requestData?.items || requestItems || [],
-  });
-}
+    if (storeGrnGenerated && !docs.some((d) => d.type === "grn")) {
+      if (String(requestData?.requestType).toLowerCase() !== "instock") {
+        docs.push({
+          type: "grn",
+          name: "Goods Received Note",
+          displayName: "Goods Received Note",
+          items: requestData?.items || requestItems || [],
+        });
+      }
+    }
     return filteredDocs;
   }, [
     requestData,
@@ -378,16 +450,18 @@ if (
     vendorGroups,
     showPurchaseOrder,
     fileMeta,
-        storeGrnGenerated, 
+    storeGrnGenerated,
   ]);
-  const hasGrnDoc = folderDocs.some((doc) => doc.type === "grn");
-
+  const hasGrnDoc =
+    String(requestData?.requestType).toLowerCase() === "instock"
+      ? folderDocs.some((doc) => doc.type === "waybill")
+      : folderDocs.some((doc) => doc.type === "grn");
   // Notify parent when hasGrnDoc changes
   useEffect(() => {
     if (typeof onGrnStatusChange === "function") {
       onGrnStatusChange(hasGrnDoc);
     }
-  }, [hasGrnDoc, onGrnStatusChange]);  // Keyboard navigation for folder modal
+  }, [hasGrnDoc, onGrnStatusChange]); // Keyboard navigation for folder modal
   useEffect(() => {
     if (!active || !active.folder) return;
     const onKeyDown = (e) => {
@@ -604,7 +678,7 @@ if (
 
   const handleSendAsMailFromRequestForm = async () => {
     if (!livePreviewRef.current) {
-      alert("Preview content not found");
+      showAlert("Preview content not found");
       return;
     }
 
@@ -625,7 +699,7 @@ if (
       setTimeout(() => setShowEmailComposer(true), 120);
     } catch (err) {
       console.error("Failed to generate PDF for email:", err);
-      alert("Failed to generate PDF. Please try again.");
+      showAlert("Failed to generate PDF. Please try again.");
     } finally {
       setPreparingEmailPdf(false);
     }
@@ -667,10 +741,10 @@ if (
     // role guard — only procurement officer can delete
     if ((user?.role || "").toLowerCase() !== "procurement officer") return;
 
-    const confirmDelete = window.confirm(
+    const ok = await showPrompt(
       "Are you sure you want to delete this quotation?"
     );
-    if (!confirmDelete) return;
+    if (!ok) return;
 
     try {
       setDeletingUrl(fileUrl);
@@ -697,55 +771,7 @@ if (
         } catch {}
       } catch {}
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to delete quotation");
-    } finally {
-      setDeletingUrl(null);
-    }
-  };
-
-  const deletePaymentAdvice = async (fileUrl) => {
-    if (!fileUrl || !requestId) return;
-    // role guard — only accounting officer can delete payment advice
-    if (
-      (user?.role || "").toLowerCase() !== "accounting officer" &&
-      (user?.role || "").toLowerCase() !== "accountingofficer"
-    )
-      return;
-
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this payment advice file?"
-    );
-    if (!confirmDelete) return;
-
-    try {
-      setDeletingUrl(fileUrl);
-      const token = getToken ? getToken() : null;
-      const headers = {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        "Content-Type": "application/json",
-      };
-
-      await axios.delete(
-        `${API_BASE_URL}/requests/${requestId}/payment-advice-files`,
-        {
-          headers,
-          data: { fileUrl },
-        }
-      );
-
-      // refresh request data locally so the files list is rebuilt
-      try {
-        const resp = await axios.get(`${API_BASE_URL}/requests/${requestId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const data = resp.data?.data ?? resp.data ?? resp.data;
-        setRequestData(data);
-        try {
-          onFilesChanged();
-        } catch {}
-      } catch {}
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to delete payment advice");
+      showAlert(err?.response?.data?.message || "Failed to delete quotation");
     } finally {
       setDeletingUrl(null);
     }
@@ -1176,7 +1202,7 @@ if (
       iframe.contentWindow.focus();
       iframe.contentWindow.print();
     } catch {
-      alert("Failed to print preview. See console for details.");
+      showAlert("Failed to print preview. See console for details.");
     } finally {
       setTimeout(() => {
         if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
@@ -1203,7 +1229,7 @@ if (
 
   const handleDownloadLive = async () => {
     if (!livePreviewRef.current) {
-      alert("Preview content not found");
+      showAlert("Preview content not found");
       return;
     }
 
@@ -1226,36 +1252,46 @@ if (
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("PDF generation failed:", err);
-      alert("Failed to generate PDF. Please try the Print option instead.");
+      showAlert("Failed to generate PDF. Please try the Print option instead.");
     } finally {
       setDownloadingPreview(false);
     }
   };
 
-
-  
-
   return (
     <>
       <div className="mb-8">
         <h3 className="text-lg font-bold text-slate-900 mb-4">
-  Attached Documents
-</h3>
-{["store base", "store jetty", "store vessel"].includes((user?.role || "").toLowerCase()) &&
-  // Hide Generate GRN if read-only or read-only mode
-  !isReadOnly && !isReadOnlyMode && (
-    <button
-      type="button"
-      className={`text-emerald-700 underline text-sm font-semibold mb-4 ml-2 ${hasGrnDoc || storeGrnGenerated ? "opacity-50 cursor-not-allowed" : ""}`}
-      onClick={() => {
-        if (!hasGrnDoc && !storeGrnGenerated) handleGenerateStoreGrn();
-      }}
-      disabled={hasGrnDoc || storeGrnGenerated}
-      style={{ background: "none", border: "none", cursor: hasGrnDoc || storeGrnGenerated ? "not-allowed" : "pointer" }}
-    >
-      Generate GRN
-    </button>
-)}
+          Attached Documents
+        </h3>
+        {["store base", "store jetty", "store vessel"].includes(
+          (user?.role || "").toLowerCase()
+        ) &&
+          !isReadOnly &&
+          !isReadOnlyMode && (
+            <button
+              type="button"
+              className={`text-emerald-700 underline text-sm font-semibold mb-4 ml-2 ${
+                hasGrnDoc || storeGrnGenerated
+                  ? "opacity-50 cursor-not-allowed"
+                  : ""
+              }`}
+              onClick={() => {
+                if (!hasGrnDoc && !storeGrnGenerated) handleGenerateStoreGrn();
+              }}
+              disabled={hasGrnDoc || storeGrnGenerated}
+              style={{
+                background: "none",
+                border: "none",
+                cursor:
+                  hasGrnDoc || storeGrnGenerated ? "not-allowed" : "pointer",
+              }}
+            >
+              {String(requestData?.requestType).toLowerCase() === "instock"
+                ? "Generate Waybill"
+                : "Generate GRN"}
+            </button>
+          )}
 
         {loadingRequest ? (
           <div className="p-6 flex items-center justify-center">
@@ -1709,7 +1745,7 @@ if (
                     <button
                       onClick={async () => {
                         if (!livePreviewRef.current) {
-                          alert("Preview content not found");
+                          showAlert("Preview content not found");
                           return;
                         }
                         setPreparingPOEmailPdf(true);
@@ -1733,7 +1769,9 @@ if (
                             "Failed to generate PDF for email:",
                             err
                           );
-                          alert("Failed to generate PDF. Please try again.");
+                          showAlert(
+                            "Failed to generate PDF. Please try again."
+                          );
                         } finally {
                           setPreparingPOEmailPdf(false);
                         }
@@ -1892,7 +1930,7 @@ if (
                       <button
                         onClick={async () => {
                           if (!livePreviewRef.current) {
-                            alert("Preview content not found");
+                            showAlert("Preview content not found");
                             return;
                           }
                           setPreparingEmailPdf(true);
@@ -1917,7 +1955,9 @@ if (
                               "Failed to generate PDF for email:",
                               err
                             );
-                            alert("Failed to generate PDF. Please try again.");
+                            showAlert(
+                              "Failed to generate PDF. Please try again."
+                            );
                           } finally {
                             setHideSignaturesForPdf(false); // <-- Restore signatures for normal preview
                             setPreparingEmailPdf(false);
@@ -1940,7 +1980,7 @@ if (
                       <button
                         onClick={async () => {
                           if (!livePreviewRef.current) {
-                            alert("Preview content not found");
+                            showAlert("Preview content not found");
                             return;
                           }
                           setPreparingPOEmailPdf(true);
@@ -1996,7 +2036,9 @@ if (
                               "Failed to generate PDF for email:",
                               err
                             );
-                            alert("Failed to generate PDF. Please try again.");
+                            showAlert(
+                              "Failed to generate PDF. Please try again."
+                            );
                           } finally {
                             setPreparingPOEmailPdf(false);
                           }
@@ -2084,6 +2126,7 @@ if (
                       "requisition",
                       "purchaseOrder",
                       "grn",
+                      "waybill",
                     ].includes(doc.type)
                   ) {
                     return (
@@ -2117,8 +2160,19 @@ if (
                             apiBase={API_BASE_URL}
                           />
                         )}
-                        {doc.type === "grn" && (
-                          <GRNPreview
+                        {doc.type === "grn" &&
+                          String(requestData?.requestType).toLowerCase() !==
+                            "instock" && (
+                            <GRNPreview
+                              request={requestData || {}}
+                              items={doc.items}
+                              requestId={requestId}
+                              token={getToken ? getToken() : null}
+                              apiBase={API_BASE_URL}
+                            />
+                          )}
+                        {doc.type === "waybill" && (
+                          <WaybillPreview
                             request={requestData || {}}
                             items={doc.items}
                             requestId={requestId}
@@ -2197,7 +2251,7 @@ if (
           onSent={() => {
             setShowEmailComposer(false);
             setPoEmailInitialAttachments([]);
-            alert("Email sent!");
+            showAlert("Email sent!");
           }}
         />
       )}

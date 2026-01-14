@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const AccountTable = ({
   items = [],
@@ -14,6 +15,7 @@ const AccountTable = ({
   tag = "",
   request = null,
 }) => {
+  const { showAlert } = useGlobalAlert();
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
@@ -25,7 +27,7 @@ const AccountTable = ({
   const hidePrices = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
-const showShippingFee = request?.logisticsType === "international";
+  const showShippingFee = request?.logisticsType === "international";
   React.useEffect(() => {
     setEditedItems(
       items.map((item) => {
@@ -154,7 +156,7 @@ const showShippingFee = request?.logisticsType === "international";
       .filter(Boolean);
 
     if (updates.length === 0) {
-      alert("No changes to save.");
+      showAlert("No changes to save.");
       return;
     }
 
@@ -173,7 +175,7 @@ const showShippingFee = request?.logisticsType === "international";
         })
       );
 
-      alert("Saved successfully");
+      showAlert("Saved successfully");
       // refresh local editedItems from latest props to clear dirty state
       setEditedItems(
         items.map((item) => {
@@ -189,7 +191,7 @@ const showShippingFee = request?.logisticsType === "international";
       );
     } catch (err) {
       console.error("Error saving account items:", err);
-      alert("Error saving changes. See console for details.");
+      showAlert("Error saving changes. See console for details.");
     } finally {
       setIsSaving(false);
     }
@@ -245,16 +247,40 @@ const showShippingFee = request?.logisticsType === "international";
   }, [items]);
 
   const handlePaymentStatusChange = (index, value) => {
-    const newItems = [...editedItems];
-    const item = newItems[index];
+  const newItems = [...editedItems];
+  const item = newItems[index];
 
+  // Find the vendor key for grouping
+  const vendorKey = item.vendorId ?? item.vendor ?? "No Vendor";
+
+  // If columns are merged (shipping/clearing), update all items in the group
+  if (hidePrices) {
+    newItems.forEach((it, idx) => {
+      const itVendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (itVendorKey === vendorKey) {
+        it.paymentStatus = value;
+        const total = getFeeForItem(it);
+        if (value === "paid") {
+          it.paid = total;
+          it.balance = 0;
+          it.percentagePaid = 100;
+        } else if (value === "notpaid") {
+          it.paid = 0;
+          it.balance = total;
+          it.percentagePaid = 0;
+        } else if (value === "partpayment") {
+          const percentage = parseInt(it.percentagePaid || 0, 10) || 0;
+          it.percentagePaid = Math.max(0, Math.min(100, percentage));
+          it.paid = Math.round((it.percentagePaid / 100) * total * 100) / 100;
+          it.balance = Math.round((total - it.paid) * 100) / 100;
+        }
+      }
+    });
+  } else {
+    // Default: update only the selected item
     item.paymentStatus = value;
-
-    // Calculate paid and balance based on payment status (use total that includes VAT)
-    const total = hidePrices
-      ? getFeeForItem(item)
-      : Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
-
+    const total =
+      Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
     if (value === "paid") {
       item.paid = total;
       item.balance = 0;
@@ -269,26 +295,39 @@ const showShippingFee = request?.logisticsType === "international";
       item.paid = Math.round((item.percentagePaid / 100) * total * 100) / 100;
       item.balance = Math.round((total - item.paid) * 100) / 100;
     }
+  }
 
-    setEditedItems(newItems);
-  };
-  const handlePercentagePaidChange = (index, value) => {
-    const newItems = [...editedItems];
-    const item = newItems[index];
+  setEditedItems(newItems);
+};
+const handlePercentagePaidChange = (index, value) => {
+  const newItems = [...editedItems];
+  const item = newItems[index];
+  const percentage =
+    value === "" ? 0 : Math.max(0, Math.min(100, parseInt(value) || 0));
+  const vendorKey = item.vendorId ?? item.vendor ?? "No Vendor";
 
-    const percentage =
-      value === "" ? 0 : Math.max(0, Math.min(100, parseInt(value) || 0));
+  if (hidePrices) {
+    // Update all items in the vendor group
+    newItems.forEach((it) => {
+      const itVendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (itVendorKey === vendorKey) {
+        it.percentagePaid = percentage;
+        const total = getFeeForItem(it);
+        it.paid = Math.round((percentage / 100) * total * 100) / 100;
+        it.balance = Math.round((total - it.paid) * 100) / 100;
+      }
+    });
+  } else {
+    // Update only the selected item
     item.percentagePaid = percentage;
-
-    const total = hidePrices
-      ? getFeeForItem(item)
-      : Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
-
+    const total =
+      Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
     item.paid = Math.round((percentage / 100) * total * 100) / 100;
     item.balance = Math.round((total - item.paid) * 100) / 100;
+  }
 
-    setEditedItems(newItems);
-  };
+  setEditedItems(newItems);
+};
 
   const handleFeeChange = (index, value) => {
     const newItems = [...editedItems];
@@ -333,7 +372,7 @@ const showShippingFee = request?.logisticsType === "international";
     const changes = buildChangesForAccountItem(item);
 
     if (Object.keys(changes).length === 0) {
-      alert("No changes to save for this item.");
+      showAlert("No changes to save for this item.");
       setEditingIndex(null);
       return;
     }
@@ -356,7 +395,7 @@ const showShippingFee = request?.logisticsType === "international";
         error?.response?.data ||
         error?.message;
       console.error("❌ Error saving item:", error);
-      alert(serverMsg || "Failed to update item. See console for details.");
+      showAlert(serverMsg || "Failed to update item. See console for details.");
     }
   };
 
@@ -394,7 +433,7 @@ const showShippingFee = request?.logisticsType === "international";
       </div>
     );
   }
-    const calculateVatAmount = (item) => {
+  const calculateVatAmount = (item) => {
     if (!item.vatted || !item.total) return 0;
     // Assuming VAT is included in total, extract it
     // If total includes VAT, VAT = total - (total / (1 + vatRate))
@@ -402,14 +441,27 @@ const showShippingFee = request?.logisticsType === "international";
     const vatRate = 0.075;
     return (item.total / (1 + vatRate)) * vatRate;
   };
-const showSrcReqId = React.useMemo(
-  () => (items || []).some((it) => it.movedFromRequestId),
-  [items]
-);
+  const showSrcReqId = React.useMemo(
+    () => (items || []).some((it) => it.movedFromRequestId),
+    [items]
+  );
 
-const shouldHideSaveButton =
-  (requestType === "pettyCash" &&
-    currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL");
+  const shouldHideSaveButton =
+    requestType === "pettyCash" &&
+    currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL";
+
+  // Group items by vendor
+  const groupByVendor = (list) => {
+    const groups = {};
+    list.forEach((it, idx) => {
+      const key = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (!groups[key]) groups[key] = { items: [], order: idx };
+      groups[key].items.push({ ...it, _groupIndex: idx });
+    });
+    return Object.values(groups).sort((a, b) => a.order - b.order);
+  };
+  const groups = groupByVendor(editedItems);
+
   return (
     <div className="relative">
       {/* ✅ Scrollable table container */}
@@ -448,11 +500,11 @@ const shouldHideSaveButton =
                   Shipping Qty
                 </th>
               )}
-{showShippingFee && (
-      <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-        Shipping Fee
-      </th>
-    )}
+              {showShippingFee &&!hidePrices && (
+                <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Shipping Fee
+                </th>
+              )}
               {!hidePrices ? (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Unit Price
@@ -480,15 +532,19 @@ const shouldHideSaveButton =
               )}
               {showPaymentStatus && (
                 <>
-                  <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
-                      Discount (%)
-                    </th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                  Total Price
-                </th>
+                    {!hidePrices && (
+          <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+            Discount (%)
+          </th>
+        )}
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-                      VAT Amount
-                    </th>
+                    Total Price
+                  </th>
+                {!hidePrices && (
+          <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+            VAT Amount
+          </th>
+        )}
                 </>
               )}
               {requestType !== "pettyCash" && (
@@ -504,243 +560,377 @@ const shouldHideSaveButton =
             </tr>
           </thead>
           <tbody>
-            {editedItems.map((item, index) => (
-              <tr
-                key={item.itemId || index}
-                className="hover:bg-emerald-50 transition-colors duration-150"
-              >
-                {/* Serial Number */}
-                <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
-                  {index + 1}
-                </td>
-
-                {/* Description */}
-                <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
-                  {item.name || "N/A"}
-                </td>
-
-                {/* Item Type */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.makersType || "N/A"}
-                </td>
-
-                {/* Maker */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.maker || "N/A"}
-                </td>
-
-                {/* Maker's Part No */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {item.makersPartNo || "N/A"}
-                </td>
-                {hasMovedFromRequestId && (
-                  <td className="border border-slate-200 px-4 py-3 text-center">
-                    {item.movedFromRequestId ? (
-                      <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold font-mono">
-                        {item.movedFromRequestId}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
+            {groups.map((g, gi) =>
+              g.items.map((item, index) => (
+                <tr
+                  key={item.itemId || item._groupIndex || index}
+                  className="hover:bg-emerald-50 transition-colors duration-150"
+                >
+                  {/* Serial Number */}
+                  <td className="border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-900">
+                    {index + 1}
                   </td>
-                )}
 
-                {/* ✅ Vendor Column */}
-                <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  {resolveVendorName(item.vendor)}
-                </td>
+                  {/* Description */}
+                  <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
+                    {item.name || "N/A"}
+                  </td>
 
-                {/* Quantity - Editable */}
-                <td className="border border-slate-200 px-4 py-3 text-center">
-                  {editingIndex === index ? (
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity || ""}
-                      onChange={(e) =>
-                        handleQuantityChange(index, e.target.value)
-                      }
-                      className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    />
-                  ) : (
-                    <span className="font-semibold text-slate-900">
-                      {item.quantity}
-                    </span>
-                  )}
-                </td>
-                {hidePrices && (
-                  <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                    <span className="font-semibold text-slate-900">
-                      {item.shippingQuantity ?? 0}
-                    </span>
+                  {/* Item Type */}
+                  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    {item.makersType || "N/A"}
                   </td>
-                )}
- {showShippingFee && (
-      <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-        {item.shippingFee ? (
-          <>
-            {item.currency || "NGN"}{" "}
-            {parseFloat(item.shippingFee).toFixed(2)}
-          </>
-        ) : (
-          "N/A"
-        )}
-      </td>
-    )}
-                {!hidePrices ? (
-                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                    {item.unitPrice ? (
-                      <>
-                        {item.currency || "NGN"}{" "}
-                        {parseFloat(item.unitPrice).toFixed(2)}
-                      </>
-                    ) : (
-                      "N/A"
-                    )}
+
+                  {/* Maker */}
+                  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    {item.maker || "N/A"}
                   </td>
-                ) : (
-                  <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
-                    {typeof getFeeForItem(item) === "number" ? (
-                      <>
-                        {item.currency || "NGN"}{" "}
-                        {Number(getFeeForItem(item) || 0).toLocaleString(
-                          undefined,
-                          {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }
-                        )}
-                      </>
-                    ) : (
-                      "N/A"
-                    )}
+
+                  {/* Maker's Part No */}
+                  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    {item.makersPartNo || "N/A"}
                   </td>
-                )}
-                {showPaymentColumns && (
-                  <>
-                    {/* Payment Status */}
+                  {hasMovedFromRequestId && (
                     <td className="border border-slate-200 px-4 py-3 text-center">
-                      {allowPaymentEditing ? (
-                        <select
-                          value={item.paymentStatus || "notpaid"}
-                          onChange={(e) => {
-                            // update local state only — do not auto-save
-                            handlePaymentStatusChange(index, e.target.value);
-                          }}
-                          className="border-2 border-emerald-300 px-3 py-1 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                          <option value="notpaid">Not Paid</option>
-                          <option value="paid">Paid</option>
-                          <option value="partpayment">Partially Paid</option>
-                        </select>
-                      ) : (
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            item.paymentStatus === "paid"
-                              ? "bg-green-100 text-green-800"
-                              : item.paymentStatus === "part"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {item.paymentStatus === "paid"
-                            ? "Paid"
-                            : item.paymentStatus === "partpayment"
-                            ? "Part"
-                            : "Not Paid"}
+                      {item.movedFromRequestId ? (
+                        <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold font-mono">
+                          {item.movedFromRequestId}
                         </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
+                  )}
 
-                    {/* Percentage Paid */}
-                    <td className="border border-slate-200 px-4 py-3 text-center">
-                      {item.paymentStatus === "partpayment" ? (
-                        allowPaymentEditing ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="1"
-                              value={item.percentagePaid || ""}
+                  {/* ✅ Vendor Column */}
+                  <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    {resolveVendorName(item.vendor)}
+                  </td>
+
+                  {/* Quantity - Editable */}
+                  <td className="border border-slate-200 px-4 py-3 text-center">
+                    {editingIndex === index ? (
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity || ""}
+                        onChange={(e) =>
+                          handleQuantityChange(index, e.target.value)
+                        }
+                        className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      />
+                    ) : (
+                      <span className="font-semibold text-slate-900">
+                        {item.quantity}
+                      </span>
+                    )}
+                  </td>
+                  {hidePrices && (
+                    <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      <span className="font-semibold text-slate-900">
+                        {item.shippingQuantity ?? 0}
+                      </span>
+                    </td>
+                  )}
+                  {showShippingFee && !hidePrices && (
+                    <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                      {item.shippingFee ? (
+                        <>
+                          {item.currency || "NGN"}{" "}
+                          {parseFloat(item.shippingFee).toFixed(2)}
+                        </>
+                      ) : (
+                        "N/A"
+                      )}
+                    </td>
+                  )}
+                  {!hidePrices ? (
+                    <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
+                      {item.unitPrice ? (
+                        <>
+                          {item.currency || "NGN"}{" "}
+                          {parseFloat(item.unitPrice).toFixed(2)}
+                        </>
+                      ) : (
+                        "N/A"
+                      )}
+                    </td>
+                  ) : (
+                    index === 0 && (
+                      <td
+                        className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700"
+                        rowSpan={g.items.length}
+                        style={{ verticalAlign: "middle" }}
+                      >
+                        {typeof getFeeForItem(item) === "number" ? (
+                          <>
+                            {item.currency || "NGN"}{" "}
+                            {Number(getFeeForItem(item) || 0).toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                          </>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                    )
+                  )}
+
+                  {/* Payment columns: merge only for shipping/clearing */}
+                  {showPaymentColumns &&
+                    (hidePrices ? (
+                      index === 0 && (
+                        <>
+                          {/* Payment Status */}
+                          <td
+                            className="border border-slate-200 px-4 py-3 text-center"
+                            rowSpan={g.items.length}
+                            style={{ verticalAlign: "middle" }}
+                          >
+                            {allowPaymentEditing ? (
+                              <select
+                                value={item.paymentStatus || "notpaid"}
+                                onChange={(e) => {
+                                  handlePaymentStatusChange(
+                                    index,
+                                    e.target.value
+                                  );
+                                }}
+                                className="border-2 border-emerald-300 px-3 py-1 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                              >
+                                <option value="notpaid">Not Paid</option>
+                                <option value="paid">Paid</option>
+                                <option value="partpayment">
+                                  Partially Paid
+                                </option>
+                              </select>
+                            ) : (
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                  item.paymentStatus === "paid"
+                                    ? "bg-green-100 text-green-800"
+                                    : item.paymentStatus === "part"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : "bg-red-100 text-red-800"
+                                }`}
+                              >
+                                {item.paymentStatus === "paid"
+                                  ? "Paid"
+                                  : item.paymentStatus === "partpayment"
+                                  ? "Part"
+                                  : "Not Paid"}
+                              </span>
+                            )}
+                          </td>
+                          {/* Percentage Paid */}
+                          <td
+                            className="border border-slate-200 px-4 py-3 text-center"
+                            rowSpan={g.items.length}
+                            style={{ verticalAlign: "middle" }}
+                          >
+                            {item.paymentStatus === "partpayment" ? (
+                              allowPaymentEditing ? (
+                                <div className="flex items-center justify-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                                    value={item.percentagePaid || ""}
+                                    onChange={(e) => {
+                                      handlePercentagePaidChange(
+                                        index,
+                                        e.target.value
+                                      );
+                                    }}
+                                    className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                  />
+                                  <span className="text-sm text-slate-600">
+                                    %
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="font-semibold text-slate-900">
+                                  {item.percentagePaid
+                                    ? `${item.percentagePaid}%`
+                                    : "0"}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          {/* Paid */}
+                          <td
+                            className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-green-700"
+                            rowSpan={g.items.length}
+                            style={{ verticalAlign: "middle" }}
+                          >
+                            {item.currency || "NGN"}{" "}
+                            {Number(item.paid || 0).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                          {/* Balance */}
+                          <td
+                            className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-red-700"
+                            rowSpan={g.items.length}
+                            style={{ verticalAlign: "middle" }}
+                          >
+                            {item.currency || "NGN"}{" "}
+                            {Number(item.balance || 0).toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                          </td>
+                        </>
+                      )
+                    ) : (
+                      // For other tags, render per row
+                      <>
+                        {/* Payment Status */}
+                        <td className="border border-slate-200 px-4 py-3 text-center">
+                          {allowPaymentEditing ? (
+                            <select
+                              value={item.paymentStatus || "notpaid"}
                               onChange={(e) => {
-                                handlePercentagePaidChange(
+                                handlePaymentStatusChange(
                                   index,
                                   e.target.value
                                 );
                               }}
-                              className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                            <span className="text-sm text-slate-600">%</span>
-                          </div>
-                        ) : (
-                          <span className="font-semibold text-slate-900">
-                            {item.percentagePaid
-                              ? `${item.percentagePaid}%`
-                              : "0"}
-                          </span>
+                              className="border-2 border-emerald-300 px-3 py-1 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            >
+                              <option value="notpaid">Not Paid</option>
+                              <option value="paid">Paid</option>
+                              <option value="partpayment">
+                                Partially Paid
+                              </option>
+                            </select>
+                          ) : (
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                item.paymentStatus === "paid"
+                                  ? "bg-green-100 text-green-800"
+                                  : item.paymentStatus === "part"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}
+                            >
+                              {item.paymentStatus === "paid"
+                                ? "Paid"
+                                : item.paymentStatus === "partpayment"
+                                ? "Part"
+                                : "Not Paid"}
+                            </span>
+                          )}
+                        </td>
+                        {/* Percentage Paid */}
+                        <td className="border border-slate-200 px-4 py-3 text-center">
+                          {item.paymentStatus === "partpayment" ? (
+                            allowPaymentEditing ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="1"
+                                  value={item.percentagePaid || ""}
+                                  onChange={(e) => {
+                                    handlePercentagePaidChange(
+                                      index,
+                                      e.target.value
+                                    );
+                                  }}
+                                  className="w-20 px-2 py-1 border-2 border-emerald-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <span className="text-sm text-slate-600">
+                                  %
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-semibold text-slate-900">
+                                {item.percentagePaid
+                                  ? `${item.percentagePaid}%`
+                                  : "0"}
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        {/* Paid */}
+                        <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-green-700">
+                          {item.currency || "NGN"}{" "}
+                          {Number(item.paid || 0).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        {/* Balance */}
+                        <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-red-700">
+                          {item.currency || "NGN"}{" "}
+                          {Number(item.balance || 0).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                      </>
+                    ))}
+
+                  {showPaymentStatus && (
+                    <>
+                      {!hidePrices && (
+                        <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                          {item.discount ? `${item.discount}%` : "0%"}
+                        </td>
+                      )}
+                      {/* Total Price - Calculated */}
+                      {hidePrices ? (
+                        index === 0 && (
+                          <td
+                            className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700"
+                            rowSpan={g.items.length}
+                            style={{ verticalAlign: "middle" }}
+                          >
+                            {item.currency || "NGN"}{" "}
+                            {Number(getFeeForItem(item) || 0).toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                          </td>
                         )
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700">
+                          {item.total || item.unitPrice ? (
+                            <>
+                              {item.currency || "NGN"}{" "}
+                              {Number(
+                                item.totalPrice || item.total || 0
+                              ).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
                       )}
-                    </td>
+                                  {!hidePrices && (
 
-                    {/* Paid Amount */}
-                    <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-green-700">
-                      {item.currency || "NGN"}{" "}
-                      {Number(item.paid || 0).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-
-                    {/* Balance */}
-                    <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-red-700">
-                      {item.currency || "NGN"}{" "}
-                      {Number(item.balance || 0).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-                  </>
-                )}
-
-
-
-              {showPaymentStatus && (
-<>
-
- <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                        {item.discount ? `${item.discount}%` : "0%"}
-                      </td>
-                {/* Total Price - Calculated */}
-                <td className="border border-slate-200 px-4 py-3 text-right text-sm font-semibold text-slate-700">
-                  {hidePrices ? (
-                    <>
-                      {item.currency || "NGN"}{" "}
-                      {Number(getFeeForItem(item) || 0).toLocaleString(
-                        undefined,
-                        {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }
-                      )}
-                    </>
-                  ) : item.total || item.unitPrice ? (
-                    <>
-                      {item.currency || "NGN"}{" "}
-                      {Number(
-                        item.totalPrice || item.total || 0
-                      ).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </>
-                  ) : (
-                    "N/A"
-                  )}
-                </td>
-                 <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                         {item.vatted ? (
                           <span>
                             {item.currency || "NGN"}{" "}
@@ -756,23 +946,35 @@ const shouldHideSaveButton =
                           <span className="text-slate-400">N/A</span>
                         )}
                       </td>
-                </>
-              )}
+                                  )}
+                    </>
+                  )}
 
-
-                {requestType !== "pettyCash" && (
-                  <>
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseRequisitionNumber || "N/A"}
-                    </td>
-
-                    <td className="border border-slate-200 px-4 text-center py-3 text-sm text-slate-700">
-                      {item.purchaseOrderNumber || "N/A"}
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
+                  {requestType !== "pettyCash" && (
+                    <>
+                      {index === 0 && (
+                        <td
+                          className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700"
+                          rowSpan={g.items.length}
+                          style={{ verticalAlign: "middle" }}
+                        >
+                          {item.purchaseRequisitionNumber || "N/A"}
+                        </td>
+                      )}
+                      {index === 0 && (
+                        <td
+                          className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700"
+                          rowSpan={g.items.length}
+                          style={{ verticalAlign: "middle" }}
+                        >
+                          {item.purchaseOrderNumber || "N/A"}
+                        </td>
+                      )}
+                    </>
+                  )}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -793,21 +995,21 @@ const shouldHideSaveButton =
           >
             ◄
           </button>
-            <div className="flex items-center justify-center">
-      {!shouldHideSaveButton && (
-        <button
-          onClick={handleSaveAll}
-          disabled={isSaving}
-          className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
-            isSaving
-              ? "bg-gray-300 text-gray-700 cursor-not-allowed"
-              : "bg-[#036173] text-white hover:bg-[#024f57]"
-          }`}
-        >
-          {isSaving ? "Saving..." : "Save Changes"}
-        </button>
-      )}
-    </div>
+          <div className="flex items-center justify-center">
+            {!shouldHideSaveButton && (
+              <button
+                onClick={handleSaveAll}
+                disabled={isSaving}
+                className={`px-6 h-12 flex items-center justify-center gap-2 rounded-md font-semibold ${
+                  isSaving
+                    ? "bg-gray-300 text-gray-700 cursor-not-allowed"
+                    : "bg-[#036173] text-white hover:bg-[#024f57]"
+                }`}
+              >
+                {isSaving ? "Saving..." : "Save Changes"}
+              </button>
+            )}
+          </div>
           <button
             className="text-[#F8F8FF] text-lg h-[40px] px-2 rounded-md bg-[#11181c] flex items-center hover:bg-[#1f2937] transition-colors"
             onClick={() => {

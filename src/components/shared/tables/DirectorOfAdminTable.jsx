@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { MdDelete } from "react-icons/md";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const DirectorOfAdminTable = ({
   items = [],
@@ -25,6 +26,7 @@ const DirectorOfAdminTable = ({
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
   const showShippingFee = request?.logisticsType === "international";
+  const { showAlert } = useGlobalAlert();
 
   const getFeeValue = (item) => {
     if (!item) return 0;
@@ -85,7 +87,7 @@ const DirectorOfAdminTable = ({
     const item = editedItems[index];
     const quantity = Number(item.quantity) || 0;
     if (quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
     const payload = {
@@ -106,9 +108,9 @@ const DirectorOfAdminTable = ({
         prev.map((it, i) => (i === index ? { ...it, quantity } : it))
       );
       setEditingIndex(null);
-      alert("✅ Item updated successfully!");
+      showAlert("✅ Item updated successfully!");
     } catch (error) {
-      alert("❌ Failed to update item");
+      showAlert("❌ Failed to update item");
     }
   };
 

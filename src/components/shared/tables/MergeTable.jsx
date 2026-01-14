@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const MergeTable = ({
   items = [],
@@ -22,7 +23,7 @@ const MergeTable = ({
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
-
+const { showAlert } = useGlobalAlert();
   React.useEffect(() => {
     const source =
       movedItems !== undefined && movedItems !== null ? movedItems : items;
@@ -69,17 +70,17 @@ const MergeTable = ({
     const item = editedItems[index];
 
     if (!item.quantity || item.quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
 
     try {
       await onEditItem(item);
       setEditingIndex(null);
-      alert("✅ Item updated successfully!");
+      showAlert("✅ Item updated successfully!");
     } catch (error) {
       console.error("❌ Error saving item:", error);
-      alert("❌ Failed to update item");
+      showAlert("❌ Failed to update item");
     }
   };
 

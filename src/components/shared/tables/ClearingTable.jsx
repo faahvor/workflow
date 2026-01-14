@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { MdCheckCircle } from "react-icons/md";
 import { useAuth } from "../../context/AuthContext";
+import { useGlobalAlert } from "../GlobalAlert";
+import { useGlobalPrompt } from "../GlobalPrompt";
 
 const ClearingTable = ({
   items = [],
@@ -15,6 +17,8 @@ const ClearingTable = ({
   const [clearingFee, setClearingFee] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const { getToken } = useAuth();
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt();
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
   useEffect(() => {
@@ -40,8 +44,10 @@ const ClearingTable = ({
   };
 
   const handleSaveAll = async () => {
-    if (!window.confirm("Save clearing fee changes?")) return;
-
+ const ok = await showPrompt(
+    "Save clearing fee changes?"
+  );
+  if (!ok) return;
     setIsSaving(true);
     try {
       // Save clearingFee at request-level
@@ -78,10 +84,10 @@ const ClearingTable = ({
         console.error("onFilesChanged callback error after save:", cbErr);
       }
 
-      alert("Saved successfully");
+      showAlert("Saved successfully");
     } catch (err) {
       console.error("Error saving clearing edits:", err);
-      alert("Error saving changes. See console.");
+      showAlert("Error saving changes. See console.");
       throw err;
     } finally {
       setIsSaving(false);

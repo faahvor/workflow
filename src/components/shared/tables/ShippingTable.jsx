@@ -4,6 +4,8 @@ import Select from "react-select";
 import { MdCheckCircle } from "react-icons/md";
 import { useAuth } from "../../context/AuthContext";
 import axios from "axios";
+import { useGlobalAlert } from "../GlobalAlert";
+import { useGlobalPrompt } from "../GlobalPrompt";
 
 const ShippingTable = ({
   items = [],
@@ -20,7 +22,21 @@ const ShippingTable = ({
   const [isSaving, setIsSaving] = useState(false);
   const [needsScroll, setNeedsScroll] = useState(false);
   const tableRef = useRef(null);
+  const [currencies, setCurrencies] = useState([
+    { value: "NGN", label: "NGN" },
+    { value: "USD", label: "USD" },
+    { value: "GBP", label: "GBP" },
+    { value: "EUR", label: "EUR" },
+    { value: "JPY", label: "JPY" },
+    { value: "CNY", label: "CNY" },
+    { value: "CAD", label: "CAD" },
+    { value: "AUD", label: "AUD" },
+  ]);
+  const [currency, setCurrency] = useState({});
+
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt(); // Add this line
 
   // ...existing code...
   useEffect(() => {
@@ -41,6 +57,17 @@ const ShippingTable = ({
       }
     });
     setShippingFees(fees);
+    const currenciesMap = {};
+    (items || []).forEach((it) => {
+      const key = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (
+        it.currency !== undefined &&
+        currenciesMap[key] === undefined
+      ) {
+        currenciesMap[key] = it.currency;
+      }
+    });
+    setCurrency(currenciesMap);
 
     // Initialize local editedRequests from items (take shippingFee from each item)
     setEditedRequests(
@@ -75,19 +102,20 @@ const ShippingTable = ({
       label: v.name || v.vendorName || v.name,
     }));
 
-   const handleChange = (itemId, field, value) => {
+  const handleChange = (itemId, field, value) => {
     setEditedRequests((prev) =>
       prev.map((it) => {
         if ((it.itemId || it._id) !== itemId) return it;
-        
+
         // For shippingQuantity, ensure it doesn't exceed quantity
         if (field === "shippingQuantity") {
           const maxQty = Number(it.quantity) || 0;
-          const numVal = typeof value === "number" ? value : parseInt(value) || 0;
+          const numVal =
+            typeof value === "number" ? value : parseInt(value) || 0;
           const cappedVal = Math.min(numVal, maxQty);
           return { ...it, [field]: cappedVal, _dirty: true };
         }
-        
+
         return { ...it, [field]: value, _dirty: true };
       })
     );
@@ -115,6 +143,7 @@ const ShippingTable = ({
       "vendor",
       "purchaseReqNumber",
       "shippingFee",
+      "currency",
     ];
     const changes = {};
     fields.forEach((f) => {
@@ -150,11 +179,11 @@ const ShippingTable = ({
 
   // ...existing code...
   const handleSaveAll = async () => {
-    if (!window.confirm("Save all changes to shipping items?")) return;
-
+    const ok = await showPrompt("Save all changes to shipping items?");
+    if (!ok) return;
     const dirty = editedRequests.filter((it) => it._dirty);
     if (!dirty.length) {
-      alert("No changes to save.");
+      showAlert("No changes to save.");
       return;
     }
 
@@ -229,7 +258,7 @@ const ShippingTable = ({
       console.log("ShippingTable handleSaveAll - updates payload:", updates);
 
       if (updates.length === 0) {
-        alert("No actual changes detected to save.");
+        showAlert("No actual changes detected to save.");
         setIsSaving(false);
         return;
       }
@@ -300,11 +329,11 @@ const ShippingTable = ({
         console.error("onFilesChanged callback error after save:", cbErr);
       }
 
-      alert("Saved successfully");
+      showAlert("Saved successfully");
       return results;
     } catch (err) {
       console.error("Error saving shipping edits:", err);
-      alert("Error saving changes. See console.");
+      showAlert("Error saving changes. See console.");
       throw err;
     } finally {
       setIsSaving(false);
@@ -427,37 +456,38 @@ const ShippingTable = ({
                                 }
                               : null;
                           })()}
-                         onChange={(sel) => {
-  const vname = sel?.label || null;
-  const vid = sel?.value || null;
-  setEditedRequests((prev) =>
-    prev.map((row) =>
-      (row.itemId || row._id) === itemId
-        ? {
-            ...row,
-            vendor: vname,
-            vendorId: vid,
-            _dirty: true,
-            _pendingVendor:
-              sel && sel.__isNew__
-                ? { name: vname, isNew: true }
-                : undefined,
-          }
-        : row
-    )
-  );
-  // Move shipping fee to new vendor key
-  setShippingFees((prev) => {
-    const oldKey = it.vendorId ?? it.vendor ?? "No Vendor";
-    const newKey = vid ?? vname ?? "No Vendor";
-    const fee = prev[oldKey] ?? 0;
-    const updated = { ...prev };
-    // Remove old key, set new key
-    delete updated[oldKey];
-    updated[newKey] = fee;
-    return updated;
-  });
-}}
+                          onChange={(sel) => {
+                            const vname = sel?.label || null;
+                            const vid = sel?.value || null;
+                            setEditedRequests((prev) =>
+                              prev.map((row) =>
+                                (row.itemId || row._id) === itemId
+                                  ? {
+                                      ...row,
+                                      vendor: vname,
+                                      vendorId: vid,
+                                      _dirty: true,
+                                      _pendingVendor:
+                                        sel && sel.__isNew__
+                                          ? { name: vname, isNew: true }
+                                          : undefined,
+                                    }
+                                  : row
+                              )
+                            );
+                            // Move shipping fee to new vendor key
+                            setShippingFees((prev) => {
+                              const oldKey =
+                                it.vendorId ?? it.vendor ?? "No Vendor";
+                              const newKey = vid ?? vname ?? "No Vendor";
+                              const fee = prev[oldKey] ?? 0;
+                              const updated = { ...prev };
+                              // Remove old key, set new key
+                              delete updated[oldKey];
+                              updated[newKey] = fee;
+                              return updated;
+                            });
+                          }}
                           onCreateOption={(inputValue) => {
                             setEditedRequests((prev) =>
                               prev.map((row) =>
@@ -490,7 +520,7 @@ const ShippingTable = ({
                         </span>
                       </td>
                       <td className="border p-3 border-slate-200 text-center">
-                      <input
+                        <input
                           type="number"
                           min="0"
                           max={it.quantity || 0}
@@ -504,15 +534,24 @@ const ShippingTable = ({
                           }
                           onChange={(e) => {
                             const maxQty = Number(it.quantity) || 0;
-                            let val = e.target.value === "" ? "" : parseInt(e.target.value) || 0;
-                            
+                            let val =
+                              e.target.value === ""
+                                ? ""
+                                : parseInt(e.target.value) || 0;
+
                             // Cap shipping quantity to not exceed item quantity
                             if (val !== "" && val > maxQty) {
                               val = maxQty;
-                              alert(`Shipping quantity cannot exceed item quantity (${maxQty})`);
+                              showAlert(
+                                `Shipping quantity cannot exceed item quantity (${maxQty})`
+                              );
                             }
-                            
-                            handleChange(itemId, "shippingQuantity", val === "" ? 0 : val);
+
+                            handleChange(
+                              itemId,
+                              "shippingQuantity",
+                              val === "" ? 0 : val
+                            );
                           }}
                           className="w-20 border px-2 py-1 rounded"
                         />
@@ -545,37 +584,83 @@ const ShippingTable = ({
                   >
                     Shipping Fee - {vendorLabel}
                   </td>
-                  <td className="border p-3 border-slate-200 text-center">
-                     <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0"
-                      value={
-                        shippingFees[vendorKey] === 0 ||
-                        shippingFees[vendorKey] === undefined ||
-                        shippingFees[vendorKey] === null
-                          ? ""
-                          : shippingFees[vendorKey]
-                      }
-                      onChange={(e) => {
-                        const val =
-                          e.target.value === ""
-                            ? ""
-                            : parseFloat(e.target.value) || 0;
-                        const vkey = vendorKey;
-                        setShippingFees((prev) => ({ ...prev, [vkey]: val }));
-                        setEditedRequests((prev) =>
-                          prev.map((it) =>
-                            (it.vendorId ?? it.vendor ?? "No Vendor") === vkey
-                              ? { ...it, shippingFee: val === "" ? 0 : val, _dirty: true }
-                              : it
-                          )
-                        );
-                      }}
-                      className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
-                    />
-                  </td>
+               
+<td
+  colSpan={3}
+  className="border p-3 border-slate-200 text-center"
+>
+  <div className="flex items-center gap-2 justify-center">
+    <Select
+      options={currencies}
+      value={
+        currencies.find(
+          (c) =>
+            c.value === (currency[vendorKey] || "NGN")
+        ) || currencies[0]
+      }
+      onChange={(selected) => {
+        const currency = selected?.value || "NGN";
+        setCurrency((prev) => ({
+          ...prev,
+          [vendorKey]: currency,
+        }));
+        setEditedRequests((prev) =>
+          prev.map((it) =>
+            (it.vendorId ?? it.vendor ?? "No Vendor") === vendorKey
+              ? {
+                  ...it,
+                  currency: currency,
+                  _dirty: true,
+                }
+              : it
+          )
+        );
+      }}
+      className="w-24"
+      menuPortalTarget={document.body}
+      styles={{
+    menuPortal: (base) => ({ ...base, zIndex: 500 }),
+  }}
+    />
+
+    <input
+      type="number"
+      min="0"
+      step="0.01"
+      placeholder="0"
+      value={
+        shippingFees[vendorKey] === 0 ||
+        shippingFees[vendorKey] === undefined ||
+        shippingFees[vendorKey] === null
+          ? ""
+          : shippingFees[vendorKey]
+      }
+      onChange={(e) => {
+        const val =
+          e.target.value === ""
+            ? ""
+            : parseFloat(e.target.value) || 0;
+        const vkey = vendorKey;
+        setShippingFees((prev) => ({ ...prev, [vkey]: val }));
+        setEditedRequests((prev) =>
+          prev.map((it) =>
+            (it.vendorId ?? it.vendor ?? "No Vendor") === vkey
+              ? {
+                  ...it,
+                  shippingFee: val === "" ? 0 : val,
+                  currency:
+                    currency[vkey] || "NGN",
+                  _dirty: true,
+                }
+              : it
+          )
+        );
+      }}
+      className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
+    />
+  </div>
+</td>
+
                 </tr>
               </tbody>
             </table>

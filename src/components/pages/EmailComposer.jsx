@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { MdClose, MdAttachFile, MdSend, MdUploadFile } from "react-icons/md";
+import { useGlobalAlert } from "../shared/GlobalAlert";
 
 export default function EmailComposer({
     initialAttachments = [],
@@ -22,6 +23,7 @@ const [ccList, setCcList] = useState([]);
 const [replyTo, setReplyTo] = useState(userEmail || "");
 const [replyToInput, setReplyToInput] = useState(replyTo || "");
 const [replyToList, setReplyToList] = useState([]);
+const { showAlert } = useGlobalAlert();
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -140,7 +142,7 @@ Procurement`;
   setSending(true);
   try {
     if (!toList.length || !subj || !body || (!replyToList.length && !replyToInput)) {
-      alert("To, Subject, Body, and Reply-To are required.");
+      showAlert("To, Subject, Body, and Reply-To are required.");
       setSending(false);
       return;
     }
@@ -176,11 +178,11 @@ Procurement`;
     if (result.success) {
       onSent();
     } else {
-      alert(result.message || "Failed to send email.");
+      showAlert(result.message || "Failed to send email.");
     }
   } catch (err) {
     console.error("Mail send error:", err);
-    alert("Failed to send email. See console for details.");
+    showAlert("Failed to send email. See console for details.");
   } finally {
     setSending(false);
   }

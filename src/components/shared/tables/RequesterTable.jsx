@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { MdDelete } from "react-icons/md";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const RequesterTable = ({
   items = [],
@@ -19,7 +20,7 @@ const RequesterTable = ({
   );
   const [needsScroll, setNeedsScroll] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
-
+const { showAlert } = useGlobalAlert();
   const isReadOnlyForPetty =
     (requestType || "").toString().toLowerCase() === "pettycash" &&
     (requestStatus || "") === "PENDING_REQUESTER_DELIVERY_CONFIRMATION";
@@ -73,7 +74,7 @@ const RequesterTable = ({
     if (!item) return;
     const quantity = Number(item.quantity) || 0;
     if (quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
 
@@ -94,10 +95,10 @@ const RequesterTable = ({
         prev.map((it, i) => (i === index ? { ...it, quantity } : it))
       );
       setEditingIndex(null);
-      alert("Item updated successfully");
+      showAlert("Item updated successfully");
     } catch (err) {
       console.error("Error saving item from RequesterTable:", err);
-      alert(err?.response?.data?.message || "Failed to save item");
+      showAlert(err?.response?.data?.message || "Failed to save item");
     }
   };
 
@@ -110,8 +111,10 @@ const RequesterTable = ({
   };
 
   const handleSaveAll = async () => {
-    if (!window.confirm("Save all changes to the items?")) return;
-
+ const ok = await showPrompt(
+    "Save all changes to the items?"
+  );
+  if (!ok) return;
     if (typeof onEditItem !== "function") {
       console.error("onEditItem not provided to RequesterTable");
       return;
@@ -119,7 +122,7 @@ const RequesterTable = ({
 
     const dirty = editedItems.filter((it) => it._dirty);
     if (!dirty || dirty.length === 0) {
-      alert("No changes to save.");
+      showAlert("No changes to save.");
       return;
     }
 
@@ -149,7 +152,7 @@ const RequesterTable = ({
       );
 
       setEditedItems((prev) => prev.map((it) => ({ ...it, _dirty: false })));
-      alert("Saved successfully");
+      showAlert("Saved successfully");
     } catch (err) {
       console.error("Error in RequesterTable.handleSaveAll:", err);
     }

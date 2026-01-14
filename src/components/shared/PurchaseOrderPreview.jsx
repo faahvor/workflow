@@ -315,6 +315,31 @@ const PurchaseOrderPreview = forwardRef(
       return null;
     }
 
+    // Calculate grand totals per currency
+    const grandTotalsByCurrency = {};
+    usedItems.forEach((it) => {
+      // Default to NGN if currency is missing
+      const currency = it.currency || req.currency || "NGN";
+      const total =
+        it.totalPrice !== undefined
+          ? Number(it.totalPrice)
+          : it.total !== undefined
+          ? Number(it.total)
+          : Number(it.unitPrice || 0) * Number(it.quantity || 0);
+      if (!grandTotalsByCurrency[currency]) grandTotalsByCurrency[currency] = 0;
+      grandTotalsByCurrency[currency] += isNaN(total) ? 0 : total;
+    });
+    const allSameVendor =
+      usedItems.length > 0 &&
+      usedItems.every(
+        (it) =>
+          (it.vendorId ?? it.vendor) ===
+          (usedItems[0].vendorId ?? usedItems[0].vendor)
+      );
+    const singleVendorName = getVendorDisplayName(
+      usedItems[0]?.vendor || usedItems[0]?.vendorName
+    );
+
     return (
       <div
         ref={ref}
@@ -442,12 +467,10 @@ const PurchaseOrderPreview = forwardRef(
                     )}
 
                     {/* ✅ Shipping Fee - only for shipping/clearing */}
-                    {showFeeColumns && (
+                    {showFeeColumns && !allSameVendor && (
                       <th className="pb-2 text-right">Shipping Fee</th>
                     )}
-
-                    {/* ✅ Clearing Fee - only for clearing */}
-                    {isClearingTag && (
+                    {isClearingTag && !allSameVendor && (
                       <th className="pb-2 text-right">Clearing Fee</th>
                     )}
 
@@ -487,7 +510,7 @@ const PurchaseOrderPreview = forwardRef(
                       )}
 
                       {/* ✅ Shipping Fee - only for shipping/clearing */}
-                      {showFeeColumns && (
+                      {showFeeColumns && !allSameVendor && (
                         <td className="py-3 text-right text-slate-700">
                           {formatCurrency(
                             isClearingTag
@@ -497,9 +520,7 @@ const PurchaseOrderPreview = forwardRef(
                           )}
                         </td>
                       )}
-
-                      {/* ✅ Clearing Fee - only for clearing */}
-                      {isClearingTag && (
+                      {isClearingTag && !allSameVendor && (
                         <td className="py-3 text-right text-slate-700">
                           {formatCurrency(
                             it.clearingFee || 0,
@@ -558,12 +579,38 @@ const PurchaseOrderPreview = forwardRef(
                 {/* ✅ Grand Total - only for non-shipping/clearing */}
                 {!showFeeColumns && (
                   <tfoot>
+                    {Object.entries(grandTotalsByCurrency).map(
+                      ([currency, total], idx) => (
+                        <tr key={currency}>
+                          <td colSpan={6} className="pt-4 text-right font-bold">
+                            Grand Total ({currency})
+                          </td>
+                          <td className="pt-4 text-right text-xl font-bold">
+                            {formatCurrency(total, currency)}
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </tfoot>
+                )}
+                {showFeeColumns && allSameVendor && usedItems.length > 0 && (
+                  <tfoot>
                     <tr>
-                      <td colSpan={7} className="pt-4 text-right font-bold">
-                        Grand Total
+                      <td colSpan={3} className="pt-4 text-right font-bold">
+                        {isShippingTag
+                          ? `Shipping Fee - ${singleVendorName}`
+                          : `Clearing Fee - ${singleVendorName}`}
                       </td>
                       <td className="pt-4 text-right text-xl font-bold">
-                        {formatCurrency(grandTotal, req.currency)}
+                        {formatCurrency(
+                          isShippingTag
+                            ? req.shippingFee || 0
+                            : req.clearingFee || 0,
+                          usedItems[0].shippingCurrency ||
+                            usedItems[0].currency ||
+                            req.currency ||
+                            "NGN"
+                        )}
                       </td>
                     </tr>
                   </tfoot>

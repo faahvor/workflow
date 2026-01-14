@@ -6,9 +6,11 @@ import { MdAdd } from "react-icons/md";
 import ItemSelectionTable from "../../shared/tables/ItemSelectionTable";
 import { useAuth } from "../../context/AuthContext";
 import ProcurementSelectionTable from "../../shared/tables/ProcurementSelectionTable";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 // --- ServiceTable and MaterialTable (copied from RequesterDashboard) ---
 function ServiceTable({ rows, setRows }) {
+  const { showAlert } = useGlobalAlert();
   const handleChange = (idx, field, value) => {
     const updated = [...rows];
     updated[idx][field] = value;
@@ -468,7 +470,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
 
   const submitAddInventory = async () => {
     if (!invName || invName.trim() === "") {
-      alert("Name is required to add an inventory item.");
+      showAlert("Name is required to add an inventory item.");
       return;
     }
 
@@ -476,7 +478,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       setCreatingInventory(true);
       const token = await getToken();
       if (!token) {
-        alert("Authentication required.");
+        showAlert("Authentication required.");
         return;
       }
 
@@ -498,14 +500,14 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         setInventoryItems((prev) => [created, ...(prev || [])]);
         handleAddInventoryItem(created);
         fetchInventory();
-        alert("Inventory added.");
+        showAlert("Inventory added.");
         closeAddInventoryModal();
         return;
       }
       throw new Error("Unexpected create response");
     } catch (err) {
       console.error("Error creating inventory item:", err);
-      alert(err?.response?.data?.message || "Failed to add inventory item");
+      showAlert(err?.response?.data?.message || "Failed to add inventory item");
     } finally {
       setCreatingInventory(false);
     }
@@ -568,17 +570,17 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     e.preventDefault();
 
     if (!formData.department) {
-      alert("Please select a department");
+      showAlert("Please select a department");
       return;
     }
 
     if (!formData.destination) {
-      alert("Please select a destination");
+      showAlert("Please select a destination");
       return;
     }
 
     if (!formData.company) {
-      alert("Please select a company");
+      showAlert("Please select a company");
       return;
     }
 
@@ -587,12 +589,12 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         formData.destination === "Project") &&
       !formData.vesselId
     ) {
-      alert("Please select a vessel");
+      showAlert("Please select a vessel");
       return;
     }
 
     if (formData.destination === "Project" && !formData.projectManager) {
-      alert("Please select a project manager");
+      showAlert("Please select a project manager");
       return;
     }
 
@@ -601,7 +603,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       formData.requestType === "pettyCash" &&
       !nextApproverAfterVesselManager
     ) {
-      alert(
+      showAlert(
         "Please select Approval Pick (Technical Manager or Fleet Manager)."
       );
       return;
@@ -616,20 +618,20 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         (row) => row.description && row.quantity
       );
       if (!hasService && !hasMaterial) {
-        alert("Please add at least one service or material item.");
+        showAlert("Please add at least one service or material item.");
         return;
       }
     } else {
       // --- INVENTORY REQUEST VALIDATION ---
       if (selectedItems.length === 0) {
-        alert("Please add at least one item from inventory");
+        showAlert("Please add at least one item from inventory");
         return;
       }
       const invalidItems = selectedItems.filter(
         (item) => !item.quantity || item.quantity < 1
       );
       if (invalidItems.length > 0) {
-        alert("All items must have a quantity of at least 1");
+        showAlert("All items must have a quantity of at least 1");
         return;
       }
     }
@@ -639,7 +641,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         (it) => !it.unitPrice || Number(it.unitPrice) <= 0
       );
       if (badPrice) {
-        alert(
+        showAlert(
           "For petty cash requests to IT each item must have a unit price greater than 0."
         );
         return;
@@ -725,7 +727,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
           });
         }
 
-        alert("Service request created successfully!");
+        showAlert("Service request created successfully!");
         // Reset form
         setFormData({
           department: "Purchase",
@@ -866,7 +868,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         });
       }
 
-      alert("Request created successfully!");
+      showAlert("Request created successfully!");
       setFormData({
         department: "Purchase",
         destination: "",
@@ -894,7 +896,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         console.error("Backend response status:", err.response.status);
         console.error("Backend response headers:", err.response.headers);
       }
-      alert(err.response?.data?.message || "Failed to create request");
+      showAlert(err.response?.data?.message || "Failed to create request");
     } finally {
       setSubmitting(false);
     }

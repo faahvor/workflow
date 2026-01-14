@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import axios from "axios";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 const WaybillUpload = ({
   requestId,
@@ -13,6 +14,7 @@ const WaybillUpload = ({
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const fileInputRef = useRef(null);
+  const { showAlert } = useGlobalAlert();
 
   // Check if waybill is compulsory (all delivered)
   const isWaybillRequired = items.some(
@@ -51,28 +53,13 @@ const WaybillUpload = ({
       setSelectedFiles([]);
       if (onFilesChanged) onFilesChanged();
     } catch (err) {
-      alert(err?.response?.data?.message || "Upload failed");
+      showAlert(err?.response?.data?.message || "Upload failed");
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDelete = async (fileUrl) => {
-    if (!window.confirm("Delete this waybill file?")) return;
-    try {
-      const token = getToken();
-      await axios.delete(
-        `${apiBase}/requests/${requestId}/job-completion-files`,
-        {
-          headers: { Authorization: token ? `Bearer ${token}` : undefined },
-          data: { fileUrl },
-        }
-      );
-      if (onFilesChanged) onFilesChanged();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Delete failed");
-    }
-  };
+
 
   return (
     <div className="mb-8">

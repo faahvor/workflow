@@ -570,12 +570,11 @@ const RequestFormPreview = forwardRef(
             </div>
 
             <div className="px-4 py-3 border-b border-r border-slate-200">
-              <p className="text-xs text-slate-500 font-medium ">Priority</p>
+              <p className="text-xs text-slate-500 font-medium ">Reference</p>
               <p className="text-sm font-semibold text-left">
                 <span className={`inline-block   rounded text-xs capitalize `}>
-                  {String(req.priority || "").toLowerCase() === "urgent"
-                    ? "URGENT"
-                    : req.priority || "Normal"}
+                                 {req.reference || "N/A"}
+
                 </span>
               </p>
             </div>

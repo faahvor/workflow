@@ -36,12 +36,15 @@ import Notification from "./Notification";
 import RejectedRequest from "./RejectedRequest";
 import ChatRoom from "./ChatRoom";
 import Support from "./Support";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
 // ManagerDashboard component
 const ManagerDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
-
+const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt();
   const [activeView, setActiveView] = useState("overview");
   const [view, setView] = useState("list");
   const [pendingRequests, setPendingRequests] = useState([]);
@@ -321,9 +324,10 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       ? "Confirm you want to approve this query request?"
       : "Are you sure you want to approve this request?";
 
-    if (!window.confirm(confirmMsg)) {
-      return;
-    }
+   const ok = await showPrompt(confirmMsg);
+if (!ok) {
+  return;
+}
 
     try {
       setActionLoading(true);
@@ -355,7 +359,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         console.error("Error fetching request after approve:", fetchErr);
       }
 
-      alert("Request approved successfully!");
+      showAlert("Request approved successfully!");
 
       setView("list");
       setSelectedRequest(null);
@@ -364,7 +368,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       fetchQueriedCount();
     } catch (err) {
       console.error("❌ Error approving request:", err);
-      alert(err.response?.data?.message || "Failed to approve request");
+      showAlert(err.response?.data?.message || "Failed to approve request");
     } finally {
       setActionLoading(false);
     }
@@ -373,13 +377,14 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   // Reject a request
   const handleReject = async (requestId, comment) => {
     if (!comment || comment.trim().length < 3) {
-      alert("A rejection comment is required.");
+      showAlert("A rejection comment is required.");
       return;
     }
 
-    if (!window.confirm("Are you sure you want to reject this request?")) {
-      return;
-    }
+    const ok = await showPrompt(
+    "Are you sure you want to reject this request?"
+  );
+  if (!ok) return;
 
     try {
       setActionLoading(true);
@@ -393,7 +398,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         }
       );
 
-      alert("Request rejected successfully!");
+      showAlert("Request rejected successfully!");
 
       setView("list");
       setSelectedRequest(null);
@@ -401,7 +406,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       fetchQueriedCount();
     } catch (err) {
       console.error("❌ Error rejecting request:", err);
-      alert(err.response?.data?.message || "Failed to reject request");
+      showAlert(err.response?.data?.message || "Failed to reject request");
     } finally {
       setActionLoading(false);
     }

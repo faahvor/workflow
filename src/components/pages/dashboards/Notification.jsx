@@ -11,6 +11,7 @@ import {
 } from "react-icons/md";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
+import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
 const PAGE_SIZE = 20;
 const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
@@ -60,6 +61,7 @@ const Notification = ({ onUnreadCountChange }) => {
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [marking, setMarking] = useState(false);
+  const { showPrompt } = useGlobalPrompt();
 
   // Fetch notifications
   const fetchNotifications = async (opts = {}) => {
@@ -118,26 +120,28 @@ const Notification = ({ onUnreadCountChange }) => {
   }, [page]);
 
   // Mark as read
-const handleMarkAsRead = async (notificationId) => {
-  if (!window.confirm("Mark this notification as read?")) return;
-  setMarking(true);
-  try {
-    const token = getToken?.();
-    await axios.patch(
-      `${API_BASE}/notifications/${encodeURIComponent(notificationId)}/read`,
-      {},
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-    );
-    fetchNotifications({ page });
-    fetchUnreadCount();
-    if (onUnreadCountChange) onUnreadCountChange(); // <-- add this line
-  } catch {}
-  setMarking(false);
-};
+  const handleMarkAsRead = async (notificationId) => {
+    const ok = await showPrompt("Mark this notification as read?");
+    if (!ok) return;
+    setMarking(true);
+    try {
+      const token = getToken?.();
+      await axios.patch(
+        `${API_BASE}/notifications/${encodeURIComponent(notificationId)}/read`,
+        {},
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+      fetchNotifications({ page });
+      fetchUnreadCount();
+      if (onUnreadCountChange) onUnreadCountChange(); // <-- add this line
+    } catch {}
+    setMarking(false);
+  };
 
   // Mark all as read
   const handleMarkAllAsRead = async () => {
-    if (!window.confirm("Mark all notifications as read?")) return;
+    const ok = await showPrompt("Mark all notifications as read?");
+    if (!ok) return;
     setMarking(true);
     try {
       const token = getToken?.();
@@ -156,7 +160,8 @@ const handleMarkAsRead = async (notificationId) => {
 
   // Delete notification
   const handleDelete = async (notificationId) => {
-    if (!window.confirm("Delete this notification?")) return;
+    const ok = await showPrompt("Delete this notification?");
+    if (!ok) return;
     setMarking(true);
     try {
       const token = getToken?.();
@@ -173,8 +178,10 @@ const handleMarkAsRead = async (notificationId) => {
 
   // Clear all notifications
   const handleClearAll = async () => {
-    if (!window.confirm("Clear all notifications?")) return;
-    setMarking(true);
+  const ok = await showPrompt(
+    "Delete all notifications? "
+  );
+  if (!ok) return;    setMarking(true);
     try {
       const token = getToken?.();
       await axios.delete(`${API_BASE}/notifications`, {
@@ -254,8 +261,6 @@ const handleMarkAsRead = async (notificationId) => {
       />
 
       <div className="relative z-10 flex h-full">
-    
-
         {/* Main Content - Notifications */}
         <div className="flex-1 overflow-y-auto px-0 py-0 flex flex-col items-stretch justify-start">
           <div className="w-full px-10 py-10">

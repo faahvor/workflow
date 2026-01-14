@@ -19,6 +19,7 @@ import {
     MdVerified,
   MdPending,
 } from "react-icons/md";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
 const PAGE_SIZE = 50;
@@ -46,7 +47,7 @@ export default function InventoryManagement() {
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [photoViewerList, setPhotoViewerList] = useState([]); // array of URLs
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
-
+const { showAlert } = useGlobalAlert();
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -175,7 +176,7 @@ export default function InventoryManagement() {
       setLoading(true);
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
       if (!token) {
-        alert("Authentication required.");
+        showAlert("Authentication required.");
         return;
       }
 
@@ -216,7 +217,7 @@ formData.append("storeLocation", form.storeLocation);
             isVerified: true,
           });
           setAddPhotos([]);
-          alert("Inventory added.");
+          showAlert("Inventory added.");
           return;
         }
       } else {
@@ -247,7 +248,7 @@ formData.append("storeLocation", form.storeLocation);
             maker: "",
             makerPartNumber: "",
           });
-          alert("Inventory added.");
+          showAlert("Inventory added.");
           return;
         }
       }
@@ -255,7 +256,7 @@ formData.append("storeLocation", form.storeLocation);
       throw new Error("Invalid create response");
     } catch (err) {
       console.error("Error creating inventory:", err);
-      alert(err.response?.data?.message || "Failed to create item");
+      showAlert(err.response?.data?.message || "Failed to create item");
     } finally {
       setLoading(false);
     }
@@ -396,7 +397,7 @@ formData.append("storeLocation", form.storeLocation);
     try {
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
       if (!token) {
-        alert("Authentication required.");
+        showAlert("Authentication required.");
         return false;
       }
       const headers = { Authorization: `Bearer ${token}` };
@@ -409,7 +410,7 @@ formData.append("storeLocation", form.storeLocation);
       return true;
     } catch (err) {
       console.error("Error verifying inventory:", err);
-      alert(err.response?.data?.message || "Failed to verify item");
+      showAlert(err.response?.data?.message || "Failed to verify item");
       return false;
     }
   };
@@ -471,7 +472,7 @@ formData.append("storeLocation", form.storeLocation);
         const verified = await handleVerifyItem(editing.inventoryId);
         if (!verified) {
           // Verification failed but other updates succeeded
-          alert("Item updated but verification failed. Please try verifying again.");
+          showAlert("Item updated but verification failed. Please try verifying again.");
         }
       }
 
@@ -483,10 +484,10 @@ formData.append("storeLocation", form.storeLocation);
       setShowEdit(false);
       setEditing(null);
       setEditPhotos([]);
-      alert("Inventory updated.");
+      showAlert("Inventory updated.");
     } catch (err) {
       console.error("Error updating inventory:", err);
-      alert(err.response?.data?.message || "Failed to update item");
+      showAlert(err.response?.data?.message || "Failed to update item");
     } finally {
       setLoading(false);
     }
@@ -512,10 +513,10 @@ formData.append("storeLocation", form.storeLocation);
         fetchInventory(newPage, search, department),
         fetchLowStock(lowStockPage, search, department),
       ]);
-      alert("Inventory deleted.");
+      showAlert("Inventory deleted.");
     } catch (err) {
       console.error("Error deleting inventory:", err);
-      alert(err.response?.data?.message || "Failed to delete item");
+      showAlert(err.response?.data?.message || "Failed to delete item");
     } finally {
       setLoading(false);
     }
@@ -562,7 +563,7 @@ formData.append("storeLocation", form.storeLocation);
 
           <button
             onClick={() =>
-              alert("Upload (prototype) — Excel import coming soon")
+              showAlert("Upload (prototype) — Excel import coming soon")
             }
             className="px-4 py-2 bg-white/90 rounded-xl flex items-center gap-2 border border-slate-200"
           >

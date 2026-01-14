@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { MdAttachFile, MdUpload, MdClear } from "react-icons/md";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 const PaymentAdviceUpload = ({
   requestId,
@@ -12,6 +13,7 @@ const PaymentAdviceUpload = ({
   const [paymentFiles, setPaymentFiles] = useState([]); // { id, file, previewUrl, progress, uploaded }
   const [isUploading, setIsUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const { showAlert } = useGlobalAlert();
 
   useEffect(() => {
     return () => {
@@ -98,7 +100,7 @@ const PaymentAdviceUpload = ({
       }, 600);
     } catch (err) {
       console.error("Payment advice upload failed:", err);
-      alert(err?.response?.data?.message || "Payment advice upload failed");
+      showAlert(err?.response?.data?.message || "Payment advice upload failed");
       setPaymentFiles((prev) => prev.map((p) => (p.id === id ? { ...p, uploaded: false } : p)));
     } finally {
       setIsUploading(false);

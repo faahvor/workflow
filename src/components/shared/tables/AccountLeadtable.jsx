@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const AccountLeadTable = ({
   items = [],
@@ -15,6 +16,7 @@ const AccountLeadTable = ({
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const { showAlert } = useGlobalAlert();
 
   // ...existing code...
   const buildChangesForAccountItem = (editedItem) => {
@@ -53,7 +55,7 @@ const AccountLeadTable = ({
       .filter(Boolean);
 
     if (updates.length === 0) {
-      alert("No changes to save.");
+      showAlert("No changes to save.");
       return;
     }
 
@@ -72,7 +74,7 @@ const AccountLeadTable = ({
         })
       );
 
-      alert("Saved successfully");
+      showAlert("Saved successfully");
       // refresh local editedItems from latest props to clear dirty state
       setEditedItems(
         items.map((item) => ({
@@ -85,7 +87,7 @@ const AccountLeadTable = ({
       );
     } catch (err) {
       console.error("Error saving account items:", err);
-      alert("Error saving changes. See console for details.");
+      showAlert("Error saving changes. See console for details.");
     } finally {
       setIsSaving(false);
     }
@@ -192,7 +194,7 @@ const AccountLeadTable = ({
     const changes = buildChangesForAccountItem(item);
 
     if (Object.keys(changes).length === 0) {
-      alert("No changes to save for this item.");
+      showAlert("No changes to save for this item.");
       setEditingIndex(null);
       return;
     }
@@ -215,7 +217,7 @@ const AccountLeadTable = ({
         error?.response?.data ||
         error?.message;
       console.error("❌ Error saving item:", error);
-      alert(serverMsg || "Failed to update item. See console for details.");
+      showAlert(serverMsg || "Failed to update item. See console for details.");
     }
   };
 

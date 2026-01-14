@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
 const formatAmount = (v, currency = "NGN") =>
   `${currency} ${Number(Number(v || 0).toFixed(2)).toLocaleString()}`;
@@ -21,6 +23,8 @@ const AttachItems = ({
   const inputRef = useRef(null);
     const [dropdownOpen, setDropdownOpen] = useState(false);
   const wrapperRef = useRef(null);
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt();
 
   
   useEffect(() => {
@@ -133,7 +137,7 @@ const AttachItems = ({
       setSourceItems([]);
       setSelectedItemIds([]);
       setSelectedSource(null);
-      alert(err?.response?.data?.message || "Failed to load source request items");
+      showAlert(err?.response?.data?.message || "Failed to load source request items");
       return null;
     } finally {
       setIsLoadingItems(false);
@@ -162,12 +166,14 @@ const AttachItems = ({
     const sourceIdToUse = forceSourceRequestId || (selectedSource && selectedSource.requestId);
     if (!sourceIdToUse || !targetRequestId) return;
     if (!selectedItemIds || selectedItemIds.length === 0) {
-      alert("No items selected to attach");
+      showAlert("No items selected to attach");
       return;
     }
     if (!skipConfirm) {
-      if (!window.confirm("Attach selected items to this request?")) return;
-    }
+  const ok = await showPrompt(
+    "Attach selected items to this request?"
+  );
+  if (!ok) return;    }
     setAttaching(true);
     try {
       const token = getToken ? getToken() : null;
@@ -180,14 +186,14 @@ const AttachItems = ({
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       console.debug("AttachItems: attach response:", resp?.data);
-      alert(resp.data?.message || "Items attached");
+      showAlert(resp.data?.message || "Items attached");
       clear();
       // pass server response to parent in case callers want details
       onAttached(resp.data || null);
       return resp.data;
     } catch (err) {
       console.error("AttachItems: attach failed", err);
-      alert(err?.response?.data?.message || "Failed to attach items");
+      showAlert(err?.response?.data?.message || "Failed to attach items");
       return null;
     } finally {
       setAttaching(false);

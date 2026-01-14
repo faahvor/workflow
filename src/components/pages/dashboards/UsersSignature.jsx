@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import { MdAttachFile } from "react-icons/md";
 import { useAuth } from "../../context/AuthContext";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -14,6 +15,7 @@ const UsersSignature = () => {
   const [savedSignature, setSavedSignature] = useState(null); // url
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const { showAlert } = useGlobalAlert();
 
   useEffect(() => {
     // prefer signature url from auth user object if available
@@ -47,11 +49,11 @@ const UsersSignature = () => {
     if (!f) return;
     const maxSize = 10 * 1024 * 1024;
     if (f.size > maxSize) {
-      alert("File too large. Max 10MB allowed.");
+      showAlert("File too large. Max 10MB allowed.");
       return;
     }
     if (!f.type.startsWith("image/")) {
-      alert("Please select a PNG or JPG image.");
+      showAlert("Please select a PNG or JPG image.");
       return;
     }
 
@@ -87,7 +89,7 @@ const UsersSignature = () => {
         },
       });
 
-      // On success: show only the single alert requested.
+      // On success: show only the single showAlert requested.
       if (resp?.status >= 200 && resp.status < 300) {
         const signatureUrl =
           resp?.data?.signatureUrl || resp?.data?.signatureFile || null;
@@ -95,14 +97,14 @@ const UsersSignature = () => {
           setSavedSignature(signatureUrl);
           removeSelected();
         } else {
-          // clear selected preview if you want, no alerts
+          // clear selected preview if you want, no showAlerts
           removeSelected();
         }
-        alert("Signature uploaded successfully.");
+        showAlert("Signature uploaded successfully.");
       }
     } catch (err) {
       console.error("Error uploading signature:", err);
-      alert("Failed to upload signature.");
+      showAlert("Failed to upload signature.");
     } finally {
       setIsUploading(false);
       setUploadProgress(0);

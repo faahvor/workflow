@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import axios from "axios";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 const UPLOAD_OPTIONS = [
   { value: "grn", label: "Goods Received Note (GRN) File" },
@@ -23,6 +24,7 @@ const InvoiceControllerUploads = ({
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const { showAlert } = useGlobalAlert();
 
   const handleBrowseClick = () => {
     fileInputRef.current?.click();
@@ -58,9 +60,9 @@ const InvoiceControllerUploads = ({
       );
       setSelectedFiles([]);
       if (typeof onFilesChanged === "function") onFilesChanged();
-      alert("Files uploaded successfully.");
+      showAlert("Files uploaded successfully.");
     } catch (err) {
-      alert(err?.response?.data?.message || "Upload failed");
+      showAlert(err?.response?.data?.message || "Upload failed");
     } finally {
       setIsUploading(false);
     }

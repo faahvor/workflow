@@ -19,6 +19,7 @@ import {
 } from "react-icons/md";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
+import { useGlobalAlert } from "../../shared/GlobalAlert";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -47,6 +48,7 @@ const VendorManagement = () => {
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
+  const { showAlert } = useGlobalAlert();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -322,16 +324,16 @@ useEffect(() => {
     if (!editingVendor) return;
     const vendorId = editingVendor.vendorId ?? getVendorId(editingVendor);
     if (!vendorId) {
-      alert("Vendor ID missing; cannot update via API.");
+      showAlert("Vendor ID missing; cannot update via API.");
       return;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!editingVendor.email || !editingVendor.email.trim()) {
-      alert("Email is required.");
+      showAlert("Email is required.");
       return;
     }
     if (!emailRegex.test(editingVendor.email.trim())) {
-      alert("Please enter a valid email address.");
+      showAlert("Please enter a valid email address.");
       return;
     }
 
@@ -405,7 +407,7 @@ useEffect(() => {
       }
     } catch (err) {
       console.error("Error updating vendor:", err);
-      alert(
+      showAlert(
         err.response?.data?.message || "Failed to update vendor (check console)"
       );
     } finally {
@@ -416,18 +418,18 @@ useEffect(() => {
   // ...existing code...
   const addVendor = async () => {
     if (!form.name || !form.name.trim()) {
-      alert("Vendor name is required.");
+      showAlert("Vendor name is required.");
       return;
     }
 
     // Validate email is required and has valid format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!form.email || !form.email.trim()) {
-      alert("Email is required.");
+      showAlert("Email is required.");
       return;
     }
     if (!emailRegex.test(form.email.trim())) {
-      alert("Please enter a valid email address.");
+      showAlert("Please enter a valid email address.");
       return;
     }
     setLoading(true);
@@ -435,7 +437,7 @@ useEffect(() => {
       // use available token (admin or normal user)
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
       if (!token) {
-        alert("Authentication required to create a vendor.");
+        showAlert("Authentication required to create a vendor.");
         return;
       }
 
@@ -491,7 +493,7 @@ useEffect(() => {
 
         resetForm();
         setShowAdd(false);
-        alert("Vendor created.");
+        showAlert("Vendor created.");
         return;
       }
 
@@ -502,7 +504,7 @@ useEffect(() => {
         err?.response?.data?.message ||
         JSON.stringify(err?.response?.data) ||
         err.message;
-      alert(serverMsg || "Failed to create vendor (check console).");
+      showAlert(serverMsg || "Failed to create vendor (check console).");
     } finally {
       setLoading(false);
     }
@@ -521,7 +523,7 @@ useEffect(() => {
     try {
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
       if (!token) {
-        alert("Authentication required to delete a vendor.");
+        showAlert("Authentication required to delete a vendor.");
         return;
       }
 
@@ -532,13 +534,13 @@ useEffect(() => {
         }
       );
 
-      alert(resp?.data?.message || "Vendor deleted successfully.");
+      showAlert(resp?.data?.message || "Vendor deleted successfully.");
       setRegistered((prev) =>
         prev.filter((v) => getVendorId(v) !== vendorId && v.id !== vendorId)
       );
     } catch (err) {
       console.error("Error deleting vendor:", err);
-      alert(
+      showAlert(
         err?.response?.data?.message ||
           "Failed to delete vendor (check console)."
       );

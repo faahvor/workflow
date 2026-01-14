@@ -10,6 +10,8 @@ import {
   MdCheckCircle,
 } from "react-icons/md";
 import { useAuth } from "../../../context/AuthContext";
+import { useGlobalAlert } from "../../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../../shared/GlobalPrompt";
 
 const StatusBadge = ({ status }) => {
   const map = {
@@ -31,13 +33,14 @@ const StatusBadge = ({ status }) => {
 const VesselManagement = () => {
   const { getToken, user } = useAuth();
   const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
-
+  const { showAlert } = useGlobalAlert();
   const [vessels, setVessels] = useState([]);
   const [tab, setTab] = useState("Active"); // Active | Maintenance | Archived | All
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
+  const { showPrompt } = useGlobalPrompt(); // Add this line
 
   // pagination + sort
   const [page, setPage] = useState(1);
@@ -56,7 +59,7 @@ const VesselManagement = () => {
     name: "",
     imo: "",
     mmsi: "",
-    fleetManagerId: "",
+    procurementOfficerId: "",
     vesselManagerId: "",
     status: "Active",
     notes: "",
@@ -228,21 +231,6 @@ const VesselManagement = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // derive candidates lists filtered by role keyword
-  const fleetCandidates = useMemo(
-    () =>
-      allUsers
-        .filter((u) => {
-          const r = ((u.role || u.roleType || "") + "").toLowerCase();
-          return r.includes("fleet manager");
-        })
-        .map((u) => ({
-          value: u.userId || u.id,
-          label: u.displayName || u.name || u.username || u.email,
-        })),
-    [allUsers]
-  );
-
   const vesselCandidates = useMemo(
     () =>
       allUsers
@@ -283,6 +271,7 @@ const VesselManagement = () => {
     setForm({
       ...blank,
       vesselId: `V-${Math.floor(100 + Math.random() * 900)}`,
+      procurementOfficers: [],
     });
     setError("");
     setModalOpen(true);
@@ -296,10 +285,9 @@ const VesselManagement = () => {
       name: v.name || "",
       imo: v.imo || "",
       mmsi: v.mmsi || "",
-      fleetManagerId:
-        (v.fleetManager && (v.fleetManager.userId || v.fleetManager.id)) ||
-        v.fleetManagerId ||
-        "",
+      procurementOfficerId:
+        v.procurementOfficers?.[0]?.userId || v.procurementOfficers?.[0] || "",
+
       vesselManagerId:
         (v.vesselManager && (v.vesselManager.userId || v.vesselManager.id)) ||
         v.vesselManagerId ||
@@ -325,7 +313,9 @@ const VesselManagement = () => {
       const payload = {
         name: form.name,
         vesselManagerId: form.vesselManagerId,
-        fleetManagerId: form.fleetManagerId || undefined,
+        procurementOfficers: form.procurementOfficerId
+          ? [form.procurementOfficerId]
+          : [],
         status: form.status ? form.status.toLowerCase() : undefined,
         notes: form.notes || undefined,
       };
@@ -334,7 +324,7 @@ const VesselManagement = () => {
       });
       setModalOpen(false);
       fetchVessels({ page: 1 });
-      alert("Vessel created successfully");
+      showAlert("Vessel created successfully");
     } catch (err) {
       console.error("Create vessel error:", err);
       setError(err.response?.data?.message || "Failed to create vessel");
@@ -361,7 +351,7 @@ const VesselManagement = () => {
       const patch = {
         name: form.name,
         vesselManagerId: form.vesselManagerId,
-        fleetManagerId: form.fleetManagerId || undefined,
+        procurementOfficers: form.procurementOfficers,
         status: form.status ? form.status.toLowerCase() : undefined,
         notes: form.notes || undefined,
       };
@@ -372,7 +362,7 @@ const VesselManagement = () => {
       );
       setModalOpen(false);
       fetchVessels({ page });
-      alert("Vessel updated successfully");
+      showAlert("Vessel updated successfully");
     } catch (err) {
       console.error("Update vessel error:", err);
       setError(err.response?.data?.message || "Failed to update vessel");
@@ -389,7 +379,8 @@ const VesselManagement = () => {
   const changeStatus = async (v, newStatus) => {
     const vid = v.vesselId || v.id;
     if (!vid) return;
-    if (!window.confirm(`Move vessel ${vid} to ${newStatus}?`)) return;
+    const ok = await showPrompt(`Move vessel ${vid} to ${newStatus}?`);
+    if (!ok) return;
     try {
       await axios.patch(
         `${API_BASE}/admin/vessels/${encodeURIComponent(vid)}`,
@@ -397,28 +388,31 @@ const VesselManagement = () => {
         { headers: getAuthHeaders() }
       );
       fetchVessels({ page });
-      alert(`Vessel moved to ${newStatus}`);
+      showAlert(`Vessel moved to ${newStatus}`);
     } catch (err) {
       console.error("Change status error:", err);
-      alert(err.response?.data?.message || "Failed to change status");
+      showAlert(err.response?.data?.message || "Failed to change status");
     }
   };
 
   const remove = async (v) => {
     const vid = v.vesselId || v.id;
     if (!vid) return;
-    if (!window.confirm("Permanently remove vessel? This cannot be undone."))
-      return;
+
+    const ok = await showPrompt(
+      "Permanently remove vessel? This cannot be undone."
+    );
+    if (!ok) return;
     try {
       await axios.delete(
         `${API_BASE}/admin/vessels/${encodeURIComponent(vid)}`,
         { headers: getAuthHeaders() }
       );
       fetchVessels({ page: Math.max(1, page) });
-      alert("Vessel deleted");
+      showAlert("Vessel deleted");
     } catch (err) {
       console.error("Delete vessel error:", err);
-      alert(err.response?.data?.message || "Failed to delete vessel");
+      showAlert(err.response?.data?.message || "Failed to delete vessel");
     }
   };
 
@@ -536,8 +530,8 @@ const VesselManagement = () => {
                       : "▼"
                     : ""}
                 </th>
-                <th className="px-4 py-3 text-left">Fleet Manager</th>
                 <th className="px-4 py-3 text-left">Vessel Manager</th>
+                <th className="px-4 py-3 text-left">Procurement Officers</th>
                 <th
                   className="px-4 py-3 text-left cursor-pointer"
                   onClick={() => toggleSort("status")}
@@ -578,13 +572,21 @@ const VesselManagement = () => {
                       <div className="text-sm font-medium text-slate-900">
                         {v.name}
                       </div>
+
                       <div className="text-xs text-slate-400">{v.notes}</div>
                     </td>
-                    <td className="px-4 py-3 text-sm">
-                      {getUserLabel(v.fleetManager || v.fleetManagerId)}
-                    </td>
+
                     <td className="px-4 py-3 text-sm">
                       {getUserLabel(v.vesselManager || v.vesselManagerId)}
+                    </td>
+
+                    <td className="px-4 py-3 text-sm">
+                      {v.procurementOfficers &&
+                      v.procurementOfficers.length > 0 ? (
+                        getUserLabel(v.procurementOfficers[0])
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge
@@ -773,6 +775,7 @@ const VesselManagement = () => {
                   </div>
                 )}
 
+                {/* Vessel Name and Status in one row */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs text-slate-500">
@@ -787,28 +790,22 @@ const VesselManagement = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500">
-                      Fleet Manager
-                    </label>
+                    <label className="text-xs text-slate-500">Status</label>
                     <select
-                      value={form.fleetManagerId || ""}
+                      value={form.status}
                       onChange={(e) =>
-                        setForm({ ...form, fleetManagerId: e.target.value })
+                        setForm({ ...form, status: e.target.value })
                       }
                       className="w-full px-3 py-2 border rounded-lg"
                     >
-                      <option value="">Select Fleet Manager</option>
-                      {fleetCandidates.map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
-                        </option>
-                      ))}
+                      <option>Active</option>
+                      <option>Maintenance</option>
+                      <option>Archived</option>
                     </select>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4"></div>
-
+                {/* Vessel Manager and Procurement Officer in one row */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs text-slate-500">
@@ -830,31 +827,40 @@ const VesselManagement = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500">Status</label>
+                    <label className="text-xs text-slate-500">
+                      Procurement Officer
+                      <span className="text-xs text-slate-400 ml-1">
+                        (vessel scope only)
+                      </span>
+                    </label>
                     <select
-                      value={form.status}
+                      value={form.procurementOfficerId || ""}
                       onChange={(e) =>
-                        setForm({ ...form, status: e.target.value })
+                        setForm({
+                          ...form,
+                          procurementOfficerId: e.target.value,
+                        })
                       }
                       className="w-full px-3 py-2 border rounded-lg"
                     >
-                      <option>Active</option>
-                      <option>Maintenance</option>
-                      <option>Archived</option>
+                      <option value="">Select Procurement Officer</option>
+                      {allUsers
+                        .filter(
+                          (u) =>
+                            (u.role || u.roleType) === "Procurement Officer" &&
+                            u.procurementScope &&
+                            u.procurementScope.type === "vessel"
+                        )
+                        .map((u) => (
+                          <option
+                            key={u.userId || u.id}
+                            value={u.userId || u.id}
+                          >
+                            {u.displayName || u.name || u.username || u.email}
+                          </option>
+                        ))}
                     </select>
                   </div>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-500">Notes</label>
-                  <textarea
-                    value={form.notes}
-                    onChange={(e) =>
-                      setForm({ ...form, notes: e.target.value })
-                    }
-                    rows={3}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
                 </div>
 
                 <div className="flex items-center justify-end gap-3">

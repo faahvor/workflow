@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { useGlobalAlert } from "../GlobalAlert";
 
 const HeadOfProjectTable = ({
   items = [],
@@ -17,6 +18,7 @@ const HeadOfProjectTable = ({
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
+  const { showAlert } = useGlobalAlert();
 
   const getFeeValue = (item) => {
     if (!item) return 0;
@@ -65,15 +67,15 @@ const HeadOfProjectTable = ({
   const handleSaveClick = async (index) => {
     const item = editedItems[index];
     if (!item.quantity || item.quantity < 1) {
-      alert("Quantity must be at least 1");
+      showAlert("Quantity must be at least 1");
       return;
     }
     try {
       await onEditItem(item);
       setEditingIndex(null);
-      alert("✅ Item updated successfully!");
+      showAlert("✅ Item updated successfully!");
     } catch (error) {
-      alert("❌ Failed to update item");
+      showAlert("❌ Failed to update item");
     }
   };
 

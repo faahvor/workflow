@@ -13,6 +13,7 @@ import {
 import { useAuth } from "../../../context/AuthContext";
 import axios from "axios";
 import RequestWorkflow from "../../../shared/RequestWorkflow";
+import { useGlobalAlert } from "../../../shared/GlobalAlert";
 
 const formatAmount = (n) =>
   typeof n === "number" ? `$${n.toLocaleString()}` : n || "N/A";
@@ -36,7 +37,7 @@ const RequestManagement = () => {
   const [postingComment, setPostingComment] = useState(false);
   const { getToken } = useAuth();
   const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
-
+const { showAlert } = useGlobalAlert();
   // server-backed list state / pagination
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -94,7 +95,7 @@ const RequestManagement = () => {
           err.response.data
         );
       }
-      // Don't alert for workflow errors, just log - request can still be viewed
+      // Don't showAlert for workflow errors, just log - request can still be viewed
       setWorkflowPath([]);
     }
   };
@@ -152,7 +153,7 @@ const RequestManagement = () => {
           err.response.data
         );
       }
-      alert("Failed to fetch requests. Check console for details.");
+      showAlert("Failed to fetch requests. Check console for details.");
     } finally {
       setLoadingRequests(false);
     }
@@ -337,7 +338,7 @@ const RequestManagement = () => {
   const submitOverride = async () => {
     const reason = (overrideReason || "").trim();
     if (!reason) {
-      alert("Please provide a reason for overriding this request.");
+      showAlert("Please provide a reason for overriding this request.");
       return;
     }
 
