@@ -1,12 +1,13 @@
-// src/components/tables/OperationsManagerTable.jsx
-
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
+import { MdDelete } from "react-icons/md";
 import { useGlobalAlert } from "../GlobalAlert";
 
 const OperationsManagerTable = ({
   items = [],
   onEditItem,
+  onDeleteItem, // ✅ NEW PROP
+  requestId, // ✅ NEW PROP
   isReadOnly = false,
   tag = "",
 }) => {
@@ -17,32 +18,18 @@ const OperationsManagerTable = ({
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
-const { showAlert } = useGlobalAlert();
+  const { showAlert } = useGlobalAlert();
+
+  // ✅ NEW: Hide Actions column when tag is Clearing or Shipping
+  const hideActions = tagLower === "clearing" || tagLower === "shipping";
+
   const getFeeValue = (item) => {
     if (!item) return 0;
     const v = item[feeFieldName];
     return typeof v === "number" ? v : Number(v || 0);
   };
 
-  // Check if table needs horizontal scrolling
-  React.useEffect(() => {
-    const checkScroll = () => {
-      const container = document.getElementById("operations-table-container");
-      if (container) {
-        setNeedsScroll(container.scrollWidth > container.clientWidth);
-      }
-    };
-
-    checkScroll();
-    window.addEventListener("resize", checkScroll);
-
-    return () => window.removeEventListener("resize", checkScroll);
-  }, [editedItems]);
-
-  // Update editedItems when items prop changes
-  React.useEffect(() => {
-    setEditedItems(items);
-  }, [items]);
+  // ...existing code...
 
   const handleEditClick = (index) => {
     setEditingIndex(index);
@@ -56,8 +43,15 @@ const { showAlert } = useGlobalAlert();
       return;
     }
 
+    // ✅ Build minimal payload for edit
+    const payload = {
+      itemId: item.itemId || item._id,
+      quantity: item.quantity,
+      requestId,
+    };
+
     try {
-      await onEditItem(item);
+      await onEditItem(payload);
       setEditingIndex(null);
       showAlert("✅ Item updated successfully!");
     } catch (error) {
@@ -77,29 +71,19 @@ const { showAlert } = useGlobalAlert();
     setEditedItems(newItems);
   };
 
-  // Calculate total for each item
-  const calculateTotal = (item) => {
-    const quantity = parseFloat(item.quantity) || 0;
-    const unitPrice = parseFloat(item.unitPrice) || 0;
-    const discount = parseInt(item.discount) || 0;
-
-    const baseTotal = quantity * unitPrice;
-    const discountFactor =
-      discount >= 1 && discount <= 100 ? (100 - discount) / 100 : 1;
-    return (baseTotal * discountFactor).toFixed(2);
+  // ✅ NEW: Handle delete button click
+  const handleDeleteClick = (item) => {
+    if (typeof onDeleteItem === "function") {
+      onDeleteItem(item);
+    } else {
+      console.warn("onDeleteItem not provided");
+    }
   };
 
-  if (!items || items.length === 0) {
-    return (
-      <div className="p-8 text-center bg-slate-50 rounded-xl border-2 border-slate-200">
-        <p className="text-slate-500">No items in this request</p>
-      </div>
-    );
-  }
+  // ...existing code...
 
   return (
     <div className="relative">
-      {/* ✅ Scrollable table container */}
       <div className="overflow-x-auto" id="operations-table-container">
         <table className="w-full border-collapse border-2 border-slate-200 rounded-lg overflow-hidden">
           <thead>
@@ -135,10 +119,15 @@ const { showAlert } = useGlobalAlert();
                   {feeLabel}
                 </th>
               )}
-              {/* ✅ PRN - only when tag is shipping/clearing */}
               {showFeeColumns && (
                 <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   PRN
+                </th>
+              )}
+              {/* ✅ NEW: Actions column (hidden when tag is Clearing/Shipping or isReadOnly) */}
+              {!isReadOnly && !hideActions && (
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Actions
                 </th>
               )}
             </tr>
@@ -174,7 +163,7 @@ const { showAlert } = useGlobalAlert();
                   {item.makersPartNo || "N/A"}
                 </td>
 
-                {/* ✅ Vendor Column */}
+                {/* Vendor */}
                 <td className="border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   {item.vendor || "N/A"}
                 </td>
@@ -197,6 +186,8 @@ const { showAlert } = useGlobalAlert();
                     </span>
                   )}
                 </td>
+
+                {/* Shipping Qty */}
                 {showFeeColumns && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     <span className="font-semibold text-slate-900">
@@ -204,6 +195,8 @@ const { showAlert } = useGlobalAlert();
                     </span>
                   </td>
                 )}
+
+                {/* Fee */}
                 {showFeeColumns && (
                   <td className="border border-slate-200 px-4 py-3 text-right text-sm text-slate-700">
                     {item.currency || "NGN"}{" "}
@@ -213,9 +206,54 @@ const { showAlert } = useGlobalAlert();
                     })}
                   </td>
                 )}
+
+                {/* PRN */}
                 {showFeeColumns && (
                   <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                     {item.purchaseRequisitionNumber || "N/A"}
+                  </td>
+                )}
+
+                {/* ✅ NEW: Actions Column */}
+                {!isReadOnly && !hideActions && (
+                  <td className="border border-slate-200 px-4 py-3">
+                    <div className="flex items-center justify-center gap-2">
+                      {editingIndex === index ? (
+                        <>
+                          <button
+                            onClick={() => handleSaveClick(index)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-150"
+                            title="Save"
+                          >
+                            <FaSave className="text-lg" />
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors duration-150"
+                            title="Cancel"
+                          >
+                            <FaTimes className="text-lg" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleEditClick(index)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
+                            title="Edit"
+                          >
+                            <FaEdit className="text-lg" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(item)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150"
+                            title="Delete"
+                          >
+                            <MdDelete className="text-lg" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>
@@ -224,7 +262,7 @@ const { showAlert } = useGlobalAlert();
         </table>
       </div>
 
-      {/* ✅ Fixed scroll arrows - only show when needed */}
+  {/* ✅ Fixed scroll arrows - only show when needed */}
       {needsScroll && (
         <div className="flex justify-between mt-4">
           <button
@@ -254,8 +292,7 @@ const { showAlert } = useGlobalAlert();
             ►
           </button>
         </div>
-      )}
-    </div>
+      )}    </div>
   );
 };
 

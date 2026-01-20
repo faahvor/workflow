@@ -175,6 +175,26 @@ const HrManagerTable = ({
         ))
     );
   }
+  const allSameVendor =
+    editedItems.length > 0 &&
+    editedItems.every(
+      (it) =>
+        (it.vendorId ?? it.vendor) ===
+        (editedItems[0].vendorId ?? editedItems[0].vendor)
+    );
+  const singleVendorName = resolveVendorName(
+    editedItems[0]?.vendor || editedItems[0]?.vendorName
+  );
+  const groupByVendor = (list) => {
+    const groups = {};
+    list.forEach((it, index) => {
+      const key = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (!groups[key]) groups[key] = { items: [], order: index };
+      groups[key].items.push({ ...it, _groupIndex: index });
+    });
+    return Object.values(groups).sort((a, b) => a.order - b.order);
+  };
+  const groups = groupByVendor(editedItems);
 
   return (
     <div className="relative">
@@ -208,7 +228,7 @@ const HrManagerTable = ({
                   Shipping Qty
                 </th>
               )}
-              {showFeeColumns && !isSecondApproval && (
+              {showFeeColumns && !isSecondApproval && !allSameVendor && (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[140px]">
                   {feeLabel}
                 </th>
@@ -319,7 +339,7 @@ const HrManagerTable = ({
                     </span>
                   </td>
                 )}
-                {showFeeColumns && !isSecondApproval && (
+                {showFeeColumns && !isSecondApproval && !allSameVendor && (
                   <td className="border border-slate-200 px-4 py-[5px] text-right text-sm text-slate-700">
                     {item.currency || "NGN"}{" "}
                     {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
@@ -378,14 +398,19 @@ const HrManagerTable = ({
                     )}
                   </>
                 )}
-                {(isSecondApproval ||
-                  (showFeeColumns && !isSecondApproval)) && (
-                  <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
-                    {item.purchaseRequisitionNumber ||
-                      item.purchaseRequisitionNumber ||
-                      "N/A"}
-                  </td>
-                )}
+                {(isSecondApproval || (showFeeColumns && !isSecondApproval)) &&
+                  index === 0 && (
+                    <td
+                      className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700"
+                      rowSpan={g.items.length}
+                      style={{ verticalAlign: "middle" }}
+                    >
+                      {item.purchaseRequisitionNumber ||
+                        item.purchaseReqNumber ||
+                        item.prn ||
+                        "N/A"}
+                    </td>
+                  )}
                 {!isReadOnly &&
                   !isSecondApproval &&
                   !isPettyCash &&

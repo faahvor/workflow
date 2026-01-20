@@ -454,138 +454,198 @@ const { showPrompt } = useGlobalPrompt();
     return changes;
   };
 
-  const handleSaveAll = async () => {
-    console.log("handleSaveAll called", {
-      selectedRequest,
-      requestsProp: requests && requests.length,
-      editedRequestsCount: editedRequests && editedRequests.length,
-      onEditItemPresent: !!onEditItem,
-    });
- const ok = await showPrompt("Save all changes to the items?");
-  if (!ok) return;
-    const dirty = editedRequests;
-    console.log("handleSaveAll - editedRequests snapshot:", editedRequests);
-    console.log("handleSaveAll - dirty items:", dirty);
+ const handleSaveAll = async () => {
+  console.log("handleSaveAll called", {
+    selectedRequest,
+    requestsProp: requests && requests.length,
+    editedRequestsCount: editedRequests && editedRequests.length,
+    onEditItemPresent: !!onEditItem,
+  });
 
-    if (!dirty || dirty.length === 0) {
-      showAlert("No changes to save.");
+  const ok = await showPrompt("Save all changes to the items?");
+  if (!ok) return;
+
+  const dirty = editedRequests;
+  console.log("handleSaveAll - editedRequests snapshot:", editedRequests);
+  console.log("handleSaveAll - dirty items:", dirty);
+
+  if (!dirty || dirty.length === 0) {
+    showAlert("No changes to save.");
+    return;
+  }
+
+  try {
+    setIsSaving(true);
+    console.log("DEBUG: original requests prop:", requests);
+    console.log(
+      "DEBUG: local editedRequests snapshot before save:",
+      editedRequests
+    );
+
+    // 1) Create any new vendors that were created locally (deferred create)
+    if (typeof handleCreateVendor === "function") {
+      const pendingNewVendorNames = [
+        ...new Set(
+          editedRequests
+            .filter((it) => it._dirty && it._pendingVendor?.isNew)
+            .map((it) => it._pendingVendor.name)
+        ),
+      ];
+
+      const createdVendorIdByName = {};
+      for (const name of pendingNewVendorNames) {
+        try {
+          const option = await handleCreateVendor(name);
+          if (option && option.value !== undefined && option.value !== null) {
+            createdVendorIdByName[name] = option.value;
+          }
+        } catch (err) {
+          console.error("Error creating vendor during Save:", name, err);
+        }
+      }
+
+      if (Object.keys(createdVendorIdByName).length > 0) {
+        setEditedRequests((prev) =>
+          prev.map((it) =>
+            it._dirty &&
+            it._pendingVendor &&
+            it._pendingVendor.isNew &&
+            createdVendorIdByName[it._pendingVendor.name]
+              ? {
+                  ...it,
+                  vendorId: createdVendorIdByName[it._pendingVendor.name],
+                  _pendingVendor: {
+                    ...it._pendingVendor,
+                    id: createdVendorIdByName[it._pendingVendor.name],
+                    isNew: false,
+                  },
+                }
+              : it
+          )
+        );
+      }
+    }
+
+    // 2) Build updates from latest snapshot
+    const snapshot = editedRequests.slice();
+    const updates = snapshot
+      .filter((it) => it._dirty)
+      .map((it) => {
+        const changes = buildChangesForItem(it);
+        console.log(
+          "buildChangesForItem result for item:",
+          it.itemId || it._id,
+          { changes, it }
+        );
+
+        if (
+          changes.inStockLocation !== undefined &&
+          changes.storeLocation === undefined
+        ) {
+          changes.storeLocation = changes.inStockLocation;
+          delete changes.inStockLocation;
+        }
+
+        return {
+          itemId: it.itemId || it._id,
+          changes,
+        };
+      })
+      .filter((u) => Object.keys(u.changes).length > 0);
+
+    console.log("handleSaveAll - updates payload:", updates);
+
+    if (updates.length === 0) {
+      showAlert("No actual field changes detected to save.");
+      setIsSaving(false);
       return;
     }
 
-    try {
-      setIsSaving(true);
-      console.log("DEBUG: original requests prop:", requests);
-      console.log(
-        "DEBUG: local editedRequests snapshot before save:",
-        editedRequests
-      );
+    // ✅ NEW: Save items SEQUENTIALLY instead of Promise.all
+    let successCount = 0;
+    const failedItems = [];
 
-      // 1) Create any new vendors that were created locally (deferred create)
-      if (typeof handleCreateVendor === "function") {
-        const pendingNewVendorNames = [
-          ...new Set(
-            editedRequests
-              .filter((it) => it._dirty && it._pendingVendor?.isNew)
-              .map((it) => it._pendingVendor.name)
-          ),
-        ];
-
-        const createdVendorIdByName = {};
-        for (const name of pendingNewVendorNames) {
-          try {
-            const option = await handleCreateVendor(name);
-            if (option && option.value !== undefined && option.value !== null) {
-              createdVendorIdByName[name] = option.value;
-            }
-          } catch (err) {
-            console.error("Error creating vendor during Save:", name, err);
-          }
-        }
-
-        if (Object.keys(createdVendorIdByName).length > 0) {
-          setEditedRequests((prev) =>
-            prev.map((it) =>
-              it._dirty &&
-              it._pendingVendor &&
-              it._pendingVendor.isNew &&
-              createdVendorIdByName[it._pendingVendor.name]
-                ? {
-                    ...it,
-                    vendorId: createdVendorIdByName[it._pendingVendor.name],
-                    _pendingVendor: {
-                      ...it._pendingVendor,
-                      id: createdVendorIdByName[it._pendingVendor.name],
-                      isNew: false,
-                    },
-                  }
-                : it
-            )
-          );
-        }
-      }
-
-      // 2) Build updates from latest snapshot
-      const snapshot = editedRequests.slice();
-      const updates = snapshot
-        .filter((it) => it._dirty)
-        .map((it) => {
-          const changes = buildChangesForItem(it);
-          console.log(
-            "buildChangesForItem result for item:",
-            it.itemId || it._id,
-            { changes, it }
-          );
-
-          if (
-            changes.inStockLocation !== undefined &&
-            changes.storeLocation === undefined
-          ) {
-            changes.storeLocation = changes.inStockLocation;
-            delete changes.inStockLocation;
-          }
-
-          return {
-            itemId: it.itemId || it._id,
-            changes,
-          };
-        })
-        .filter((u) => Object.keys(u.changes).length > 0);
-
-      // debug: show payload that will be sent to server
-      console.log("handleSaveAll - updates payload:", updates);
-
-      if (updates.length === 0) {
-        showAlert("No actual field changes detected to save.");
-        setIsSaving(false);
-        return;
-      }
-
-      await handleUnifiedEdit(updates);
-
-      // clear local dirty flags and pending vendor metadata
-      setEditedRequests((prev) =>
-        prev.map((itm) => ({
-          ...itm,
-          _dirty: false,
-          _pendingVendor: undefined,
-        }))
-      );
-
-      showAlert("Saved successfully");
-
-      // Notify parent to refresh attached-files list / live preview (no uploads here)
+    for (let i = 0; i < updates.length; i++) {
+      const update = updates[i];
+      
       try {
-        if (typeof onFilesChanged === "function") onFilesChanged();
-      } catch (cbErr) {
-        console.error("onFilesChanged callback error after save:", cbErr);
+        console.log(`💾 Saving item ${i + 1}/${updates.length}: ${update.itemId}`);
+        
+        await handleUnifiedEdit([update]); // Save one item at a time
+        
+        successCount++;
+        console.log(`✅ Item ${i + 1}/${updates.length} saved successfully`);
+        
+        // Small delay between saves to prevent overwhelming the server
+        if (i < updates.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
+        }
+      } catch (err) {
+        console.error(`❌ Failed to save item ${update.itemId}:`, err);
+        failedItems.push({ update, error: err });
       }
-    } catch (err) {
-      console.error("Error in handleSaveAll:", err);
-      showAlert("Error saving changes. See console for details.");
-    } finally {
-      setIsSaving(false);
     }
-  };
+
+    // ✅ Retry failed items automatically (one retry attempt)
+    if (failedItems.length > 0) {
+      console.log(`⚠️ Retrying ${failedItems.length} failed items...`);
+      
+      for (let i = 0; i < failedItems.length; i++) {
+        const { update } = failedItems[i];
+        
+        try {
+          console.log(`🔄 Retry ${i + 1}/${failedItems.length}: ${update.itemId}`);
+          
+          await handleUnifiedEdit([update]);
+          
+          successCount++;
+          console.log(`✅ Retry successful for ${update.itemId}`);
+          
+          // Mark as successful (remove from failed list)
+          failedItems[i].retrySuccess = true;
+          
+          if (i < failedItems.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 150)); // Slightly longer delay for retries
+          }
+        } catch (retryErr) {
+          console.error(`❌ Retry failed for ${update.itemId}:`, retryErr);
+        }
+      }
+    }
+
+    // Clear local dirty flags
+    setEditedRequests((prev) =>
+      prev.map((itm) => ({
+        ...itm,
+        _dirty: false,
+        _pendingVendor: undefined,
+      }))
+    );
+
+    // Show result message
+    const stillFailed = failedItems.filter(f => !f.retrySuccess).length;
+    
+    if (stillFailed === 0) {
+      showAlert(`✅ All ${successCount} items saved successfully!`);
+    } else {
+      showAlert(
+        `⚠️ Saved ${successCount}/${updates.length} items. ${stillFailed} failed after retry. Check console for details.`
+      );
+    }
+
+    // Notify parent to refresh
+    try {
+      if (typeof onFilesChanged === "function") onFilesChanged();
+    } catch (cbErr) {
+      console.error("onFilesChanged callback error after save:", cbErr);
+    }
+  } catch (err) {
+    console.error("Error in handleSaveAll:", err);
+    showAlert("Error saving changes. See console for details.");
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const handleChange = (itemId, field, value) => {
     setEditedRequests((prevRequests) => {

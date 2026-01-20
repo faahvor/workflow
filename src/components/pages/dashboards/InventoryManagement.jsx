@@ -16,17 +16,27 @@ import {
   MdChevronRight,
   MdFileDownload,
   MdPrint,
-    MdVerified,
+  MdVerified,
   MdPending,
 } from "react-icons/md";
 import { useGlobalAlert } from "../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
 const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
 const PAGE_SIZE = 50;
 const LOWSTOCK_PAGE_SIZE = 20;
 
+function getStoreLocationFromRole(role) {
+  if (!role) return null;
+  const r = String(role).toLowerCase();
+  if (r === "store base") return "Store Base";
+  if (r === "store jetty") return "Store Jetty";
+  if (r === "store vessel") return "Store Vessel";
+  return null;
+}
+
 export default function InventoryManagement() {
-  const { getToken } = useAuth();
+  const { getToken, user } = useAuth();
   const [inventory, setInventory] = useState([]);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -47,7 +57,8 @@ export default function InventoryManagement() {
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [photoViewerList, setPhotoViewerList] = useState([]); // array of URLs
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
-const { showAlert } = useGlobalAlert();
+  const { showAlert } = useGlobalAlert();
+  const { showPrompt } = useGlobalPrompt();
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -57,11 +68,103 @@ const { showAlert } = useGlobalAlert();
     quantity: 0,
     maker: "",
     makerPartNumber: "",
-     isVerified: true,
+    isVerified: true,
   });
 
   const [activeStat, setActiveStat] = useState("all"); // 'all' | 'low'
   const searchDebounceRef = useRef(null);
+  const roleLower = String(user?.role || user?.accessLevel || "").toLowerCase();
+  const isAdmin = roleLower === "admin";
+  const isProcurementManager = roleLower === "procurement manager";
+  const storeLocation = getStoreLocationFromRole(user?.role);
+  const [showRestockForm, setShowRestockForm] = useState(false);
+  const [drawerItem, setDrawerItem] = useState(null);
+  const [restockForm, setRestockForm] = useState({
+    quantity: "",
+    unitPrice: "",
+    receivedAt: "",
+  });
+  const [restockLoading, setRestockLoading] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryMode, setCategoryMode] = useState("edit"); // 'create' | 'edit'
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryForm, setCategoryForm] = useState({
+    name: "",
+    code: "",
+    accountClass: "",
+  });
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [showCategoryDrawer, setShowCategoryDrawer] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryFilterByAccountClass, setCategoryFilterByAccountClass] =
+    useState("");
+  const [categoryFilterByCode, setCategoryFilterByCode] = useState("");
+  const [categoryFilterByName, setCategoryFilterByName] = useState("");
+  const [categoryPage, setCategoryPage] = useState(1);
+  const CATEGORY_PAGE_SIZE = 50;
+  const departmentOptions = [
+    { name: "Marine" },
+    { name: "IT" },
+    { name: "Account" },
+    { name: "Legal" },
+    { name: "QHSE" },
+    { name: "Operations" },
+    { name: "Project" },
+    { name: "Vessel/Catering" },
+    { name: "Purchase" },
+    { name: "Protocol" },
+    { name: "Store" },
+    { name: "HR" },
+    { name: "Admin" },
+  ];
+
+  const handleRestock = async () => {
+    if (!drawerItem?.inventoryId) return;
+    setRestockLoading(true);
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const payload = {
+        quantity: Number(restockForm.quantity),
+        unitPrice: Number(restockForm.unitPrice),
+        receivedAt: restockForm.receivedAt || new Date().toISOString(),
+      };
+      await axios.post(
+        `${API_BASE}/inventory/${drawerItem.inventoryId}/restock`,
+        payload,
+        { headers }
+      );
+      showAlert("Restock successful!");
+
+      // Close modal and reset form
+      setShowRestockForm(false);
+      setRestockForm({ quantity: "", unitPrice: "", receivedAt: "" });
+      setDrawerItem(null);
+
+      // Refresh inventory lists
+      await Promise.all([
+        fetchInventory(page, search, department),
+        fetchLowStock(lowStockPage, search, department),
+      ]);
+    } catch (err) {
+      showAlert(err.response?.data?.message || "Restock failed");
+    } finally {
+      setRestockLoading(false);
+    }
+  };
+
+  const filteredInventory =
+    isAdmin || isProcurementManager
+      ? inventory
+      : inventory.filter((item) => item.storeLocation === storeLocation);
+
+  const filteredLowStock =
+    isAdmin || isProcurementManager
+      ? lowStock
+      : lowStock.filter((item) => item.storeLocation === storeLocation);
+
+  const visible = activeStat === "low" ? filteredLowStock : filteredInventory;
 
   const openPhotoViewerForItem = (item, startIndex = 0) => {
     const photos = Array.isArray(item.photos) ? item.photos : [];
@@ -186,13 +289,20 @@ const { showAlert } = useGlobalAlert();
       if (addPhotos && addPhotos.length > 0) {
         const formData = new FormData();
         formData.append("department", form.department);
+        if (form.categoryId) formData.append("categoryId", form.categoryId);
+
         formData.append("name", form.name);
         formData.append("quantity", Number(form.quantity) || 0);
         if (form.maker) formData.append("maker", form.maker);
         if (form.makerPartNumber)
           formData.append("makerPartNumber", form.makerPartNumber);
-formData.append("storeLocation", form.storeLocation);
-
+        formData.append("storeLocation", form.storeLocation);
+        formData.append("minStock", Number(form.minStock));
+        if (form.maxStock) formData.append("maxStock", Number(form.maxStock));
+        if (form.reorderQuantity)
+          formData.append("reorderQuantity", Number(form.reorderQuantity));
+        formData.append("pricingMode", form.pricingMode || "batch");
+        formData.append("unitPrice", Number(form.unitPrice));
         addPhotos.forEach((file) => {
           formData.append("photos", file);
         });
@@ -214,7 +324,12 @@ formData.append("storeLocation", form.storeLocation);
             quantity: 0,
             maker: "",
             makerPartNumber: "",
-            isVerified: true,
+            storeLocation: storeLocation || "",
+            minStock: "",
+            maxStock: "",
+            reorderQuantity: "",
+            pricingMode: "batch",
+            unitPrice: "",
           });
           setAddPhotos([]);
           showAlert("Inventory added.");
@@ -224,12 +339,22 @@ formData.append("storeLocation", form.storeLocation);
         // fallback to JSON payload (existing behavior)
         const payload = {
           department: form.department,
+          ...(form.categoryId ? { categoryId: form.categoryId } : {}),
+
           name: form.name,
           quantity: Number(form.quantity) || 0,
           maker: form.maker,
           makerPartNumber: form.makerPartNumber,
-            storeLocation: form.storeLocation,
-
+          storeLocation: form.storeLocation,
+          minStock: Number(form.minStock),
+          ...(form.maxStock !== "" && form.maxStock !== undefined
+            ? { maxStock: Number(form.maxStock) }
+            : {}),
+          ...(form.reorderQuantity !== "" && form.reorderQuantity !== undefined
+            ? { reorderQuantity: Number(form.reorderQuantity) }
+            : {}),
+          pricingMode: form.pricingMode || "batch",
+          unitPrice: Number(form.unitPrice),
         };
         const resp = await axios.post(`${API_BASE}/inventory`, payload, {
           headers,
@@ -243,10 +368,18 @@ formData.append("storeLocation", form.storeLocation);
           setShowAdd(false);
           setForm({
             department: "Marine",
+            categoryId: "",
+
             name: "",
             quantity: 0,
             maker: "",
             makerPartNumber: "",
+            storeLocation: storeLocation || "",
+            minStock: "",
+            maxStock: "",
+            reorderQuantity: "",
+            pricingMode: "batch",
+            unitPrice: "",
           });
           showAlert("Inventory added.");
           return;
@@ -255,8 +388,23 @@ formData.append("storeLocation", form.storeLocation);
 
       throw new Error("Invalid create response");
     } catch (err) {
+      // Log the entire error object
       console.error("Error creating inventory:", err);
-      showAlert(err.response?.data?.message || "Failed to create item");
+
+      // Log the backend response if available
+      if (err.response) {
+        console.error("Backend error response:", err.response);
+        console.error("Backend error data:", err.response.data);
+        console.error("Backend error status:", err.response.status);
+        console.error("Backend error headers:", err.response.headers);
+      }
+
+      showAlert(
+        err.response?.data?.message ||
+          err.response?.data?.error ||
+          err.message ||
+          "Failed to create item"
+      );
     } finally {
       setLoading(false);
     }
@@ -339,21 +487,194 @@ formData.append("storeLocation", form.storeLocation);
       setLowStockLoading(false);
     }
   };
+  const fetchCategories = async () => {
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      // includeInactive=false by default (only active categories)
+      const resp = await axios.get(`${API_BASE}/categories`, { headers });
+      const data = Array.isArray(resp.data?.data)
+        ? resp.data.data
+        : Array.isArray(resp.data)
+        ? resp.data
+        : [];
+      setCategories(data);
+    } catch (err) {
+      console.error("Error fetching categories:", err);
+      // Categories not critical - don't show error to user
+    }
+  };
+
+  // Create new category
+  const handleCreateCategory = async () => {
+    if (
+      !categoryForm.name.trim() ||
+      !categoryForm.code.trim() ||
+      !categoryForm.accountClass.trim()
+    ) {
+      showAlert("Category name, code, and account class are required.");
+      return;
+    }
+
+    setCategoryLoading(true);
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const payload = {
+        name: categoryForm.name.trim(),
+        code: categoryForm.code.trim().toUpperCase(),
+        accountClass: categoryForm.accountClass.trim().toUpperCase(),
+      };
+
+      const resp = await axios.post(`${API_BASE}/categories`, payload, {
+        headers,
+      });
+      showAlert("Category created successfully!");
+
+      // Refresh categories list
+      await fetchCategories();
+
+      // Reset form and switch to edit mode
+      setCategoryForm({ name: "", code: "", accountClass: "" });
+      setCategoryMode("edit");
+    } catch (err) {
+      console.error("Error creating category:", err);
+      showAlert(err.response?.data?.message || "Failed to create category");
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  // Update existing category
+  const handleUpdateCategory = async () => {
+    if (!editingCategory?.categoryId) return;
+    if (!categoryForm.name.trim() || !categoryForm.accountClass.trim()) {
+      showAlert("Category name and account class are required.");
+      return;
+    }
+
+    setCategoryLoading(true);
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const payload = {
+        name: categoryForm.name.trim(),
+        accountClass: categoryForm.accountClass.trim().toUpperCase(),
+        isActive: true, // Keep active when updating
+        // Note: code cannot be changed (immutable)
+      };
+
+      await axios.patch(
+        `${API_BASE}/categories/${editingCategory.categoryId}`,
+        payload,
+        { headers }
+      );
+      showAlert("Category updated successfully!");
+
+      // Refresh categories list
+      await fetchCategories();
+
+      // Reset editing state
+      setEditingCategory(null);
+      setCategoryForm({ name: "", code: "", accountClass: "" });
+    } catch (err) {
+      console.error("Error updating category:", err);
+      showAlert(err.response?.data?.message || "Failed to update category");
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  // Delete (soft delete) category
+  const handleDeleteCategory = async (categoryId) => {
+    const ok = await showPrompt(
+      "Delete this category? This will soft-delete it (set isActive: false)."
+    );
+    if (!ok) return;
+
+    setCategoryLoading(true);
+    try {
+      const token = getToken ? getToken() : sessionStorage.getItem("userToken");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      await axios.delete(`${API_BASE}/categories/${categoryId}`, { headers });
+      showAlert("Category deleted successfully!");
+
+      // Refresh categories list
+      await fetchCategories();
+
+      // If we were editing this category, clear the form
+      if (editingCategory?.categoryId === categoryId) {
+        setEditingCategory(null);
+        setCategoryForm({ name: "", code: "" });
+      }
+    } catch (err) {
+      console.error("Error deleting category:", err);
+      showAlert(err.response?.data?.message || "Failed to delete category");
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  // Open category for editing
+  const openCategoryEdit = (category) => {
+    setEditingCategory(category);
+    setCategoryForm({
+      name: category.name || "",
+      code: category.code || "",
+      accountClass: category.accountClass || "",
+    });
+    setCategoryMode("edit");
+  };
+
+  const filteredCategories = categories.filter((cat) => {
+    const matchesSearch = categorySearch
+      ? cat.name?.toLowerCase().includes(categorySearch.toLowerCase()) ||
+        cat.code?.toLowerCase().includes(categorySearch.toLowerCase()) ||
+        cat.accountClass?.toLowerCase().includes(categorySearch.toLowerCase())
+      : true;
+
+    const matchesAccountClass = categoryFilterByAccountClass
+      ? cat.accountClass
+          ?.toLowerCase()
+          .includes(categoryFilterByAccountClass.toLowerCase())
+      : true;
+
+    const matchesCode = categoryFilterByCode
+      ? cat.code?.toLowerCase().includes(categoryFilterByCode.toLowerCase())
+      : true;
+
+    const matchesName = categoryFilterByName
+      ? cat.name?.toLowerCase().includes(categoryFilterByName.toLowerCase())
+      : true;
+
+    return matchesSearch && matchesAccountClass && matchesCode && matchesName;
+  });
+
+  // Paginate filtered categories
+  const totalCategoryPages = Math.ceil(
+    filteredCategories.length / CATEGORY_PAGE_SIZE
+  );
+  const paginatedCategories = filteredCategories.slice(
+    (categoryPage - 1) * CATEGORY_PAGE_SIZE,
+    categoryPage * CATEGORY_PAGE_SIZE
+  );
+
   useEffect(() => {
     fetchLowStock(lowStockPage, search, department);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lowStockPage]);
 
   // refresh low-stock when search or department changes
   useEffect(() => {
     setLowStockPage(1);
     fetchLowStock(1, search, department);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, department]);
 
   useEffect(() => {
     fetchInventory(page, search, department);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   // debounce search input
@@ -364,19 +685,24 @@ formData.append("storeLocation", form.storeLocation);
       fetchInventory(1, search, department);
     }, 450);
     return () => clearTimeout(searchDebounceRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, department]);
 
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const statsSourceInventory =
+    isAdmin || isProcurementManager ? inventory : filteredInventory;
+  const statsSourceLowStock =
+    isAdmin || isProcurementManager ? lowStock : filteredLowStock;
+
   const stats = {
-    totalItems: inventory.length === 0 && page === 1 ? total : total, // prefer server total
-    totalQuantity: inventory.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
-    // prefer server low-stock total; fall back to local calculation if unavailable
-    lowStock:
-      typeof lowStockTotal === "number"
-        ? lowStockTotal
-        : (Array.isArray(inventory) ? inventory : []).filter(
-            (i) => Number(i.quantity) <= 10
-          ).length,
+    totalItems: statsSourceInventory.length,
+    totalQuantity: statsSourceInventory.reduce(
+      (s, i) => s + (Number(i.quantity) || 0),
+      0
+    ),
+    lowStock: statsSourceLowStock.length,
   };
 
   // Open edit modal
@@ -384,11 +710,18 @@ formData.append("storeLocation", form.storeLocation);
     setEditing(item);
     setForm({
       department: item.department || "",
+      categoryId: item.categoryId || "",
+
       name: item.name || "",
       quantity: item.quantity ?? 0,
       maker: item.maker || "",
       makerPartNumber: item.makerPartNumber || "",
       isVerified: item.isVerified ?? false,
+      storeLocation: storeLocation || item.storeLocation || "",
+      minStock: item.minStock ?? "",
+      maxStock: item.maxStock ?? "",
+      reorderQuantity: item.reorderQuantity ?? "",
+      pricingMode: item.pricingMode || "batch",
     });
     setEditPhotos([]);
     setShowEdit(true);
@@ -414,8 +747,7 @@ formData.append("storeLocation", form.storeLocation);
       return false;
     }
   };
-  
-// ...existing code...
+
   // Save edit (PATCH /api/inventory/:inventoryId)
   const handleSaveEdit = async () => {
     if (!editing?.inventoryId) return;
@@ -438,8 +770,15 @@ formData.append("storeLocation", form.storeLocation);
         if (form.maker) formData.append("maker", form.maker);
         if (form.makerPartNumber)
           formData.append("makerPartNumber", form.makerPartNumber);
-formData.append("storeLocation", form.storeLocation);
-
+        formData.append("storeLocation", form.storeLocation);
+        formData.append("minStock", Number(form.minStock));
+        if (form.maxStock !== "" && form.maxStock !== undefined)
+          formData.append("maxStock", Number(form.maxStock));
+        if (form.reorderQuantity !== "" && form.reorderQuantity !== undefined)
+          formData.append("reorderQuantity", Number(form.reorderQuantity));
+        if (form.pricingMode) formData.append("pricingMode", form.pricingMode);
+        if (form.unitPrice)
+          formData.append("unitPrice", Number(form.unitPrice));
         editPhotos.forEach((file) => {
           formData.append("photos", file);
         });
@@ -457,8 +796,16 @@ formData.append("storeLocation", form.storeLocation);
           quantity: Number(form.quantity) || 0,
           maker: form.maker,
           makerPartNumber: form.makerPartNumber,
-            storeLocation: form.storeLocation,
-
+          storeLocation: form.storeLocation,
+          minStock: Number(form.minStock),
+          ...(form.maxStock !== "" && form.maxStock !== undefined
+            ? { maxStock: Number(form.maxStock) }
+            : {}),
+          ...(form.reorderQuantity !== "" && form.reorderQuantity !== undefined
+            ? { reorderQuantity: Number(form.reorderQuantity) }
+            : {}),
+          pricingMode: form.pricingMode || "batch",
+          unitPrice: Number(form.unitPrice),
         };
         await axios.patch(
           `${API_BASE}/inventory/${encodeURIComponent(editing.inventoryId)}`,
@@ -472,7 +819,9 @@ formData.append("storeLocation", form.storeLocation);
         const verified = await handleVerifyItem(editing.inventoryId);
         if (!verified) {
           // Verification failed but other updates succeeded
-          showAlert("Item updated but verification failed. Please try verifying again.");
+          showAlert(
+            "Item updated but verification failed. Please try verifying again."
+          );
         }
       }
 
@@ -492,12 +841,13 @@ formData.append("storeLocation", form.storeLocation);
       setLoading(false);
     }
   };
-// ...existing code...
 
   // Delete (DELETE /api/inventory/:inventoryId)
   const handleDelete = async (inventoryId) => {
-    if (!window.confirm("Delete inventory item? This action cannot be undone."))
-      return;
+    const ok = await showPrompt(
+      `Delete inventory item? This action cannot be undone.`
+    );
+    if (!ok) return;
     try {
       setLoading(true);
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
@@ -521,9 +871,6 @@ formData.append("storeLocation", form.storeLocation);
       setLoading(false);
     }
   };
-
-  // filtered view by activeStat (if low selected, show <=10)
-  const visible = activeStat === "low" ? lowStock : inventory;
 
   return (
     <div className="w-full">
@@ -554,12 +901,33 @@ formData.append("storeLocation", form.storeLocation);
                 quantity: 0,
                 maker: "",
                 makerPartNumber: "",
+                storeLocation: storeLocation || "",
+                minStock: "",
+                maxStock: "",
+                reorderQuantity: "",
+                pricingMode: "batch",
+                unitPrice: "",
               });
             }}
             className="px-4 py-2 bg-[#036173] text-white rounded-xl flex items-center gap-2 shadow-lg"
           >
             <MdAdd /> Add
           </button>
+
+          {(isProcurementManager || isAdmin) && (
+            <button
+              onClick={() => {
+                setShowCategoryDrawer(true);
+                setCategoryMode("edit");
+                setEditingCategory(null);
+                setCategoryForm({ name: "", code: "", accountClass: "" });
+                setCategoryPage(1);
+              }}
+              className="px-4 py-2 bg-purple-600 text-white rounded-xl flex items-center gap-2 shadow-lg"
+            >
+              <MdBusiness /> Manage Categories
+            </button>
+          )}
 
           <button
             onClick={() =>
@@ -674,13 +1042,17 @@ formData.append("storeLocation", form.storeLocation);
                 <tr className="text-left text-xs text-slate-500">
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Department</th>
+                  <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Quantity</th>
+
+                  <th className="px-4 py-3">Unit Price</th>
+
                   <th className="px-4 py-3">Maker</th>
                   <th className="px-4 py-3">Maker PN</th>
-                    <th className="px-4 py-3">Store Location</th>
+                  <th className="px-4 py-3">Store Location</th>
                   <th className="px-4 py-3">Uploads</th>
 
-                  <th className="px-4 py-3">Actions</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -695,12 +1067,26 @@ formData.append("storeLocation", form.storeLocation);
                   </tr>
                 ) : (
                   visible.map((it) => (
-                    <tr key={it.inventoryId} className="hover:bg-slate-50">
+                    <tr
+                      key={it.inventoryId}
+                      className="hover:bg-slate-50 cursor-pointer"
+                    >
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {it.name}
                       </td>
                       <td className="px-4 py-3 text-slate-700">
                         {it.department}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {it.categoryId ? (
+                          <span className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded">
+                            {categories.find(
+                              (c) => c.categoryId === it.categoryId
+                            )?.name || "Unknown"}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="inline-flex items-center gap-2">
@@ -718,10 +1104,20 @@ formData.append("storeLocation", form.storeLocation);
                           )}
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {it.priceRange ? (
+                          <span className="text-xs font-mono">
+                            ₦{it.priceRange.min?.toLocaleString()} - ₦
+                            {it.priceRange.max?.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">{it.maker}</td>
                       <td className="px-4 py-3">{it.makerPartNumber}</td>
-                               <td className="px-4 py-3">{it.storeLocation}</td> {/* <-- changed */}
-
+                      <td className="px-4 py-3">{it.storeLocation}</td>
+                      {/* <-- changed */}
                       <td className="px-4 py-3 text-center">
                         {Array.isArray(it.photos) && it.photos.length > 0 ? (
                           <button
@@ -742,16 +1138,32 @@ formData.append("storeLocation", form.storeLocation);
                           <span className="text-xs text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-center">
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => openEdit(it)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEdit(it);
+                            }}
                             className="px-3 py-1 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center gap-2"
                           >
                             <MdEdit /> Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(it.inventoryId)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDrawerItem(it);
+                              setShowRestockForm(true);
+                            }}
+                            className="px-3 py-1 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-2"
+                          >
+                            Restock
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(it.inventoryId);
+                            }}
                             className="px-3 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-100 flex items-center gap-2"
                           >
                             <MdDelete /> Delete
@@ -769,7 +1181,7 @@ formData.append("storeLocation", form.storeLocation);
               {activeStat === "low" ? (
                 <>
                   <div className="text-sm text-slate-600">
-                    Page {lowStockPage} of {lowStockPages} — Total:{" "}
+                    Page {lowStockPage} of {lowStockPages} — Total:
                     {lowStockTotal}
                   </div>
                   <div className="flex items-center gap-2">
@@ -847,13 +1259,39 @@ formData.append("storeLocation", form.storeLocation);
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-slate-500">Department</label>
-                <input
+                <select
                   value={form.department}
                   onChange={(e) =>
                     setForm({ ...form, department: e.target.value })
                   }
                   className="w-full px-3 py-2 border rounded-lg"
-                />
+                  required
+                >
+                  {departmentOptions.map((opt) => (
+                    <option key={opt.name} value={opt.name}>
+                      {opt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Category (Optional)
+                </label>
+                <select
+                  value={form.categoryId || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, categoryId: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">-- No Category --</option>
+                  {categories.map((cat) => (
+                    <option key={cat.categoryId} value={cat.categoryId}>
+                      {cat.name} ({cat.code})
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-xs text-slate-500">Name</label>
@@ -884,31 +1322,112 @@ formData.append("storeLocation", form.storeLocation);
               </div>
 
               <div>
-  <label className="text-xs text-slate-500">Maker Part No</label>
-  <input
-    value={form.makerPartNumber}
-    onChange={(e) =>
-      setForm({ ...form, makerPartNumber: e.target.value })
-    }
-    className="w-full px-3 py-2 border rounded-lg"
-  />
-</div>
-<div>
-  <label className="text-xs text-slate-500">Store Location<span className="text-rose-500">*</span></label>
-  <select
-    value={form.storeLocation || ""}
-    onChange={e => setForm({ ...form, storeLocation: e.target.value })}
-    className="w-full px-3 py-2 border rounded-lg"
-    required
-  >
-    <option value="">Select location</option>
-    <option value="Store Base">Store Base</option>
-    <option value="Store Jetty">Store Jetty</option>
-    <option value="Store Vessel">Store Vessel</option>
-  </select>
-</div>
-
-              
+                <label className="text-xs text-slate-500">Maker Part No</label>
+                <input
+                  value={form.makerPartNumber}
+                  onChange={(e) =>
+                    setForm({ ...form, makerPartNumber: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Store Location<span className="text-rose-500">*</span>
+                </label>
+                {storeLocation ? (
+                  <input
+                    value={storeLocation}
+                    disabled
+                    className="w-full px-3 py-2 border rounded-lg bg-gray-100"
+                  />
+                ) : (
+                  <select
+                    value={form.storeLocation || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, storeLocation: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                    required
+                  >
+                    <option value="">Select location</option>
+                    <option value="Store Base">Store Base</option>
+                    <option value="Store Jetty">Store Jetty</option>
+                    <option value="Store Vessel">Store Vessel</option>
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Min Stock<span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={form.minStock ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, minStock: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">Max Stock</label>
+                <input
+                  type="number"
+                  value={form.maxStock ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, maxStock: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Reorder Quantity
+                </label>
+                <input
+                  type="number"
+                  value={form.reorderQuantity ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, reorderQuantity: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Unit Price<span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={form.unitPrice ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, unitPrice: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                  min={0.01}
+                  step="any"
+                  placeholder="e.g. 10"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Pricing Mode<span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={form.pricingMode || "batch"}
+                  onChange={(e) =>
+                    setForm({ ...form, pricingMode: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                >
+                  <option value="batch">Batch</option>
+                  <option value="fixed">Fixed</option>
+                </select>
+              </div>
 
               {/* Photo upload dropzone (Add Modal) */}
               <div className="md:col-span-2">
@@ -992,6 +1511,12 @@ formData.append("storeLocation", form.storeLocation);
                     quantity: 0,
                     maker: "",
                     makerPartNumber: "",
+                    storeLocation: storeLocation || "",
+                    minStock: "",
+                    maxStock: "",
+                    reorderQuantity: "",
+                    pricingMode: "batch",
+                    unitPrice: "",
                   });
                 }}
                 className="px-4 py-2 rounded-lg border"
@@ -1008,10 +1533,13 @@ formData.append("storeLocation", form.storeLocation);
           </div>
         </div>
       )}
-            {/* Photo Viewer Modal */}
+      {/* Photo Viewer Modal */}
       {photoViewerOpen && photoViewerList && photoViewerList.length > 0 && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40" onClick={closePhotoViewer} />
+          <div
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={closePhotoViewer}
+          />
           <div className="fixed left-1/2 transform -translate-x-1/2 top-12 z-50 w-[95%] md:w-[90%] lg:w-[70%] max-h-[85vh]">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden relative">
               <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -1065,8 +1593,19 @@ formData.append("storeLocation", form.storeLocation);
                   </>
                 )}
 
-                <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <img src={photoViewerList[photoViewerIndex]} alt={`photo-${photoViewerIndex}`} className="max-h-[70vh] w-full object-contain" />
+                <div
+                  style={{
+                    minHeight: "60vh",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <img
+                    src={photoViewerList[photoViewerIndex]}
+                    alt={`photo-${photoViewerIndex}`}
+                    className="max-h-[70vh] w-full object-contain"
+                  />
                 </div>
               </div>
             </div>
@@ -1092,22 +1631,40 @@ formData.append("storeLocation", form.storeLocation);
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-slate-500">SKU</label>
-                <input
-                  value={editing.inventoryId}
-                  disabled
-                  className="w-full px-3 py-2 border rounded-lg bg-gray-100"
-                />
-              </div>
-              <div>
                 <label className="text-xs text-slate-500">Department</label>
-                <input
+                <select
                   value={form.department}
                   onChange={(e) =>
                     setForm({ ...form, department: e.target.value })
                   }
                   className="w-full px-3 py-2 border rounded-lg"
-                />
+                  required
+                >
+                  {departmentOptions.map((opt) => (
+                    <option key={opt.name} value={opt.name}>
+                      {opt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Category (Optional)
+                </label>
+                <select
+                  value={form.categoryId || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, categoryId: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">-- No Category --</option>
+                  {categories.map((cat) => (
+                    <option key={cat.categoryId} value={cat.categoryId}>
+                      {cat.name} ({cat.code})
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-xs text-slate-500">Name</label>
@@ -1146,22 +1703,59 @@ formData.append("storeLocation", form.storeLocation);
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
-            
-<div >
-  <label className="text-xs text-slate-500">Store Location<span className="text-rose-500">*</span></label>
-  <select
-    value={form.storeLocation || ""}
-    onChange={e => setForm({ ...form, storeLocation: e.target.value })}
-    className="w-full px-3 py-2 border rounded-lg"
-    required
-  >
-    <option value="">Select location</option>
-    <option value="Store Base">Store Base</option>
-    <option value="Store Jetty">Store Jetty</option>
-    <option value="Store Vessel">Store Vessel</option>
-  </select>
-</div>
-              
+
+              <div>
+                <label className="text-xs text-slate-500">
+                  Store Location<span className="text-rose-500">*</span>
+                </label>
+                {storeLocation ? (
+                  <input
+                    value={storeLocation}
+                    disabled
+                    className="w-full px-3 py-2 border rounded-lg bg-gray-100"
+                  />
+                ) : (
+                  <select
+                    value={form.storeLocation || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, storeLocation: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                    required
+                  >
+                    <option value="">Select location</option>
+                    <option value="Store Base">Store Base</option>
+                    <option value="Store Jetty">Store Jetty</option>
+                    <option value="Store Vessel">Store Vessel</option>
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-500">
+                  Min Stock<span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={form.minStock ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, minStock: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">Max Stock</label>
+                <input
+                  type="number"
+                  value={form.maxStock ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, maxStock: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
 
               <div className="md:col-span-2">
                 <label className="text-xs text-slate-500">
@@ -1276,6 +1870,495 @@ formData.append("storeLocation", form.storeLocation);
             </div>
           </div>
         </div>
+      )}
+      {/* Restock Modal */}
+      {showRestockForm && drawerItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              setShowRestockForm(false);
+              setRestockForm({ quantity: "", unitPrice: "", receivedAt: "" });
+            }}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-[95%] md:w-[520px] p-6 z-10">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                Restock Inventory
+              </h3>
+              <button
+                onClick={() => {
+                  setShowRestockForm(false);
+                  setRestockForm({
+                    quantity: "",
+                    unitPrice: "",
+                    receivedAt: "",
+                  });
+                }}
+                className="p-2"
+              >
+                <IoMdClose />
+              </button>
+            </div>
+
+            <div className="mb-4 p-3 bg-slate-50 rounded-lg">
+              <div className="text-sm font-semibold text-slate-900">
+                {drawerItem.name}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                Current Quantity: {drawerItem.quantity}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="text-xs text-slate-500">
+                  Quantity to Add<span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={restockForm.quantity}
+                  onChange={(e) =>
+                    setRestockForm({ ...restockForm, quantity: e.target.value })
+                  }
+                  placeholder="Enter quantity"
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-500">
+                  Unit Price<span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={restockForm.unitPrice}
+                  onChange={(e) =>
+                    setRestockForm({
+                      ...restockForm,
+                      unitPrice: e.target.value,
+                    })
+                  }
+                  placeholder="Enter unit price"
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-500">Received Date</label>
+                <input
+                  type="datetime-local"
+                  value={restockForm.receivedAt}
+                  onChange={(e) =>
+                    setRestockForm({
+                      ...restockForm,
+                      receivedAt: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Leave empty to use current date/time
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowRestockForm(false);
+                  setRestockForm({
+                    quantity: "",
+                    unitPrice: "",
+                    receivedAt: "",
+                  });
+                }}
+                className="px-4 py-2 rounded-lg border"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRestock}
+                disabled={restockLoading}
+                className="px-4 py-2 rounded-lg bg-[#036173] text-white disabled:opacity-50"
+              >
+                {restockLoading ? "Restocking..." : "Restock"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Management Drawer */}
+      {showCategoryDrawer && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/40 z-40 transition-opacity"
+            onClick={() => setShowCategoryDrawer(false)}
+          />
+
+          {/* Drawer */}
+          <div className="fixed right-0 top-0 h-full w-full md:w-[30%] bg-white shadow-2xl z-50 flex flex-col transform transition-transform">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-purple-600 text-white">
+              <h3 className="text-xl font-semibold flex items-center gap-2">
+                <MdBusiness /> Manage Categories
+              </h3>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    if (categoryMode === "create") {
+                      setCategoryMode("edit");
+                      setCategoryForm({ name: "", code: "", accountClass: "" });
+                      setEditingCategory(null);
+                    } else {
+                      setCategoryMode("create");
+                      setCategoryForm({ name: "", code: "", accountClass: "" });
+                      setEditingCategory(null);
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg flex items-center gap-2 transition ${
+                    categoryMode === "create"
+                      ? "bg-white/20 text-white"
+                      : "bg-white text-purple-600"
+                  }`}
+                >
+                  {categoryMode === "create"
+                    ? "View Categories"
+                    : "Create Category"}
+                </button>
+                <button
+                  onClick={() => setShowCategoryDrawer(false)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition"
+                >
+                  <IoMdClose className="text-xl" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {categoryMode === "create" ? (
+                /* Create Category Form */
+                <div className="max-w-2xl mx-auto">
+                  <h4 className="text-lg font-semibold mb-4">
+                    Create New Category
+                  </h4>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-xs text-slate-500">
+                        Category Name<span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        value={categoryForm.name}
+                        onChange={(e) =>
+                          setCategoryForm({
+                            ...categoryForm,
+                            name: e.target.value,
+                          })
+                        }
+                        placeholder="e.g., General Stationery"
+                        className="w-full px-3 py-2 border rounded-lg"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">
+                        Category Code<span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        value={categoryForm.code}
+                        onChange={(e) =>
+                          setCategoryForm({
+                            ...categoryForm,
+                            code: e.target.value.toUpperCase(),
+                          })
+                        }
+                        placeholder="e.g., STAT-01"
+                        className="w-full px-3 py-2 border rounded-lg font-mono"
+                        required
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Code is immutable once created
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">
+                        Account Class<span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        value={categoryForm.accountClass}
+                        onChange={(e) =>
+                          setCategoryForm({
+                            ...categoryForm,
+                            accountClass: e.target.value.toUpperCase(),
+                          })
+                        }
+                        placeholder="e.g., EXP-OFFICE"
+                        className="w-full px-3 py-2 border rounded-lg font-mono"
+                        required
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Accounting classification code
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-end gap-3">
+                    <button
+                      onClick={() => {
+                        setCategoryMode("edit");
+                        setCategoryForm({
+                          name: "",
+                          code: "",
+                          accountClass: "",
+                        });
+                      }}
+                      className="px-4 py-2 rounded-lg border"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateCategory}
+                      disabled={categoryLoading}
+                      className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50"
+                    >
+                      {categoryLoading ? "Creating..." : "Create Category"}
+                    </button>
+                  </div>
+                </div>
+              ) : editingCategory ? (
+                /* Edit Category Form */
+                <div className="max-w-2xl mx-auto">
+                  <h4 className="text-lg font-semibold mb-4">Edit Category</h4>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-xs text-slate-500">
+                        Category Name<span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        value={categoryForm.name}
+                        onChange={(e) =>
+                          setCategoryForm({
+                            ...categoryForm,
+                            name: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border rounded-lg"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">
+                        Category Code
+                      </label>
+                      <input
+                        value={categoryForm.code}
+                        disabled
+                        className="w-full px-3 py-2 border rounded-lg bg-gray-100 font-mono"
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Code cannot be changed
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">
+                        Account Class<span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        value={categoryForm.accountClass}
+                        onChange={(e) =>
+                          setCategoryForm({
+                            ...categoryForm,
+                            accountClass: e.target.value.toUpperCase(),
+                          })
+                        }
+                        placeholder="e.g., EXP-OFFICE"
+                        className="w-full px-3 py-2 border rounded-lg font-mono"
+                        required
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Accounting classification code
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-end gap-3">
+                    <button
+                      onClick={() => {
+                        setEditingCategory(null);
+                        setCategoryForm({
+                          name: "",
+                          code: "",
+                          accountClass: "",
+                        });
+                      }}
+                      className="px-4 py-2 rounded-lg border"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleUpdateCategory}
+                      disabled={categoryLoading}
+                      className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50"
+                    >
+                      {categoryLoading ? "Updating..." : "Update Category"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Categories Table View */
+                <div>
+                  <h4 className="text-lg font-semibold mb-4">All Categories</h4>
+
+                  {/* Search & Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <div className="relative">
+                      <MdSearch className="absolute left-3 top-3 text-slate-400" />
+                      <input
+                        value={categorySearch}
+                        onChange={(e) => {
+                          setCategorySearch(e.target.value);
+                          setCategoryPage(1);
+                        }}
+                        placeholder="Search categories..."
+                        className="w-full pl-10 pr-4 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <input
+                      value={categoryFilterByAccountClass}
+                      onChange={(e) => {
+                        setCategoryFilterByAccountClass(e.target.value);
+                        setCategoryPage(1);
+                      }}
+                      placeholder="Filter by Account Class..."
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                    <input
+                      value={categoryFilterByCode}
+                      onChange={(e) => {
+                        setCategoryFilterByCode(e.target.value);
+                        setCategoryPage(1);
+                      }}
+                      placeholder="Filter by Code..."
+                      className="w-full px-3 py-2 border rounded-lg font-mono"
+                    />
+                    <input
+                      value={categoryFilterByName}
+                      onChange={(e) => {
+                        setCategoryFilterByName(e.target.value);
+                        setCategoryPage(1);
+                      }}
+                      placeholder="Filter by Name..."
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+
+                  {/* Results Count */}
+                  <div className="text-sm text-slate-600 mb-3">
+                    Showing {paginatedCategories.length} of{" "}
+                    {filteredCategories.length} categories
+                  </div>
+
+                  {/* Table */}
+                  {filteredCategories.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500">
+                      No categories found. Create one to get started.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-xs text-slate-500 border-b">
+                              <th className="px-3 py-3">Name</th>
+                              <th className="px-3 py-3">Code</th>
+                              <th className="px-3 py-3">Account Class</th>
+                              <th className="px-3 py-3 text-center">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {paginatedCategories.map((cat) => (
+                              <tr
+                                key={cat.categoryId}
+                                className="hover:bg-slate-50 transition"
+                              >
+                                <td className="px-3 py-3 font-semibold text-slate-900">
+                                  {cat.name}
+                                </td>
+                                <td className="px-3 py-3 font-mono text-slate-700">
+                                  {cat.code}
+                                </td>
+                                <td className="px-3 py-3 font-mono text-slate-700">
+                                  {cat.accountClass || "N/A"}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => openCategoryEdit(cat)}
+                                      className="px-3 py-1 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center gap-1"
+                                    >
+                                      <MdEdit /> Edit
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleDeleteCategory(cat.categoryId)
+                                      }
+                                      className="px-3 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-100 flex items-center gap-1"
+                                    >
+                                      <MdDelete /> Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination */}
+                      {totalCategoryPages > 1 && (
+                        <div className="mt-4 flex items-center justify-between">
+                          <div className="text-sm text-slate-600">
+                            Page {categoryPage} of {totalCategoryPages}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() =>
+                                setCategoryPage((p) => Math.max(1, p - 1))
+                              }
+                              disabled={categoryPage <= 1}
+                              className="px-3 py-1 rounded bg-white border disabled:opacity-50"
+                            >
+                              <MdChevronLeft />
+                            </button>
+                            <button
+                              onClick={() =>
+                                setCategoryPage((p) =>
+                                  Math.min(totalCategoryPages, p + 1)
+                                )
+                              }
+                              disabled={categoryPage >= totalCategoryPages}
+                              className="px-3 py-1 rounded bg-white border disabled:opacity-50"
+                            >
+                              <MdChevronRight />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

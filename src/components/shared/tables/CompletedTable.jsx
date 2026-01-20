@@ -1,12 +1,18 @@
 // src/components/tables/CompletedTable.jsx
 
 import React, { useState } from "react";
+import { useAuth } from "../../context/AuthContext";
 
 const CompletedTable = ({ items = [], userRole = "" , requestType = "" }) => {
   const [needsScroll, setNeedsScroll] = useState(false);
     const isInStock = String(requestType).toLowerCase() === "instock";
+  const { user } = useAuth();
+  const userRoleLower = (user?.role || userRole || "").toLowerCase();
+  const canSeeProcurementColumns = 
+    userRoleLower === "procurement officer" || 
+    userRoleLower === "procurement manager";
 
-
+  const isPettyCash = (requestType || "").toString().toLowerCase() === "pettycash";
   // Check if table needs horizontal scrolling
   React.useEffect(() => {
     const checkScroll = () => {
@@ -66,6 +72,16 @@ const CompletedTable = ({ items = [], userRole = "" , requestType = "" }) => {
                   <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Total Price
                   </th>
+                    {canSeeProcurementColumns && (
+                    <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                      Discount (%)
+                    </th>
+                  )}
+                  {!isPettyCash && canSeeProcurementColumns && (
+                    <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                      VAT Amount
+                    </th>
+                  )}
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
                     PRN
                   </th>
@@ -144,6 +160,30 @@ const CompletedTable = ({ items = [], userRole = "" , requestType = "" }) => {
                         "N/A"
                       )}
                     </td>
+                       {canSeeProcurementColumns && (
+                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                        {item.discount !== "" &&
+                        item.discount !== null &&
+                        item.discount !== undefined
+                          ? `${item.discount}%`
+                          : "0%"}
+                      </td>
+                    )}
+                    {!isPettyCash && canSeeProcurementColumns && (
+                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                        {item.vatAmount ? (
+                          <>
+                            {item.currency || "NGN"}{" "}
+                            {Number(item.vatAmount).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    )}
                     <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
                       {item.purchaseReqNumber || "N/A"}
                     </td>

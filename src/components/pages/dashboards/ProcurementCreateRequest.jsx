@@ -3,14 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { MdAdd } from "react-icons/md";
-import ItemSelectionTable from "../../shared/tables/ItemSelectionTable";
 import { useAuth } from "../../context/AuthContext";
 import ProcurementSelectionTable from "../../shared/tables/ProcurementSelectionTable";
 import { useGlobalAlert } from "../../shared/GlobalAlert";
 
+
 // --- ServiceTable and MaterialTable (copied from RequesterDashboard) ---
 function ServiceTable({ rows, setRows }) {
-  const { showAlert } = useGlobalAlert();
   const handleChange = (idx, field, value) => {
     const updated = [...rows];
     updated[idx][field] = value;
@@ -159,6 +158,8 @@ function MaterialTable({ rows, setRows }) {
 }
 
 const ProcurementCreateRequest = ({ onRequestCreated }) => {
+    const { showAlert } = useGlobalAlert();
+
   const { user, getToken } = useAuth();
   const dropdownRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -236,8 +237,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
   const [dragActive, setDragActive] = useState(false);
   const [requestImages, setRequestImages] = useState([]);
   const [imageDragActive, setImageDragActive] = useState(false);
-  const [nextApproverAfterVesselManager, setNextApproverAfterVesselManager] =
-    useState("");
+ 
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
   const [invName, setInvName] = useState("");
   const [invMaker, setInvMaker] = useState("");
@@ -258,6 +258,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
   const [loadingOffshoreNumber, setLoadingOffshoreNumber] = useState(false);
   const [uploadType, setUploadType] = useState("image"); // "image" or "file"
   const [quotationFiles, setQuotationFiles] = useState([]);
+  const [vatRate, setVatRate] = useState(0.075);
   // Set fixed valid currencies
   useEffect(() => {
     const validCurrencies = [
@@ -298,6 +299,25 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     }
   };
 
+   useEffect(() => {
+    const fetchVat = async () => {
+      try {
+        const token = await getToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const resp = await axios.get(
+          "https://hdp-backend-1vcl.onrender.com/api/vat",
+          { headers }
+        );
+        const value = resp?.data?.value;
+        setVatRate(typeof value === "number" ? value / 100 : 0.075);
+      } catch (error) {
+        console.error("Error fetching VAT rate:", error);
+        setVatRate(0.075); // fallback to 7.5%
+      }
+    };
+    fetchVat();
+  }, [getToken]);
+
   // Fetch vessels
   const fetchVessels = async () => {
     try {
@@ -332,24 +352,94 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     }
   };
 
-  // Fetch project managers
-  const fetchProjectManagers = async () => {
+   // Fetch category by code
+  const fetchCategoryByCode = async (code) => {
     try {
-      setLoadingProjectManagers(true);
-      const response = {
-        data: [
-          { id: "PM-001", name: "John Doe" },
-          { id: "PM-002", name: "Jane Smith" },
-          { id: "PM-003", name: "Bob Wilson" },
-        ],
-      };
-      setProjectManagers(response.data || []);
+      const token = await getToken();
+      if (!token) return null;
+      
+      const response = await axios.get(
+        `${API_BASE_URL}/categories/code/${encodeURIComponent(code)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      return response.data?.data || response.data || null;
     } catch (err) {
-      console.error("Error fetching project managers:", err);
-    } finally {
-      setLoadingProjectManagers(false);
+      console.error("Error fetching category by code:", err);
+      return null;
     }
   };
+
+ // Handle Enter key in search to lookup category code
+  const handleSearchKeyDown = async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const code = searchTerm.trim().toUpperCase();
+      
+      if (!code) return;
+      
+      // Try to fetch category by code
+      const category = await fetchCategoryByCode(code);
+      
+      if (category) {
+        // Add category as item
+        setSelectedItems((prev) => [
+          ...prev,
+          {
+            name: category.name, // Category name as description
+            categoryId: category.categoryId,
+            categoryCode: category.code,
+            accountClass: category.accountClass,
+            itemType: "",
+            maker: "",
+            makersPartNo: "",
+            quantity: 1,
+            unitPrice: 0,
+            currency: "NGN",
+            totalPrice: 0,
+            uniqueId: `cat-${Date.now()}`,
+            isNew: true, // Makes other fields editable
+            isCategory: true, // Flag to identify category items
+          },
+        ]);
+        
+        // Close dropdown and clear search
+        setShowInventoryDropdown(false);
+        setSearchTerm("");
+        
+        showAlert(`Category "${category.name}" added successfully!`);
+      } else {
+        showAlert(`Category code "${code}" not found.`);
+      }
+    }
+  };
+
+ const fetchProjectManagers = async () => {
+  try {
+    setLoadingProjectManagers(true);
+    const token = getToken();
+
+    if (!token) {
+      console.error("No token found");
+      return;
+    }
+
+    const response = await axios.get(
+      "https://hdp-backend-1vcl.onrender.com/api/user/project-managers",
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    console.log("Project Managers API response:", response.data); // <-- Add this line
+
+    setProjectManagers(response.data || []);
+  } catch (err) {
+    console.error("❌ Error fetching project managers:", err);
+  } finally {
+    setLoadingProjectManagers(false);
+  }
+};
 
   useEffect(() => {
     if (user) {
@@ -449,9 +539,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     const shouldShowApprovalPick =
       newDestination === "Marine" && newRequestType === "pettyCash";
 
-    if (!shouldShowApprovalPick && nextApproverAfterVesselManager) {
-      setNextApproverAfterVesselManager("");
-    }
   };
 
   const openAddInventoryModal = () => {
@@ -598,16 +685,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       return;
     }
 
-    if (
-      formData.destination === "Marine" &&
-      formData.requestType === "pettyCash" &&
-      !nextApproverAfterVesselManager
-    ) {
-      showAlert(
-        "Please select Approval Pick (Technical Manager or Fleet Manager)."
-      );
-      return;
-    }
 
     // --- SERVICES REQUEST VALIDATION ---
     if (requestType === "services") {
@@ -696,10 +773,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         if (formData.destination === "Marine" && deckOrEngine) {
           payload.deckOrEngine = deckOrEngine;
         }
-        if (formData.destination === "Marine") {
-          payload.nextApproverAfterVesselManager =
-            nextApproverAfterVesselManager;
-        }
+       
 
         // If there are images, use FormData
         if (requestImages.length > 0) {
@@ -743,7 +817,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
           jobNumber: "",
         });
         setServicePurpose("");
-        setNextApproverAfterVesselManager("");
         setServiceRows([{ description: "", amount: "" }]);
         setMaterialRows([{ description: "", quantity: "" }]);
         setRequestImages([]);
@@ -754,19 +827,88 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       }
 
       // --- INVENTORY REQUEST LOGIC ---
-      const items = selectedItems.map((item) => {
-        const qty = Number(item.quantity || 0);
-        const unit = Number(item.unitPrice || 0);
-        const total = Math.round(unit * qty);
-        return {
-          name: item.name,
-          quantity: qty,
-          unitPrice: unit,
-          totalPrice: total,
-          inventoryId: item._id || item.itemId || null,
-          // ...other fields if needed...
-        };
-      });
+const items = selectedItems.map((item) => {
+  const qty = Number(item.quantity || 0);
+  const unit = Number(item.unitPrice || 0);
+  const discount = Number(item.discount || 0);
+  const vatted = !!item.vatted;
+  
+  // Calculate subtotal
+  let total = qty * unit;
+  
+  // Apply discount
+  if (discount > 0) {
+    total = total - (total * discount) / 100;
+  }
+  
+  // Calculate VAT amount
+  const vatAmount = vatted ? total * vatRate : 0;
+  
+  // Add VAT to total
+  total = total + vatAmount;
+
+  const itemPayload = {
+    name: item.name,
+    quantity: qty,
+    unitPrice: unit,
+    totalPrice: Math.round(total), // Now includes discount and VAT
+    inventoryId: item._id || item.itemId || null,
+  };
+
+  // Add vendorId (NOT vendor)
+  if (item.vendorId) {
+    itemPayload.vendorId = item.vendorId;
+  }
+
+  // Add currency
+  if (item.currency) {
+    itemPayload.currency = item.currency;
+  }
+
+  // Add VAT flag
+  if (item.vatted !== undefined) {
+    itemPayload.vatted = item.vatted;
+  }
+  
+  // Add VAT amount
+  if (vatAmount > 0) {
+    itemPayload.vatAmount = Math.round(vatAmount);
+  }
+
+  // Add discount
+  if (item.discount !== undefined && item.discount > 0) {
+    itemPayload.discount = item.discount;
+  }
+
+  // Add logistics type
+  if (item.logisticsType) {
+    itemPayload.logisticsType = item.logisticsType;
+  }
+
+  // Add shipping quantity (for international logistics)
+  if (item.shippingQuantity !== undefined && item.shippingQuantity > 0) {
+    itemPayload.shippingQuantity = item.shippingQuantity;
+  }
+
+  // Add shipping fee (for international logistics)
+  if (item.shippingFee !== undefined && item.shippingFee > 0) {
+    itemPayload.shippingFee = item.shippingFee;
+  }
+
+  // Add item type, maker, makersPartNo if they exist
+  if (item.itemType) itemPayload.itemType = item.itemType;
+  if (item.maker) itemPayload.maker = item.maker;
+  if (item.makersPartNo) itemPayload.makersPartNo = item.makersPartNo;
+
+  // Add category fields if it's a category item
+  if (item.isCategory) {
+    if (item.categoryId) itemPayload.categoryId = item.categoryId;
+    if (item.categoryCode) itemPayload.categoryCode = item.categoryCode;
+    if (item.accountClass) itemPayload.accountClass = item.accountClass;
+  }
+
+  return itemPayload;
+});
 
       const hasFiles =
         (formData.requestType === "purchaseOrder"
@@ -774,18 +916,18 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
           : invoiceFiles.length > 0) || requestImages.length > 0;
 
       // Build procurement payload for inventory
-      const basePayload = {
-        department: "Purchase",
-        destinationDepartment: formData.destination,
-        companyId: formData.company,
-        vesselId: formData.vesselId || undefined,
-        purpose: formData.purpose,
-        priority: formData.priority,
-        reference: formData.reference,
-        items: items,
-        workflowId: "PROCUREMENT_WORKFLOW",
-        requestType: formData.requestType || "purchaseOrder",
-      };
+    const basePayload = {
+  department: "Purchase",
+  destinationDepartment: formData.destination,
+  companyId: formData.company,
+  vessel: formData.vesselId || "none", // Change vesselId to vessel
+  purpose: formData.purpose,
+  priority: formData.priority,
+  reference: formData.reference,
+  items: items,
+  workflowId: "PROCUREMENT_WORKFLOW",
+  requestType: formData.requestType || "purchaseOrder",
+};
       if (formData.projectManager)
         basePayload.projectManager = formData.projectManager;
       if (formData.additionalInformation)
@@ -797,10 +939,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       if (formData.destination === "Marine" && deckOrEngine) {
         basePayload.deckOrEngine = deckOrEngine;
       }
-      if (formData.destination === "Marine") {
-        basePayload.nextApproverAfterVesselManager =
-          nextApproverAfterVesselManager;
-      }
+     
 
       if (hasFiles) {
         
@@ -845,7 +984,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     "jobNumber",
     "offshoreReqNumber",
     "deckOrEngine",
-    "nextApproverAfterVesselManager",
     "quotationFiles",
     "invoiceFiles",
     "requestImages"
@@ -885,7 +1023,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       setSelectedItems([]);
       setInvoiceFiles([]);
       setRequestImages([]);
-      setNextApproverAfterVesselManager("");
       setOffShoreNumber("");
       if (typeof onRequestCreated === "function") onRequestCreated();
    } catch (err) {
@@ -1306,55 +1443,36 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
               </select>
             </div>
 
-            {formData.destination === "Marine" &&
-              formData.requestType === "pettyCash" && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                    Approval Pick *
-                  </label>
-                  <select
-                    name="nextApproverAfterVesselManager"
-                    value={nextApproverAfterVesselManager}
-                    onChange={(e) =>
-                      setNextApproverAfterVesselManager(e.target.value)
-                    }
-                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
-                    required
-                  >
-                    <option value="">Select Approver</option>
-                    <option value="Technical Manager">Technical Manager</option>
-                    <option value="Fleet Manager">Fleet Manager</option>
-                  </select>
-                </div>
-              )}
+            
 
-            {(formData.destination === "Marine" ||
-              formData.destination === "Project") && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                  Vessel *
-                </label>
-                <select
-                  name="vesselId"
-                  value={formData.vesselId}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
-                  required
-                  disabled={loadingVessels}
-                >
-                  <option value="">
-                    {loadingVessels ? "Loading vessels..." : "Select Vessel"}
-                  </option>
-                  {vessels
-                    .filter((vessel) => vessel.status === "active")
-                    .map((vessel) => (
-                      <option key={vessel.vesselId} value={vessel.vesselId}>
-                        {vessel.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
+           {(formData.destination === "Marine" ||
+  formData.destination === "Project") && (
+  <div>
+    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+      Vessel *
+    </label>
+    <select
+      name="vesselId"
+      value={formData.vesselId}
+      onChange={handleInputChange}
+      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
+      required
+      disabled={loadingVessels}
+    >
+      <option value="">
+        {loadingVessels ? "Loading vessels..." : "Select Vessel"}
+      </option>
+      <option value="none">None</option>
+      {vessels
+        .filter((vessel) => vessel.status === "active")
+        .map((vessel) => (
+          <option key={vessel.vesselId} value={vessel.vesselId}>
+            {vessel.name}
+          </option>
+        ))}
+    </select>
+  </div>
+)}
           </div>
 
           {formData.destination === "Project" && (
@@ -1442,14 +1560,18 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
                   {showInventoryDropdown && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col overflow-x-hidden">
                       <div className="p-3 border-b border-slate-200">
-                        <input
-                          type="text"
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          placeholder="Search items..."
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-400 text-sm"
-                        />
-                      </div>
+  <input
+    type="text"
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    onKeyDown={handleSearchKeyDown}
+    placeholder="Search items or enter category code..."
+    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-400 text-sm"
+  />
+  <p className="text-xs text-slate-500 mt-1">
+    Press Enter to lookup category by code
+  </p>
+</div>
                       <div className="overflow-y-auto flex-1">
                         {loadingInventory ? (
                           <div className="p-4 text-center text-slate-500">
@@ -1521,12 +1643,12 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
                       });
                     }}
                     onVendorChange={(index, value) => {
-                      setSelectedItems((prev) => {
-                        const updated = [...prev];
-                        updated[index].vendor = value;
-                        return updated;
-                      });
-                    }}
+  setSelectedItems((prev) => {
+    const updated = [...prev];
+    updated[index].vendorId = value; // Change vendor to vendorId
+    return updated;
+  });
+}}
                     vendors={[]} // You can fetch and pass your vendor list here
                     currencies={currencies.map((c) => c.value)}
                   />

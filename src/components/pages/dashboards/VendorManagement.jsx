@@ -20,6 +20,7 @@ import {
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobalAlert } from "../../shared/GlobalAlert";
+import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
 const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
 
@@ -49,6 +50,8 @@ const VendorManagement = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
   const { showAlert } = useGlobalAlert();
+    const { showPrompt } = useGlobalPrompt(); // Add this line
+  
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -76,7 +79,7 @@ const VendorManagement = () => {
   const [vendorDocsOpen, setVendorDocsOpen] = useState(false);
   const [vendorDocsList, setVendorDocsList] = useState([]); // array of URLs
   const [vendorDocsIndex, setVendorDocsIndex] = useState(0);
-
+const [departmentFilter, setDepartmentFilter] = useState("");
   const openVendorDocs = (vendor) => {
     const docs = Array.isArray(vendor?.documents) ? vendor.documents : [];
     if (!docs.length) return;
@@ -235,18 +238,18 @@ const VendorManagement = () => {
   };
 
   // ...existing code...
-useEffect(() => {
-  // fetch both registered and unregistered on mount
-  fetchRegistered(page, filterQuery);
-  fetchUnregistered(1, ""); // fetch unregistered count on initial load
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+  useEffect(() => {
+    // fetch both registered and unregistered on mount
+    fetchRegistered(page, filterQuery);
+    fetchUnregistered(1, ""); // fetch unregistered count on initial load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-useEffect(() => {
-  // fetch registered when page changes
-  fetchRegistered(page, filterQuery);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [page])
+  useEffect(() => {
+    // fetch registered when page changes
+    fetchRegistered(page, filterQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   // fetch unregistered when sundryPage changes (run only when on sundry tab)
   useEffect(() => {
@@ -300,16 +303,21 @@ useEffect(() => {
     activeContracts: registered.filter((r) => r.serviceType).length,
   };
 
-  const filteredRegistered = registered.filter((v) =>
-    `${v.name} ${addressToString(v.address)} ${v.phone || ""}`
-      .toLowerCase()
-      .includes(filterQuery.toLowerCase())
-  );
-  const filteredSundry = sundry.filter((s) =>
-    `${s.name} ${addressToString(s.address)} ${s.phone || ""}`
-      .toLowerCase()
-      .includes(filterQuery.toLowerCase())
-  );
+ const filteredRegistered = registered.filter((v) => {
+  const matchesSearch = `${v.name} ${addressToString(v.address)} ${v.phone || ""}`
+    .toLowerCase()
+    .includes(filterQuery.toLowerCase());
+  const matchesDepartment = departmentFilter ? v.department === departmentFilter : true;
+  return matchesSearch && matchesDepartment;
+});
+
+const filteredSundry = sundry.filter((s) => {
+  const matchesSearch = `${s.name} ${addressToString(s.address)} ${s.phone || ""}`
+    .toLowerCase()
+    .includes(filterQuery.toLowerCase());
+  const matchesDepartment = departmentFilter ? s.department === departmentFilter : true;
+  return matchesSearch && matchesDepartment;
+});
   // Open edit modal prefilled
   const openEdit = (vendor) => {
     setEditingVendor({
@@ -513,12 +521,10 @@ useEffect(() => {
 
   const deleteVendor = async (vendorId) => {
     if (!vendorId) return;
-    if (
-      !window.confirm(
-        "Permanently delete this vendor? This action cannot be undone."
-      )
-    )
-      return;
+     const ok = await showPrompt(
+      `Permanently delete this vendor? This action cannot be undone.`
+    );
+    if (!ok) return;
     setLoading(true);
     try {
       const token = getToken ? getToken() : sessionStorage.getItem("userToken");
@@ -565,13 +571,11 @@ useEffect(() => {
     setActiveTab("registered");
   };
 
-  const handleLocalDelete = (id, type = "registered") => {
-    if (
-      !window.confirm(
-        "Delete vendor locally? This will not remove it from server in prototype."
-      )
-    )
-      return;
+  const handleLocalDelete = async (id, type = "registered") => {
+  const ok = await showPrompt(
+    "Delete vendor locally? This will not remove it from server in prototype."
+  );
+  if (!ok) return;
     if (type === "registered")
       setRegistered((p) =>
         p.filter((v) => getVendorId(v) !== id && v.id !== id)
@@ -678,26 +682,38 @@ useEffect(() => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <MdSearch className="absolute left-3 top-3 text-slate-400 text-lg" />
-            <input
-              value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
-              placeholder="Search vendors..."
-              className="pl-10 pr-4 h-11 rounded-xl border-2 border-slate-200 bg-slate-50"
-            />
-          </div>
-          <button
-            onClick={() => {
-              resetForm();
-              setShowAdd(true);
-            }}
-            className="px-4 py-2 bg-[#036173] text-white rounded-xl flex items-center gap-2 shadow-lg"
-          >
-            <MdAdd /> Add Vendor
-          </button>
-        </div>
+      <div className="flex items-center gap-3">
+  <div className="relative">
+    <MdSearch className="absolute left-3 top-3 text-slate-400 text-lg" />
+    <input
+      value={filterQuery}
+      onChange={(e) => setFilterQuery(e.target.value)}
+      placeholder="Search by name..."
+      className="pl-10 pr-4 h-11 rounded-xl border-2 border-slate-200 bg-slate-50"
+    />
+  </div>
+  <select
+    value={departmentFilter}
+    onChange={(e) => setDepartmentFilter(e.target.value)}
+    className="h-11 px-4 rounded-xl border-2 border-slate-200 bg-slate-50"
+  >
+    <option value="">All Departments</option>
+    {departments.map((d) => (
+      <option key={d.name} value={d.name}>
+        {d.name}
+      </option>
+    ))}
+  </select>
+  <button
+    onClick={() => {
+      resetForm();
+      setShowAdd(true);
+    }}
+    className="px-4 py-2 bg-[#036173] text-white rounded-xl flex items-center gap-2 shadow-lg"
+  >
+    <MdAdd /> Add Vendor
+  </button>
+</div>
       </div>
 
       {/* Stat cards */}
@@ -785,7 +801,8 @@ useEffect(() => {
                 <thead>
                   <tr className="text-left text-xs text-slate-500">
                     <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Service</th>
+                    <th className="px-4 py-3">Department</th>
+                    {/* <th className="px-4 py-3">Service</th> */}
                     <th className="px-4 py-3">Phone</th>
                     <th className="px-4 py-3">Address</th>
                     <th className="px-4 py-3">Contract</th>
@@ -820,7 +837,8 @@ useEffect(() => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">{v.serviceType || "N/A"}</td>
+                      <td className="px-4 py-3">{v.department || "N/A"}</td>
+                      {/* <td className="px-4 py-3">{v.serviceType || "N/A"}</td> */}{" "}
                       <td className="px-4 py-3">{v.phone || "N/A"}</td>
                       <td className="px-4 py-3">
                         {" "}
@@ -1217,7 +1235,6 @@ useEffect(() => {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
-             
 
               {/* Document upload dropzone (Add Vendor) */}
               <div className="md:col-span-2">

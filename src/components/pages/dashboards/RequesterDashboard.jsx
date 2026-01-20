@@ -14,7 +14,7 @@ import {
   MdExpandMore,
 } from "react-icons/md";
 import { IoMdSearch } from "react-icons/io";
-
+import CreatableSelect from "react-select/creatable";
 import ItemSelectionTable from "../../shared/tables/ItemSelectionTable";
 import RequesterSidebar from "../../shared/layout/RequesterSidebar";
 import CompletedRequests from "./CompletedRequests";
@@ -31,94 +31,656 @@ import Support from "./Support";
 import { useGlobalAlert } from "../../shared/GlobalAlert";
 import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
-// --- Place above the RequesterDashboard component ---
+// ...inside ServiceTable, before the return statement...
+const purchaseOrderColumns = [
+  { key: "sn", label: "SN" },
+  { key: "description", label: "Description" },
+  { key: "logisticsType", label: "Logistics Type" },
+  { key: "shippingQuantity", label: "Shipping Quantity" },
+  { key: "shippingFee", label: "Shipping Fee" },
+  { key: "vendor", label: "Vendor" },
+  { key: "quantity", label: "Quantity" },
+  { key: "unitPrice", label: "Unit Price" },
+  { key: "currency", label: "Currency" },
+  { key: "vatted", label: "VAT" },
+  { key: "vatAmount", label: "VAT Amount" },
+  { key: "discount", label: "Discount (%)" },
+  { key: "total", label: "Total" },
+  { key: "action", label: "" },
+];
 
-function ServiceTable({ rows, setRows, currencies }) {
+const getInitialPurchaseOrderRow = () => ({
+  description: "",
+  logisticsType: "local",
+  shippingQuantity: 0,
+  shippingFee: 0,
+  vendorId: "",
+  vendorName: "",
+  quantity: 1,
+  unitPrice: 0,
+  currency: "NGN",
+  vatted: false,
+  discount: 0,
+});
+
+function ServiceTable({
+  rows,
+  setRows,
+  currencies,
+  requestType,
+  setRequestType,
+  department,
+  isPurchaseOrder,
+  setIsPurchaseOrder,
+}) {
+  const showSwitch =
+    department?.toLowerCase() === "operations" ||
+    department?.toLowerCase() === "project";
+  const scrollRef = useRef(null);
+
+  const [vatRate, setVatRate] = useState(0.075); // Default 7.5%
+  const { getToken } = useAuth();
+  const [vendorOptions, setVendorOptions] = useState([]);
+
+  useEffect(() => {
+    if (!isPurchaseOrder) return;
+
+    const fetchVendors = async () => {
+      try {
+        const token = await getToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const resp = await axios.get(
+          "https://hdp-backend-1vcl.onrender.com/api/vendors",
+          { headers }
+        );
+        const data = resp.data?.data || resp.data || [];
+        setVendorOptions(
+          data.map((v) => ({
+            value: v.vendorId || v._id,
+            label: v.name,
+            vendorName: v.name,
+          }))
+        );
+      } catch (err) {
+        setVendorOptions([]);
+      }
+    };
+
+    fetchVendors();
+  }, [isPurchaseOrder, getToken]);
+
+  useEffect(() => {
+    const fetchVat = async () => {
+      try {
+        const resp = await axios.get(
+          "https://hdp-backend-1vcl.onrender.com/api/vat"
+        );
+        const value = resp?.data?.value;
+        setVatRate(typeof value === "number" ? value / 100 : 0.075);
+      } catch (error) {
+        setVatRate(0.075);
+      }
+    };
+    fetchVat();
+  }, []);
+
   const handleChange = (idx, field, value) => {
     const updated = [...rows];
     updated[idx][field] = value;
     setRows(updated);
   };
+
   const handleRemove = (idx) => {
     setRows(rows.filter((_, i) => i !== idx));
   };
+
   const handleAdd = () => {
-    setRows([
-      ...rows,
-      { description: "", amount: "", currency: "NGN" },
-    ]);
+    setRows([...rows, { description: "", amount: "", currency: "NGN" }]);
   };
+
+  const scrollTable = (direction) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({
+        left: direction === "right" ? 300 : -300,
+        behavior: "smooth",
+      });
+    }
+  };
+
   return (
     <div className="mb-6">
-      <div className="bg-gradient-to-r from-[#036173] to-teal-600 text-white font-bold px-4 py-2 rounded-t-lg">
-        SERVICE AND LABOR DESCRIPTION
+      <div className="bg-gradient-to-r from-[#036173] to-teal-600 text-white font-bold px-4 py-2 rounded-t-lg flex items-center justify-between">
+        <span>SERVICE AND LABOR DESCRIPTION</span>
+        {showSwitch && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-normal">Purchase Order</span>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPurchaseOrder}
+                onChange={() => setIsPurchaseOrder((prev) => !prev)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            </label>
+          </div>
+        )}
       </div>
-      <table className="w-full border border-[#036173] bg-[#f0f4ff]">
-        <thead>
-          <tr>
-            <th className="p-2 border border-[#036173] text-left">
-              Description
-            </th>
-            <th className="p-2 border border-[#036173] text-left">Amount</th>
-            <th className="p-2 border border-[#036173]"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, idx) => (
-            <tr key={idx}>
-              <td className="p-2 border border-[#036173] max-w-[220px] whitespace-normal break-words overflow-hidden align-top">
-                <textarea
-                  value={row.description}
-                  onChange={(e) => handleChange(idx, "description", e.target.value)}
-                  className="w-full bg-transparent outline-none resize-none"
-                  rows={2}
-                  style={{ wordBreak: "break-word" }}
-                />
-              </td>
-              <td className="p-2 border border-[#036173]">
-                <div className="flex items-center gap-2">
-                  <Select
-                    options={currencies}
-                    value={currencies.find((c) => c.value === (row.currency || "NGN"))}
-                    onChange={(selected) =>
-                      handleChange(idx, "currency", selected.value)
-                    }
-                    className="w-32"
-                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                    styles={{
-                      control: (base) => ({ ...base, minHeight: 32, fontSize: 14 }),
-                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                    }}
-                  />
-                  <input
-                    type="number"
-                    value={row.amount}
-                    onChange={(e) => handleChange(idx, "amount", e.target.value)}
-                    className="w-full bg-transparent outline-none"
-                  />
-                </div>
-              </td>
-              <td className="p-2 border border-[#036173] text-center">
-                <button
-                  type="button"
-                  onClick={() => handleRemove(idx)}
-                  className="text-red-600 font-bold"
-                  title="Remove"
-                >
-                  ×
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <button
-        type="button"
-        onClick={handleAdd}
-        className="mt-2 px-4 py-2 bg-[#036173] text-white rounded"
-      >
-        + Add Service Row
-      </button>
+
+      {isPurchaseOrder ? (
+        <>
+          <div
+            ref={scrollRef}
+            className="mt-4 overflow-x-auto custom-scrollbar-hide"
+            style={{ WebkitOverflowScrolling: "touch", maxWidth: "100%" }}
+          >
+            <table className="w-full min-w-[1200px] border-collapse border border-[#036173] rounded-lg overflow-hidden table-auto bg-[#f0f4ff]">
+              <thead>
+                <tr>
+                  {purchaseOrderColumns.map((col) => (
+                    <th
+                      key={col.key}
+                      className={`p-2 border border-[#036173] text-left text-xs font-semibold uppercase tracking-wider ${
+                        col.key === "sn"
+                          ? "min-w-[60px] text-center"
+                          : col.key === "description"
+                          ? "min-w-[320px]"
+                          : col.key === "logisticsType"
+                          ? "min-w-[140px] text-center"
+                          : col.key === "shippingQuantity"
+                          ? "min-w-[140px] text-center"
+                          : col.key === "shippingFee"
+                          ? "min-w-[140px] text-center"
+                          : col.key === "vendor"
+                          ? "min-w-[200px] text-center"
+                          : col.key === "quantity"
+                          ? "min-w-[120px] text-center"
+                          : col.key === "unitPrice"
+                          ? "min-w-[140px] text-center"
+                          : col.key === "currency"
+                          ? "min-w-[100px] text-center"
+                          : col.key === "vatted"
+                          ? "min-w-[80px] text-center"
+                          : col.key === "vatAmount"
+                          ? "min-w-[140px] text-center"
+                          : col.key === "discount"
+                          ? "min-w-[120px] text-center"
+                          : col.key === "total"
+                          ? "min-w-[140px] text-center"
+                          : col.key === "action"
+                          ? "min-w-[80px] text-center"
+                          : ""
+                      }`}
+                    >
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {rows.map((row, idx) => {
+                  const qty = Number(row.quantity || 0);
+                  const unit = Number(row.unitPrice || 0);
+                  const discount = Number(row.discount || 0);
+                  const vatted = !!row.vatted;
+                  const subtotal = qty * unit;
+                  let total = subtotal;
+
+                  // Apply discount
+                  if (discount > 0) {
+                    total = total - (total * discount) / 100;
+                  }
+
+                  // Calculate VAT
+                  const vatAmount = vatted ? total * vatRate : 0;
+                  total = total + vatAmount;
+
+                  return (
+                    <tr
+                      key={idx}
+                      className="hover:bg-slate-50 transition-colors"
+                    >
+                      {/* SN */}
+                      <td className="border border-[#036173] p-2 text-center text-sm font-medium">
+                        {idx + 1}
+                      </td>
+
+                      {/* Description */}
+                      <td className="border border-[#036173] p-2 text-sm text-slate-900 max-w-[320px] break-words whitespace-normal align-top">
+                        <textarea
+                          value={row.description}
+                          onChange={(e) =>
+                            handleChange(idx, "description", e.target.value)
+                          }
+                          className="w-full bg-transparent outline-none resize-none"
+                          rows={2}
+                          placeholder="Enter description"
+                          style={{ wordBreak: "break-word" }}
+                        />
+                      </td>
+
+                      {/* Logistics Type */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <select
+                          value={row.logisticsType || "local"}
+                          onChange={(e) =>
+                            handleChange(idx, "logisticsType", e.target.value)
+                          }
+                          className="w-full px-2 py-1 border border-slate-300 rounded-md text-center"
+                        >
+                          <option value="local">Local</option>
+                          <option value="international">International</option>
+                        </select>
+                      </td>
+
+                      {/* Shipping Quantity */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          value={
+                            row.shippingQuantity === 0
+                              ? ""
+                              : row.shippingQuantity
+                          }
+                          onFocus={(e) => {
+                            if (
+                              e.target.value === "0" ||
+                              row.shippingQuantity === 0
+                            ) {
+                              handleChange(idx, "shippingQuantity", "");
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value === "") {
+                              handleChange(idx, "shippingQuantity", 0);
+                            }
+                          }}
+                          onChange={(e) =>
+                            handleChange(
+                              idx,
+                              "shippingQuantity",
+                              e.target.value === ""
+                                ? ""
+                                : Number(e.target.value)
+                            )
+                          }
+                          disabled={row.logisticsType !== "international"}
+                          placeholder="0"
+                          className={`w-20 px-2 py-1 border border-slate-300 rounded-md text-center ${
+                            row.logisticsType !== "international"
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                              : ""
+                          }`}
+                        />
+                      </td>
+
+                      {/* Shipping Fee */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={row.shippingFee === 0 ? "" : row.shippingFee}
+                          onFocus={(e) => {
+                            if (
+                              e.target.value === "0" ||
+                              row.shippingFee === 0
+                            ) {
+                              handleChange(idx, "shippingFee", "");
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value === "") {
+                              handleChange(idx, "shippingFee", 0);
+                            }
+                          }}
+                          onChange={(e) =>
+                            handleChange(
+                              idx,
+                              "shippingFee",
+                              e.target.value === ""
+                                ? ""
+                                : Number(e.target.value)
+                            )
+                          }
+                          disabled={row.logisticsType !== "international"}
+                          placeholder="0"
+                          className={`w-24 px-2 py-1 border border-slate-300 rounded-md text-center ${
+                            row.logisticsType !== "international"
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                              : ""
+                          }`}
+                        />
+                      </td>
+
+                      {/* Vendor */}
+                      <td className="border border-[#036173] p-2 text-center min-w-[200px]">
+                        <CreatableSelect
+                          isClearable
+                          options={vendorOptions}
+                          value={
+                            row.vendorId
+                              ? vendorOptions.find(
+                                  (v) => v.value === row.vendorId
+                                ) || {
+                                  value: row.vendorId,
+                                  label: row.vendorName || row.vendorId,
+                                }
+                              : null
+                          }
+                          onChange={(selected) => {
+                            if (selected) {
+                              handleChange(idx, "vendorId", selected.value);
+                              handleChange(
+                                idx,
+                                "vendorName",
+                                selected.vendorName || selected.label
+                              );
+
+                              if (selected.__isNew__) {
+                                setVendorOptions((prev) => [
+                                  ...prev,
+                                  {
+                                    value: selected.value,
+                                    label: selected.value,
+                                    vendorName: selected.value,
+                                  },
+                                ]);
+                              }
+                            } else {
+                              handleChange(idx, "vendorId", "");
+                              handleChange(idx, "vendorName", "");
+                            }
+                          }}
+                          placeholder="Select vendor"
+                          classNamePrefix="react-select"
+                          styles={{
+                            control: (provided) => ({
+                              ...provided,
+                              minWidth: "100px",
+                              fontSize: "12px",
+                            }),
+                            menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                          }}
+                          menuPortalTarget={
+                            typeof document !== "undefined"
+                              ? document.body
+                              : null
+                          }
+                        />
+                      </td>
+
+                      {/* Quantity */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <input
+                          type="number"
+                          min={1}
+                          value={row.quantity}
+                          onChange={(e) =>
+                            handleChange(idx, "quantity", e.target.value)
+                          }
+                          className="w-full bg-transparent outline-none text-center"
+                        />
+                      </td>
+
+                      {/* Unit Price */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          value={row.unitPrice}
+                          onFocus={(e) => {
+                            if (e.target.value === "0") {
+                              handleChange(idx, "unitPrice", "");
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value === "") {
+                              handleChange(idx, "unitPrice", 0);
+                            }
+                          }}
+                          onChange={(e) =>
+                            handleChange(idx, "unitPrice", e.target.value)
+                          }
+                          placeholder="0"
+                          className="w-full bg-transparent outline-none text-center"
+                        />
+                      </td>
+
+                      {/* Currency */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <Select
+                          options={currencies}
+                          value={currencies.find(
+                            (c) => c.value === (row.currency || "NGN")
+                          )}
+                          onChange={(selected) =>
+                            handleChange(idx, "currency", selected.value)
+                          }
+                          className="w-24"
+                          menuPortalTarget={
+                            typeof document !== "undefined"
+                              ? document.body
+                              : null
+                          }
+                          styles={{
+                            control: (base) => ({
+                              ...base,
+                              minHeight: 32,
+                              fontSize: 14,
+                            }),
+                            menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                          }}
+                        />
+                      </td>
+
+                      {/* VAT Checkbox */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={row.vatted}
+                          onChange={(e) =>
+                            handleChange(idx, "vatted", e.target.checked)
+                          }
+                        />
+                      </td>
+
+                      {/* VAT Amount */}
+                      <td className="border border-[#036173] p-2 text-center font-semibold">
+                        {`${row.currency || "NGN"} ${vatAmount.toLocaleString(
+                          undefined,
+                          {
+                            maximumFractionDigits: 2,
+                          }
+                        )}`}
+                      </td>
+
+                      {/* Discount (%) */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={row.discount === 0 ? "" : row.discount}
+                          onFocus={(e) => {
+                            if (e.target.value === "0" || row.discount === 0) {
+                              handleChange(idx, "discount", "");
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value === "") {
+                              handleChange(idx, "discount", 0);
+                            }
+                          }}
+                          onChange={(e) =>
+                            handleChange(
+                              idx,
+                              "discount",
+                              e.target.value === ""
+                                ? ""
+                                : Number(e.target.value)
+                            )
+                          }
+                          placeholder="0"
+                          className="w-16 px-2 py-1 border border-slate-300 rounded-md text-center"
+                        />
+                      </td>
+
+                      {/* Total */}
+                      <td className="border border-[#036173] p-2 text-center font-semibold">
+                        {`${row.currency || "NGN"} ${total.toLocaleString(
+                          undefined,
+                          {
+                            maximumFractionDigits: 2,
+                          }
+                        )}`}
+                      </td>
+
+                      {/* Action (Remove) */}
+                      <td className="border border-[#036173] p-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(idx)}
+                          className="text-red-600 font-bold"
+                          title="Remove"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <style>
+            {`
+            .custom-scrollbar-hide {
+              scrollbar-width: none;
+              -ms-overflow-style: none;
+            }
+            .custom-scrollbar-hide::-webkit-scrollbar {
+              display: none;
+            }
+          `}
+          </style>
+
+          {/* Scroll Arrows - Positioned just above the button */}
+          <div className="flex justify-between items-center mt-2 px-2">
+            <button
+              type="button"
+              onClick={() => scrollTable("left")}
+              className="px-3 py-2 bg-slate-200 rounded-full text-slate-700 hover:bg-slate-300 transition"
+              aria-label="Scroll Left"
+            >
+              &#8592;
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollTable("right")}
+              className="px-3 py-2 bg-slate-200 rounded-full text-slate-700 hover:bg-slate-300 transition"
+              aria-label="Scroll Right"
+            >
+              &#8594;
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setRows([...rows, getInitialPurchaseOrderRow()])}
+            className="mt-2 px-4 py-2 bg-[#036173] text-white rounded"
+          >
+            + Add Purchase Order Row
+          </button>
+        </>
+      ) : (
+        <>
+          <table className="w-full border border-[#036173] bg-[#f0f4ff]">
+            <thead>
+              <tr>
+                <th className="p-2 border border-[#036173] text-left">
+                  Description
+                </th>
+                <th className="p-2 border border-[#036173] text-left">
+                  Amount
+                </th>
+                <th className="p-2 border border-[#036173]"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={idx}>
+                  <td className="p-2 border border-[#036173] max-w-[220px] whitespace-normal break-words overflow-hidden align-top">
+                    <textarea
+                      value={row.description}
+                      onChange={(e) =>
+                        handleChange(idx, "description", e.target.value)
+                      }
+                      className="w-full bg-transparent outline-none resize-none"
+                      rows={2}
+                      style={{ wordBreak: "break-word" }}
+                    />
+                  </td>
+                  <td className="p-2 border border-[#036173]">
+                    <div className="flex items-center gap-2">
+                      <Select
+                        options={currencies}
+                        value={currencies.find(
+                          (c) => c.value === (row.currency || "NGN")
+                        )}
+                        onChange={(selected) =>
+                          handleChange(idx, "currency", selected.value)
+                        }
+                        className="w-32"
+                        menuPortalTarget={
+                          typeof document !== "undefined" ? document.body : null
+                        }
+                        styles={{
+                          control: (base) => ({
+                            ...base,
+                            minHeight: 32,
+                            fontSize: 14,
+                          }),
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                        }}
+                      />
+                      <input
+                        type="number"
+                        value={row.amount}
+                        onChange={(e) =>
+                          handleChange(idx, "amount", e.target.value)
+                        }
+                        className="w-full bg-transparent outline-none"
+                      />
+                    </div>
+                  </td>
+                  <td className="p-2 border border-[#036173] text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(idx)}
+                      className="text-red-600 font-bold"
+                      title="Remove"
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="mt-2 px-4 py-2 bg-[#036173] text-white rounded"
+          >
+            + Add Service Row
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -201,6 +763,7 @@ function MaterialTable({ rows, setRows }) {
 const RequesterDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
+  const [isPurchaseOrder, setIsPurchaseOrder] = useState(false);
 
   const [activeView, setActiveView] = useState("overview");
   const [overviewActiveCard, setOverviewActiveCard] = useState("pending");
@@ -210,6 +773,7 @@ const RequesterDashboard = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const dropdownRef = useRef(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [selectedRequestReadOnly, setSelectedRequestReadOnly] = useState(false);
@@ -217,7 +781,7 @@ const RequesterDashboard = () => {
   const [loadingVendors, setLoadingVendors] = useState(false);
   const { showAlert } = useGlobalAlert();
   const { showPrompt } = useGlobalPrompt();
-
+  const [uploadType, setUploadType] = useState("image");
   // Form state
   const [formData, setFormData] = useState({
     department: user?.department || "",
@@ -249,10 +813,13 @@ const RequesterDashboard = () => {
   const [loadingCurrencies, setLoadingCurrencies] = useState(true);
   const [invoiceFiles, setInvoiceFiles] = useState([]); // items: { id, file, previewUrl }
   const fileInputRef = useRef(null);
+  const [quotationFiles, setQuotationFiles] = useState([]); // For service purchase order quotations
+  const quotationInputRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
   const [requestImages, setRequestImages] = useState([]); // items: { id, file, previewUrl }
   const imageInputRef = useRef(null);
   const [imageDragActive, setImageDragActive] = useState(false);
+  const [allUploadedFiles, setAllUploadedFiles] = useState([]);
 
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
   const [invName, setInvName] = useState("");
@@ -278,7 +845,6 @@ const RequesterDashboard = () => {
 
   const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
-  // ...existing code...
 
   const fetchChatUnreadCount = async () => {
     try {
@@ -449,12 +1015,12 @@ const RequesterDashboard = () => {
 
   const [companiesList, setCompaniesList] = useState([]);
   const [loadingCompanies, setLoadingCompanies] = useState(false);
-const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("sidebarCollapsed") === "true";
-  }
-  return false;
-});
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sidebarCollapsed") === "true";
+    }
+    return false;
+  });
   useEffect(() => {
     // Set fixed valid currencies
     const validCurrencies = [
@@ -551,32 +1117,32 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   };
 
   // Fetch project managers (placeholder endpoint - replace when available)
- const fetchProjectManagers = async () => {
-  try {
-    setLoadingProjectManagers(true);
-    const token = getToken();
+  const fetchProjectManagers = async () => {
+    try {
+      setLoadingProjectManagers(true);
+      const token = getToken();
 
-    if (!token) {
-      console.error("No token found");
-      return;
-    }
-
-    const response = await axios.get(
-      "https://hdp-backend-1vcl.onrender.com/api/user/project-managers",
-      {
-        headers: { Authorization: `Bearer ${token}` },
+      if (!token) {
+        console.error("No token found");
+        return;
       }
-    );
 
-    console.log("Project Managers API response:", response.data); // <-- Add this line
+      const response = await axios.get(
+        "https://hdp-backend-1vcl.onrender.com/api/user/project-managers",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-    setProjectManagers(response.data || []);
-  } catch (err) {
-    console.error("❌ Error fetching project managers:", err);
-  } finally {
-    setLoadingProjectManagers(false);
-  }
-};
+      console.log("Project Managers API response:", response.data); // <-- Add this line
+
+      setProjectManagers(response.data || []);
+    } catch (err) {
+      console.error("❌ Error fetching project managers:", err);
+    } finally {
+      setLoadingProjectManagers(false);
+    }
+  };
   const handleOpenDetail = async (request, opts = {}) => {
     const readOnly = !!opts.readOnly;
     const origin = opts.origin || null;
@@ -822,7 +1388,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   );
 
   // Submit new request
-  const handleSubmitRequest = async (e) => {
+   const handleSubmitRequest = async (e) => {
     e.preventDefault();
 
     // Validation
@@ -852,12 +1418,18 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
 
     // --- SERVICES REQUEST VALIDATION ---
     if (requestType === "services") {
-      const hasService = serviceRows.some(
-        (row) => row.description && row.amount
-      );
+      const hasService = serviceRows.some((row) => {
+        if (isPurchaseOrder) {
+          return row.description && row.quantity && row.unitPrice;
+        } else {
+          return row.description && row.amount;
+        }
+      });
+
       const hasMaterial = materialRows.some(
         (row) => row.description && row.quantity
       );
+
       if (!hasService && !hasMaterial) {
         showAlert("Please add at least one service or material item.");
         return;
@@ -876,6 +1448,15 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         return;
       }
     }
+    if (requestImages.length > 0) {
+      const missingTitles = requestImages.filter(
+        (img) => !img.title || img.title.trim() === ""
+      );
+      if (missingTitles.length > 0) {
+        showAlert("Please provide titles for all uploaded images");
+        return;
+      }
+    }
 
     try {
       setSubmitting(true);
@@ -883,16 +1464,77 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
 
       // --- SERVICES REQUEST LOGIC ---
       if (requestType === "services") {
-        // Build serviceItems and materialItems arrays
         const serviceItems = serviceRows
-          .filter((row) => row.description && row.amount)
-          .map((row) => ({
-            name: row.description,
-            quantity: 1,
-            unitPrice: Number(row.amount),
-            description: row.description,
-            currency: row.currency || "NGN",
-          }));
+          .filter((row) => {
+            if (isPurchaseOrder) {
+              return row.description && row.quantity && row.unitPrice;
+            } else {
+              return row.description && row.amount;
+            }
+          })
+          .map((row) => {
+            if (isPurchaseOrder) {
+              const qty = Number(row.quantity || 1);
+              const unit = Number(row.unitPrice || 0);
+              const discount = Number(row.discount || 0);
+              const vatted = !!row.vatted;
+              const vatRate = 0.075;
+              let subtotal = qty * unit;
+
+              if (discount > 0) {
+                subtotal = subtotal - (subtotal * discount) / 100;
+              }
+
+              const vatAmount = vatted ? subtotal * vatRate : 0;
+              const total = subtotal + vatAmount;
+
+              const itemPayload = {
+                name: row.description,
+                quantity: qty,
+                unitPrice: unit,
+                description: row.description,
+                currency: row.currency || "NGN",
+                vatted: vatted,
+                vatAmount: vatAmount,
+                totalPrice: total,
+              };
+
+              if (row.vendorId) {
+                itemPayload.vendorId = row.vendorId;
+              }
+
+              if (row.logisticsType) {
+                itemPayload.logisticsType = row.logisticsType;
+              }
+              if (
+                row.shippingQuantity !== undefined &&
+                row.logisticsType === "international"
+              ) {
+                itemPayload.shippingQuantity = Number(
+                  row.shippingQuantity || 0
+                );
+              }
+              if (
+                row.shippingFee !== undefined &&
+                row.logisticsType === "international"
+              ) {
+                itemPayload.shippingFee = Number(row.shippingFee || 0);
+              }
+              if (discount > 0) {
+                itemPayload.discount = discount;
+              }
+
+              return itemPayload;
+            } else {
+              return {
+                name: row.description,
+                quantity: 1,
+                unitPrice: Number(row.amount || 0),
+                description: row.description,
+                currency: row.currency || "NGN",
+              };
+            }
+          });
 
         const materialItems = materialRows
           .filter((row) => row.description && row.quantity)
@@ -902,7 +1544,6 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
             unitPrice: 0,
           }));
 
-        // Build payload
         const payload = {
           companyId: formData.company,
           department: formData.department,
@@ -910,13 +1551,20 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           vesselId: formData.vesselId || undefined,
           purpose: servicePurpose,
           priority: formData.priority,
-          requiredDate: undefined, // You can add a date picker if needed
-          currency: "NGN", // Or allow user to select
+          requiredDate: undefined,
+          currency: "NGN",
           isService: true,
           serviceItems,
           materialItems,
         };
-  console.log("Submitting service request payload:", payload);
+
+        if (
+          (formData.department?.toLowerCase() === "operations" ||
+            formData.department?.toLowerCase() === "project") &&
+          isPurchaseOrder
+        ) {
+          payload.serviceLaborAsPurchaseOrder = true;
+        }
 
         if (formData.destination === "Marine") {
           payload.nextApproverAfterVesselManager =
@@ -935,8 +1583,10 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           payload.deckOrEngine = formData.deckOrEngine;
         }
 
-        // If there are images, use FormData
-        if (requestImages.length > 0) {
+        // UPDATED: Check if there are ANY files (images, invoices, or quotations)
+        const hasAnyFiles = requestImages.length > 0 || invoiceFiles.length > 0 || quotationFiles.length > 0;
+
+        if (hasAnyFiles) {
           const fd = new FormData();
           Object.entries(payload).forEach(([key, value]) => {
             if (Array.isArray(value) || typeof value === "object") {
@@ -945,25 +1595,55 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
               fd.append(key, value);
             }
           });
-          requestImages.forEach((f) => {
-            if (f && f.file) {
-              fd.append("requestImages", f.file);
-            }
-          });
+          
+         
+requestImages.forEach((f) => {
+  if (f && f.file) {
+    fd.append("requestImages", f.file);
+  }
+});
 
-          const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
+// UPDATED: Conditionally attach invoice OR quotation files (NOT BOTH)
+if (requestType === "services" && isPurchaseOrder) {
+  // For service purchase orders, ONLY send quotation files
+  quotationFiles.forEach((f) => {
+    if (f && f.file) {
+      fd.append("quotationFiles", f.file);
+    }
+  });
+} else {
+  // For all other cases (petty cash, simple service, inventory), ONLY send invoice files
+  invoiceFiles.forEach((f) => {
+    if (f && f.file) {
+      fd.append("invoiceFiles", f.file);
+    }
+  });
+}
 
-          console.log(
-            "✅ Service Request Created (with images):",
-            response.data
-          );
+// UPDATED: Attach image titles
+requestImages.forEach((f, index) => {
+  if (f && f.file) {
+    fd.append(`requestImageTitles[${index}]`, f.title || "");
+  }
+});
+console.log("📤 FormData contents being sent:");
+for (let [key, value] of fd.entries()) {
+  if (value instanceof File) {
+    console.log(`${key}:`, value.name, `(${value.type})`);
+  } else {
+    console.log(`${key}:`, value);
+  }
+}
+
+const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+});
+
+          console.log("✅ Service Request Created (with files):", response.data);
           showAlert("Service request created successfully!");
         } else {
-          // No images, send as JSON
           const response = await axios.post(
             `${API_BASE_URL}/requests`,
             payload,
@@ -995,34 +1675,60 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         setServiceRows([{ description: "", amount: "" }]);
         setMaterialRows([{ description: "", quantity: "" }]);
         setRequestImages([]);
+        setInvoiceFiles([]);
+        setQuotationFiles([]);
+        setAllUploadedFiles([]);
         setOffShoreNumber("");
-        setActiveView("myrequests");
+        setActiveView("myRequests");
         return;
       }
 
       // --- INVENTORY REQUEST LOGIC ---
-      // Prepare items for API
       const items = selectedItems.map((item) => {
         const qty = Number(item.quantity || 0);
         const unit = Number(item.unitPrice || 0);
         const total = Math.round(unit * qty);
 
-        return {
+        const itemPayload = {
           name: item.name,
           quantity: qty,
           unitPrice: unit,
           totalPrice: total,
           inventoryId: item._id || item.itemId || null,
         };
+
+        if (item.vendorId) {
+          itemPayload.vendorId = item.vendorId;
+        }
+
+        if (item.vatted !== undefined) itemPayload.vatted = item.vatted;
+        if (item.discount !== undefined) itemPayload.discount = item.discount;
+        if (item.logisticsType) itemPayload.logisticsType = item.logisticsType;
+        if (item.shippingQuantity !== undefined)
+          itemPayload.shippingQuantity = item.shippingQuantity;
+        if (item.shippingFee !== undefined)
+          itemPayload.shippingFee = item.shippingFee;
+
+        return itemPayload;
       });
 
-      const hasFiles = invoiceFiles.length > 0 || requestImages.length > 0;
+      // UPDATED: Check if there are ANY files
+      const hasFiles = invoiceFiles.length > 0 || requestImages.length > 0 || quotationFiles.length > 0;
 
       if (hasFiles) {
         const fd = new FormData();
         fd.append("department", formData.department);
         fd.append("destination", formData.destination);
         fd.append("purpose", formData.purpose || "");
+
+        if (formData.requestType === "pettyCash") {
+          fd.append("requestType", "pettyCash");
+        } else if (
+          formData.department?.toLowerCase() === "operations" ||
+          formData.department?.toLowerCase() === "project"
+        ) {
+          fd.append("requestType", "purchaseOrder");
+        }
         if (formData.vesselId) fd.append("vesselId", formData.vesselId);
         if (formData.priority) fd.append("priority", formData.priority);
         if (formData.reference) fd.append("reference", formData.reference);
@@ -1037,7 +1743,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         if (formData.additionalInformation) {
           fd.append("additionalInformation", formData.additionalInformation);
         }
-        // Add offshore number for Marine destination
+        
         if (formData.destination === "Marine" && offShoreNumber) {
           fd.append("offshoreReqNumber", offShoreNumber);
         }
@@ -1046,22 +1752,28 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           fd.append("deckOrEngine", formData.deckOrEngine);
         }
 
-        // items must be a JSON string when using multipart
         fd.append("items", JSON.stringify(items));
 
-        // attach invoice files (non-image documents)
+        // UPDATED: Attach ALL file types
         invoiceFiles.forEach((f) => {
           if (f && f.file) {
             fd.append("invoiceFiles", f.file);
           }
         });
 
-        // attach request images
-        requestImages.forEach((f) => {
+        quotationFiles.forEach((f) => {
           if (f && f.file) {
-            fd.append("requestImages", f.file);
+            fd.append("quotationFiles", f.file);
           }
         });
+
+     requestImages.forEach((f, index) => {
+  if (f && f.file) {
+    fd.append("requestImages", f.file);
+    // Append title for each image individually
+    fd.append(`requestImageTitles[${index}]`, f.title || "");
+  }
+});
 
         const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
           headers: {
@@ -1079,7 +1791,16 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           purpose: formData.purpose,
           items: items,
         };
-
+        
+        if (formData.requestType === "pettyCash") {
+          payload.requestType = "pettyCash";
+        } else if (
+          formData.department?.toLowerCase() === "operations" ||
+          formData.department?.toLowerCase() === "project"
+        ) {
+          payload.requestType = "purchaseOrder";
+        }
+        
         if (formData.vesselId) {
           payload.vesselId = formData.vesselId;
         }
@@ -1107,7 +1828,6 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           payload.jobNumber = formData.jobNumber;
         }
 
-        // Add offshore number for Marine destination
         if (formData.destination === "Marine" && offShoreNumber) {
           payload.offshoreReqNumber = offShoreNumber;
         }
@@ -1140,18 +1860,30 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       });
       setSelectedItems([]);
       setInvoiceFiles([]);
+      setQuotationFiles([]);
       setRequestImages([]);
+      setAllUploadedFiles([]);
       setOffShoreNumber("");
 
-      // Switch to My Requests view
-      setActiveView("myrequests");
-    } catch (err) {
-      console.error("❌ Error creating request:", err);
-      showAlert(err.response?.data?.message || "Failed to create request");
-    } finally {
-      setSubmitting(false);
-    }
+      setActiveView("myRequests");
+   } catch (err) {
+  console.error("❌ Error creating request:", err);
+  
+  // ADD THIS: Log the full error response
+  console.log("Full error details:", {
+    message: err.message,
+    status: err.response?.status,
+    statusText: err.response?.statusText,
+    data: err.response?.data,
+    headers: err.response?.headers
+  });
+  
+  showAlert(err.response?.data?.message || "Failed to create request");
+} finally {
+  setSubmitting(false);
+}
   };
+
 
   // Fetch my requests
   const fetchMyRequests = async () => {
@@ -1188,10 +1920,10 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   }, [user, activeView]);
 
   const handleApprove = async (requestId) => {
-  const ok = await showPrompt(
-    "Are you sure you want to approve this request?"
-  );
-  if (!ok) return;
+    const ok = await showPrompt(
+      "Are you sure you want to approve this request?"
+    );
+    if (!ok) return;
 
     try {
       setActionLoading(true);
@@ -1270,7 +2002,6 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       setActionLoading(false);
     }
   };
-  // ...existing code...
 
   const fetchPendingCount = async () => {
     try {
@@ -1321,6 +2052,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         previewUrl: file.type.startsWith("image/")
           ? URL.createObjectURL(file)
           : null,
+        fileType: "invoice", // ADD THIS: mark as invoice type
       };
 
       if (file.type.startsWith("image/")) {
@@ -1332,48 +2064,20 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
 
     if (invoiceEntries.length > 0) {
       setInvoiceFiles((prev) => [...prev, ...invoiceEntries]);
+      // ADD THIS: Update combined files
+      setAllUploadedFiles((prev) => [...prev, ...invoiceEntries]);
     }
     if (imageEntries.length > 0) {
       setRequestImages((prev) => [...prev, ...imageEntries]);
+      // ADD THIS: Update combined files
+      setAllUploadedFiles((prev) => [
+        ...prev,
+        ...imageEntries.map((e) => ({ ...e, fileType: "image" })),
+      ]);
     }
 
     // reset input so same file can be selected again if needed
     e.target.value = null;
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragActive(false);
-    const files = Array.from(e.dataTransfer?.files || []);
-    if (files.length === 0) return;
-
-    const invoiceEntries = [];
-    const imageEntries = [];
-
-    files.forEach((file) => {
-      const entry = {
-        id: `${file.name}-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}`,
-        file,
-        previewUrl: file.type.startsWith("image/")
-          ? URL.createObjectURL(file)
-          : null,
-      };
-
-      if (file.type.startsWith("image/")) {
-        imageEntries.push(entry);
-      } else {
-        invoiceEntries.push(entry);
-      }
-    });
-
-    if (invoiceEntries.length > 0) {
-      setInvoiceFiles((prev) => [...prev, ...invoiceEntries]);
-    }
-    if (imageEntries.length > 0) {
-      setRequestImages((prev) => [...prev, ...imageEntries]);
-    }
   };
 
   const handleImageBrowseClick = () => {
@@ -1383,25 +2087,55 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   const handleImageInputChange = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    const entries = files.map((file) => ({
-      id: `${file.name}-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`,
-      file,
-      previewUrl: file.type.startsWith("image/")
-        ? URL.createObjectURL(file)
-        : null,
-    }));
+
+    const entries = files.map((file) => {
+      // Auto-generate title from filename (remove extension, capitalize)
+      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+      const autoTitle =
+        nameWithoutExt.charAt(0).toUpperCase() + nameWithoutExt.slice(1);
+
+      return {
+        id: `${file.name}-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`,
+        file,
+        title: autoTitle, // Auto-generated title
+        previewUrl: file.type.startsWith("image/")
+          ? URL.createObjectURL(file)
+          : null,
+        fileType: "image", // ADD THIS: mark as image type
+      };
+    });
+
     setRequestImages((prev) => [...prev, ...entries]);
+    // ADD THIS: Update combined files
+    setAllUploadedFiles((prev) => [...prev, ...entries]);
     e.target.value = null;
   };
 
-  const handleImageDrop = (e) => {
-    e.preventDefault();
-    setImageDragActive(false);
-    const files = Array.from(e.dataTransfer?.files || []);
+  const handleImageTitleChange = (id, newTitle) => {
+    setRequestImages((prev) =>
+      prev.map((img) =>
+        img.id === id ? { ...img, title: newTitle.slice(0, 100) } : img
+      )
+    );
+    // ADD THIS: Update combined files
+    setAllUploadedFiles((prev) =>
+      prev.map((f) =>
+        f.id === id ? { ...f, title: newTitle.slice(0, 100) } : f
+      )
+    );
+  };
+
+  const handleQuotationBrowseClick = () => {
+    quotationInputRef.current?.click();
+  };
+
+  const handleQuotationInputChange = (e) => {
+    const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    const entries = files.map((file) => ({
+
+    const quotationEntries = files.map((file) => ({
       id: `${file.name}-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}`,
@@ -1409,17 +2143,29 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       previewUrl: file.type.startsWith("image/")
         ? URL.createObjectURL(file)
         : null,
+      fileType: "quotation", // ADD THIS: mark as quotation type
     }));
-    setRequestImages((prev) => [...prev, ...entries]);
+
+    setQuotationFiles((prev) => [...prev, ...quotationEntries]);
+    // ADD THIS: Update combined files
+    setAllUploadedFiles((prev) => [...prev, ...quotationEntries]);
+    e.target.value = null;
   };
 
-  const handleImageDragOver = (e) => {
-    e.preventDefault();
-    setImageDragActive(true);
-  };
-
-  const handleImageDragLeave = () => {
-    setImageDragActive(false);
+  const removeQuotationFile = (id) => {
+    setQuotationFiles((prev) => {
+      const found = prev.find((p) => p.id === id);
+      if (found?.previewUrl) {
+        try {
+          URL.revokeObjectURL(found.previewUrl);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+      return prev.filter((p) => p.id !== id);
+    });
+    // ADD THIS: Update combined files
+    setAllUploadedFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
   const removeRequestImage = (id) => {
@@ -1434,6 +2180,8 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       }
       return prev.filter((p) => p.id !== id);
     });
+    // ADD THIS: Update combined files
+    setAllUploadedFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
   const handleDragOver = (e) => {
@@ -1457,7 +2205,66 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       }
       return prev.filter((p) => p.id !== id);
     });
+    // ADD THIS: Update combined files
+    setAllUploadedFiles((prev) => prev.filter((f) => f.id !== id));
   };
+
+  // ADD THIS NEW FUNCTION: Remove any file from combined view
+  const removeAnyFile = (id) => {
+    // Remove from appropriate state based on file type
+    const fileToRemove = allUploadedFiles.find((f) => f.id === id);
+
+    if (!fileToRemove) return;
+
+    if (fileToRemove.fileType === "image") {
+      removeRequestImage(id);
+    } else if (fileToRemove.fileType === "quotation") {
+      removeQuotationFile(id);
+    } else if (fileToRemove.fileType === "invoice") {
+      removeInvoiceFile(id);
+    }
+  };
+
+  // ADD THIS NEW FUNCTION: Clear all files
+  const clearAllFiles = () => {
+    // Clear all file states
+    setRequestImages([]);
+    setInvoiceFiles([]);
+    setQuotationFiles([]);
+    setAllUploadedFiles([]);
+
+    // Revoke all preview URLs
+    allUploadedFiles.forEach((f) => {
+      if (f.previewUrl) {
+        try {
+          URL.revokeObjectURL(f.previewUrl);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+    });
+  };
+
+  // ADD THIS NEW FUNCTION: Get file type icon
+  const getFileIcon = (fileType, file) => {
+    if (fileType === "image") return "📷";
+    if (fileType === "quotation") return "📋";
+    if (fileType === "invoice") return "📎";
+
+    // Fallback based on file MIME type
+    if (file?.type === "application/pdf") return "📄";
+    if (file?.type?.includes("word")) return "📝";
+    return "📎";
+  };
+
+  // ADD THIS NEW FUNCTION: Get file type label
+  const getFileTypeLabel = (fileType) => {
+    if (fileType === "image") return "Image";
+    if (fileType === "quotation") return "Quotation";
+    if (fileType === "invoice") return "Invoice";
+    return "File";
+  };
+
   const handleItemFieldChange = (index, field, value) => {
     setSelectedItems((prev) => {
       const updated = [...prev];
@@ -1500,8 +2307,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
           selectedRequestOrigin={selectedRequest?.origin}
           notificationCount={unreadCount}
           chatUnreadCount={chatUnreadCount}
-            setCollapsed={setSidebarCollapsed}
-
+          setCollapsed={setSidebarCollapsed}
         />
 
         {activeView === "chatRoom" && <ChatRoom />}
@@ -1600,7 +2406,6 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                       </select>
                     </div>
                   </div>
-
                   {/* Job Number - Only show when destination is NOT Marine */}
                   {formData.destination &&
                     formData.destination !== "Marine" && (
@@ -1618,7 +2423,6 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                         />
                       </div>
                     )}
-
                   {/* Deck or Engine & OffShore Number - Only show when destination is Marine */}
                   {formData.destination === "Marine" && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1692,7 +2496,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                     <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
                       Request Type
                     </label>
-                    <div className="flex gap-6">
+                    <div className="flex gap-6 items-center">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="radio"
@@ -1719,9 +2523,35 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                           Services
                         </span>
                       </label>
+
+                      {/* Petty Cash Toggle - Only show for Admin department when requestType is inventory */}
+                      {requestType === "inventory" &&
+                        (formData.department?.toLowerCase() === "admin" ||
+                          user?.department?.toLowerCase() === "admin") && (
+                          <div className="flex items-center gap-2 ml-4 pl-4 border-l border-slate-300">
+                            <span className="text-xs font-medium text-slate-700">
+                              Petty Cash
+                            </span>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formData.requestType === "pettyCash"}
+                                onChange={(e) => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    requestType: e.target.checked
+                                      ? "pettyCash"
+                                      : "inventory",
+                                  }));
+                                }}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            </label>
+                          </div>
+                        )}
                     </div>
                   </div>
-
                   {/* Row 2: Company & Vessel */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Company */}
@@ -1791,7 +2621,6 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                       </div>
                     )}
                   </div>
-
                   {/* Project Manager (show only for Project) */}
                   {formData.destination === "Project" && (
                     <div>
@@ -1819,7 +2648,6 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                       </select>
                     </div>
                   )}
-
                   {/* Row 3: Priority & Reference */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Priority */}
@@ -1998,8 +2826,11 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                           onRemoveItem={handleRemoveItem}
                           onUnitPriceChange={handleUnitPriceChange}
                           onCurrencyChange={handleCurrencyChange}
-                          onFieldChange={handleItemFieldChange} // <-- pass this
+                          onFieldChange={handleItemFieldChange}
                           currencies={currencies}
+                          isPettyCash={formData.requestType === "pettyCash"}
+                          department={formData.department || user?.department}
+                          vendors={vendors}
                         />
                       )}
 
@@ -2067,8 +2898,10 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                       <ServiceTable
                         rows={serviceRows}
                         setRows={setServiceRows}
-                          currencies={currencies}
-
+                        currencies={currencies}
+                        department={formData.department}
+                        isPurchaseOrder={isPurchaseOrder}
+                        setIsPurchaseOrder={setIsPurchaseOrder}
                       />
                       <MaterialTable
                         rows={materialRows}
@@ -2076,110 +2909,263 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                       />
                     </>
                   )}
-
-                  {/* Request Images Upload (for purchaseOrder & pettyCash) */}
+                  {/* Upload Section - ALWAYS SHOW */}
                   {formData.destination && (
                     <div className="mb-4">
-                      <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                        Upload Image
-                      </label>
-
-                      <div
-                        className="w-full rounded-2xl p-4 flex items-center justify-between gap-4 border-2 border-dashed border-slate-200 bg-white/50"
-                        // Removed all drag/drop/click handlers here
-                        style={{ cursor: "default" }}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
-                            📷
+                      {(formData.requestType === "pettyCash" ||
+                        (requestType === "services" &&
+                          (formData.department?.toLowerCase() ===
+                            "operations" ||
+                            formData.department?.toLowerCase() ===
+                              "project"))) && (
+                        <div className="mb-4 flex flex-col gap-4">
+                          <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Upload Type
+                          </label>
+                          <div className="flex gap-8">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="uploadType"
+                                value="image"
+                                checked={uploadType === "image"}
+                                onChange={() => setUploadType("image")}
+                                className="w-4 h-4 text-emerald-500 border-2 border-slate-300"
+                              />
+                              <span className="text-sm font-medium text-slate-700">
+                                Image Upload
+                              </span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="uploadType"
+                                value="invoice"
+                                checked={uploadType === "invoice"}
+                                onChange={() => setUploadType("invoice")}
+                                className="w-4 h-4 text-emerald-500 border-2 border-slate-300"
+                              />
+                              <span className="text-sm font-medium text-slate-700">
+                                {requestType === "services" && isPurchaseOrder
+                                  ? "Quotation Upload"
+                                  : "Invoice Upload"}
+                              </span>
+                            </label>
                           </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              {requestImages.length > 0
-                                ? `${requestImages.length} image(s) selected`
-                                : "Click 'Add Images' to select request image(s)"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleImageBrowseClick}
-                            className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
-                          >
-                            Add Images
-                          </button>
-
-                          {requestImages.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setRequestImages([])}
-                              className="px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 text-sm"
-                            >
-                              Clear All
-                            </button>
-                          )}
-                        </div>
-
-                        <input
-                          ref={imageInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={handleImageInputChange}
-                          className="hidden"
-                        />
-                      </div>
-
-                      {requestImages.length > 0 && (
-                        <div className="mt-3 grid gap-2">
-                          {requestImages.map((f) => (
-                            <div
-                              key={f.id}
-                              className="flex items-center justify-between bg-white border border-slate-100 rounded-lg p-3"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden">
-                                  {f.previewUrl ? (
-                                    <img
-                                      src={f.previewUrl}
-                                      alt={f.file.name}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  ) : (
-                                    <div className="text-slate-600 text-sm px-2 text-center">
-                                      IMG
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900 truncate w-56">
-                                    {f.file.name}
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    {Math.round(f.file.size / 1024)} KB
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => removeRequestImage(f.id)}
-                                  className="px-3 py-1 bg-red-50 text-red-600 rounded-md text-sm"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          ))}
                         </div>
                       )}
+
+                      {/* UPDATED: Combined File Display - Always show all uploaded files */}
+                      {allUploadedFiles.length > 0 && (
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                              All Uploaded Files ({allUploadedFiles.length})
+                            </label>
+                            <button
+                              type="button"
+                              onClick={clearAllFiles}
+                              className="px-3 py-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 text-xs font-semibold"
+                            >
+                              Clear All Files
+                            </button>
+                          </div>
+
+                          <div className="grid gap-2 max-h-96 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
+                            {allUploadedFiles.map((f) => (
+                              <div
+                                key={f.id}
+                                className="bg-white border border-slate-200 rounded-lg p-3 hover:border-emerald-300 transition-colors"
+                              >
+                                <div className="flex items-center gap-3">
+                                  {/* File Icon/Preview */}
+                                  <div className="w-12 h-12 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                    {f.previewUrl ? (
+                                      <img
+                                        src={f.previewUrl}
+                                        alt={f.title || f.file.name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="text-slate-600 text-xs font-semibold">
+                                        {f.file.type === "application/pdf"
+                                          ? "PDF"
+                                          : f.file.type.includes("word")
+                                          ? "DOC"
+                                          : "FILE"}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* File Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-lg">
+                                        {getFileIcon(f.fileType, f.file)}
+                                      </span>
+                                      <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                                        {getFileTypeLabel(f.fileType)}
+                                      </span>
+                                    </div>
+
+                                    {f.fileType === "image" ? (
+                                      <>
+                                        <input
+                                          type="text"
+                                          value={f.title || ""}
+                                          onChange={(e) =>
+                                            handleImageTitleChange(
+                                              f.id,
+                                              e.target.value
+                                            )
+                                          }
+                                          placeholder="Enter image title (required)"
+                                          maxLength={100}
+                                          required
+                                          className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:border-emerald-400 mb-1"
+                                        />
+                                        <p className="text-xs text-slate-400">
+                                          {f.title?.length || 0}/100 •{" "}
+                                          {Math.round(f.file.size / 1024)} KB
+                                        </p>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <p className="text-sm font-semibold text-slate-900 truncate">
+                                          {f.file.name}
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                          {Math.round(f.file.size / 1024)} KB
+                                        </p>
+                                      </>
+                                    )}
+                                  </div>
+
+                                  {/* Remove Button - Always visible */}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAnyFile(f.id)}
+                                    className="px-3 py-2 bg-red-50 text-red-600 rounded-md text-sm hover:bg-red-100 transition flex-shrink-0"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Upload Buttons - Controlled by radio selection */}
+                      {(!(
+                        formData.requestType === "pettyCash" ||
+                        (requestType === "services" &&
+                          (formData.department?.toLowerCase() ===
+                            "operations" ||
+                            formData.department?.toLowerCase() === "project"))
+                      ) ||
+                        uploadType === "image") && (
+                        <>
+                          <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                            Upload Images
+                          </label>
+                          <div className="w-full rounded-2xl p-4 flex items-center justify-between gap-4 border-2 border-dashed border-slate-200 bg-white/50">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                                📷
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  Click 'Add Images' to select request image(s)
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleImageBrowseClick}
+                              className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
+                            >
+                              Add Images
+                            </button>
+
+                            <input
+                              ref={imageInputRef}
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={handleImageInputChange}
+                              className="hidden"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {(formData.requestType === "pettyCash" ||
+                        (requestType === "services" &&
+                          (formData.department?.toLowerCase() ===
+                            "operations" ||
+                            formData.department?.toLowerCase() ===
+                              "project"))) &&
+                        uploadType === "invoice" && (
+                          <>
+                            <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                              {requestType === "services" && isPurchaseOrder
+                                ? "Upload Quotation Files"
+                                : "Upload Invoice Files"}
+                            </label>
+                            <div className="w-full rounded-2xl p-4 flex items-center justify-between gap-4 border-2 border-dashed border-slate-200 bg-white/50">
+                              <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                                  📎
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {requestType === "services" &&
+                                    isPurchaseOrder
+                                      ? "Click 'Add Files' to select quotation file(s)"
+                                      : "Click 'Add Files' to select invoice file(s)"}
+                                  </p>
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Supported: PDF, DOC, DOCX, Images
+                                  </p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={
+                                  requestType === "services" && isPurchaseOrder
+                                    ? handleQuotationBrowseClick
+                                    : handleBrowseClick
+                                }
+                                className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
+                              >
+                                Add Files
+                              </button>
+
+                              <input
+                                ref={
+                                  requestType === "services" && isPurchaseOrder
+                                    ? quotationInputRef
+                                    : fileInputRef
+                                }
+                                type="file"
+                                accept=".pdf,.doc,.docx,image/*"
+                                multiple
+                                onChange={
+                                  requestType === "services" && isPurchaseOrder
+                                    ? handleQuotationInputChange
+                                    : handleInvoiceInputChange
+                                }
+                                className="hidden"
+                              />
+                            </div>
+                          </>
+                        )}
                     </div>
                   )}
-
+                  
                   {/* Submit Button */}
                   <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-slate-200">
                     <button
@@ -2225,8 +3211,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
                 onQuery={handleQuery}
                 vendors={vendors}
                 actionLoading={actionLoading}
-                  currencies={currencies}
-
+                currencies={currencies}
               />
             )}
             {(activeView === "completed" || activeView === "rejected") && (

@@ -377,6 +377,24 @@ const RequisitionPreview = forwardRef(
         allowedRoles.includes(String(s.role).trim())
       );
     }
+    if (
+      (String(req.department || "").toLowerCase() === "operations" ||
+        String(req.department || "").toLowerCase() === "freight") &&
+      (String(req.destination || "").toLowerCase() === "operations" ||
+        String(req.destination || "").toLowerCase() === "freight")
+    ) {
+      const allowedRoles = [
+        "procurement officer",
+        "director of operations",
+        "managing director",
+        "Procurement Officer",
+        "Director of Operations",
+        "Managing Director",
+      ];
+      filteredSignatures = signaturesPrepared.filter((s) =>
+        allowedRoles.includes(String(s.role).trim())
+      );
+    }
     // Calculate grand totals per currency
     const grandTotalsByCurrency = {};
     usedItems.forEach((it) => {

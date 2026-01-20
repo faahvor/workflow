@@ -73,7 +73,7 @@ const RequestDetailView = ({
   actionLoading,
   isReadOnly = false,
   vendors: vendorsProp = [],
-  currencies = [], 
+  currencies = [],
 }) => {
   const { user } = useAuth();
   const { showAlert } = useGlobalAlert();
@@ -156,6 +156,9 @@ const RequestDetailView = ({
   const [isSavingPaymentType, setIsSavingPaymentType] = useState(false);
   const [freightRoute, setFreightRoute] = useState(null);
   const [isSavingFreightRoute, setIsSavingFreightRoute] = useState(false);
+  const [forcePettyCash, setForcePettyCash] = useState(false);
+  const [savingForcePettyCash, setSavingForcePettyCash] = useState(false);
+
   const [editingAdditionalInfo, setEditingAdditionalInfo] = useState(false);
   const currentRequest = selectedRequest || request;
   const isQueried = (selectedRequest?.isQueried ?? request?.isQueried) === true;
@@ -314,6 +317,66 @@ const RequestDetailView = ({
     }
   };
 
+  const handleForcePettyCashChange = async (newValue) => {
+    // Only allow enabling (not disabling)
+    if (!newValue) {
+      showAlert("Cannot disable petty cash conversion once enabled");
+      return;
+    }
+
+    // Show strong warning when enabling
+    const confirmed = await showPrompt(
+      "⚠️ WARNING: This action is IRREVERSIBLE!\n\n" +
+        "Converting this request to Petty Cash will:\n" +
+        "• Change the request type to Petty Cash\n" +
+        "This CANNOT be undone. Are you sure?"
+    );
+
+    if (!confirmed) return;
+
+    // Update UI immediately
+    setForcePettyCash(newValue);
+
+    try {
+      setSavingForcePettyCash(true);
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+
+      // Use POST endpoint to convert
+      await axios.post(
+        `${API_BASE_URL}/requests/${encodeURIComponent(
+          request.requestId
+        )}/force-petty-cash`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // ✅ ENHANCED: Full refresh to update everything
+      const updated = await fetchRequestDetails();
+
+      // Force re-render of all components by updating multiple states
+      setSelectedRequest(updated);
+      setFilesRefreshCounter((c) => c + 1);
+
+      // Update forcePettyCash from server response to ensure sync
+      setForcePettyCash(!!updated?.forcePettyCash || true);
+
+      showAlert(
+        "✅ Request successfully converted to Petty Cash. Workflow updated."
+      );
+    } catch (err) {
+      console.error("Error converting to petty cash:", err);
+      console.error("Error details:", err?.response?.data);
+      showAlert(
+        err?.response?.data?.message || "Failed to convert to petty cash"
+      );
+      // Revert on error
+      setForcePettyCash(false);
+    } finally {
+      setSavingForcePettyCash(false);
+    }
+  };
+
   useEffect(() => {
     if (!approveDropdownOpen) return;
     const onDocumentMouseDown = (e) => {
@@ -349,6 +412,63 @@ const RequestDetailView = ({
       setFreightRoute(null);
     }
   }, [selectedRequest, request]);
+
+  useEffect(() => {
+    // Sync forcePettyCash from request data
+    const value =
+      (selectedRequest && selectedRequest.forcePettyCash) ||
+      (request && request.forcePettyCash) ||
+      false;
+    setForcePettyCash(!!value);
+  }, [selectedRequest, request]);
+
+  // ...existing code...
+  const shouldShowForcePettyCashToggle = () => {
+    // Only show for Procurement Officer and IT Manager
+    const allowedRoles = [
+      "procurement officer",
+      "procurement",
+      "it manager",
+      "itmanager",
+    ];
+    const userRoleLower = (user?.role || "")
+      .toString()
+      .toLowerCase()
+      .replace(/\s+/g, "");
+
+    if (
+      !allowedRoles.some((role) =>
+        userRoleLower.includes(role.replace(/\s+/g, ""))
+      )
+    ) {
+      return false;
+    }
+
+    // Hide when readonly
+    if (isReadOnly || isReadOnlyMode) {
+      return false;
+    }
+
+    // NEW: Only show when in PENDING_PROCUREMENT_OFFICER_APPROVAL state
+    const currentState = (
+      selectedRequest?.flow?.currentState ||
+      request?.flow?.currentState ||
+      request?.status ||
+      ""
+    ).toString();
+
+    if (currentState !== "PENDING_PROCUREMENT_OFFICER_APPROVAL") {
+      return false;
+    }
+
+    // Hide when there are no items
+    const items = currentRequest?.items || request?.items || [];
+    if (!Array.isArray(items) || items.length === 0) {
+      return false;
+    }
+
+    return true;
+  };
 
   const COMMENTS_PER_PAGE = 3;
   const [commentsPage, setCommentsPage] = useState(1);
@@ -587,6 +707,8 @@ const RequestDetailView = ({
   const allowedQueryRoles = [
     "vessel manager",
     "managing director",
+    "operations manager",
+    "equipment manager",
     "cfo",
     "accounting lead",
     "procurement manager",
@@ -668,7 +790,9 @@ const RequestDetailView = ({
   const showAccountingAttach =
     !isReadOnly &&
     (userRole === "accountingofficer" || userRole === "accounting officer") &&
-    currentAccountState === "PENDING_ACCOUNTING_OFFICER_APPROVAL";
+    (currentAccountState === "PENDING_PARALLEL_ACCOUNTING_DELIVERY_APPROVAL" ||
+     currentAccountState === "PENDING_ACCOUNTING_OFFICER_APPROVAL");
+
 
   const openRejectModal = () => {
     setRejectComment("");
@@ -1980,29 +2104,33 @@ const RequestDetailView = ({
           it.movedFromRequestId || it.__raw?.movedFromRequestId || "",
         foundInInventory: it.foundInInventory ?? false,
         inventoryStockLevel: it.inventoryStockLevel ?? 0,
+        isAttached: it.isAttached ?? false,
         __raw: it,
       };
     });
 
     const tableReadOnly = isReadOnly || actionLoading;
 
-    if (
-      currentRequest?.isService === true &&
-      (currentRequest?.requestType || "").toLowerCase() === "pettycash"
-    ) {
-      return (
-        <ServiceTable
-          items={items}
-          userRole={userRole}
-          onEditItem={handleEditItem}
-          isReadOnly={tableReadOnly}
-          requestType={currentRequest?.requestType}
-          currentState={
-            currentRequest?.flow?.currentState || currentRequest?.status || ""
-          }
+    if (currentRequest?.isService === true) {
+      const reqType = (currentRequest?.requestType || "").toLowerCase();
+      const isPurchaseOrder = reqType === "purchaseorder";
+      const isPettyCash = reqType === "pettycash";
+
+      if (isPurchaseOrder || isPettyCash) {
+        return (
+          <ServiceTable
+            items={items}
+            userRole={userRole}
+            onEditItem={handleEditItem}
+            isReadOnly={tableReadOnly}
+            requestType={currentRequest?.requestType}
+            currentState={
+              currentRequest?.flow?.currentState || currentRequest?.status || ""
+            }
             currencies={currencies}
-        />
-      );
+          />
+        );
+      }
     }
 
     // When viewing approved/completed set tables to read-only (also consider actionLoading)
@@ -2321,12 +2449,16 @@ const RequestDetailView = ({
 
       case "operationsmanager":
       case "operations manager":
+      case "equipment manager":
+      case "Equipment manager":
         return (
           <OperationsManagerTable
             items={items}
             onEditItem={handleEditItem}
             isReadOnly={tableReadOnly}
             tag={currentRequest?.tag}
+            onDeleteItem={openDeleteModal}
+            requestId={request.requestId}
           />
         );
       case "directorofoperations":
@@ -3329,36 +3461,16 @@ const RequestDetailView = ({
         {/* Workflow Progress - Now a separate component */}
         {workflowPath && (
           <div className="mb-8 mt-[3rem]">
-            <RequestWorkflow workflowPath={workflowPath} />
-            {/* Button and international flow inside the same workflow card */}
-            {request?.internationalFlow?.requestId && (
-              <>
-                <div className="flex justify-center mt-4">
-                  <button
-                    onClick={handleToggleInternationalFlow}
-                    className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg shadow hover:bg-blue-600 transition"
-                    disabled={loadingInternationalFlow}
-                  >
-                    {showInternationalFlow
-                      ? "Hide International Flow"
-                      : "View International Flow"}
-                  </button>
-                </div>
-                {showInternationalFlow && (
-                  <div className="w-full mt-6">
-                    {loadingInternationalFlow ? (
-                      <div className="text-center text-blue-600 py-6">
-                        Loading international workflow...
-                      </div>
-                    ) : (
-                      <RequestWorkflow
-                        workflowPath={internationalWorkflowPath}
-                      />
-                    )}
-                  </div>
-                )}
-              </>
-            )}
+            <RequestWorkflow
+              workflowPath={workflowPath}
+              internationalWorkflowPath={internationalWorkflowPath}
+              showInternationalToggle={
+                request?.internationalFlow?.requestId &&
+                userRole === "requester"
+              }
+              onToggleInternational={handleToggleInternationalFlow}
+              loadingInternational={loadingInternationalFlow}
+            />
           </div>
         )}
 
@@ -4613,6 +4725,82 @@ const RequestDetailView = ({
           )}
 
         {/* ===== End Quotation/Invoice Upload ===== */}
+
+        {/* ADD THIS NEW SECTION - Force Petty Cash Toggle */}
+        {shouldShowForcePettyCashToggle() && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <MdAttachMoney className="text-xl" />
+              Convert to Petty Cash Request
+            </h3>
+            <div className="bg-white/90 backdrop-blur-xl border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-slate-700 mb-1">
+                    Convert All Items to Petty Cash
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    ⚠️ This action is IRREVERSIBLE - once enabled, it cannot be
+                    undone
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {savingForcePettyCash && (
+                    <span className="text-xs text-slate-500">
+                      Converting...
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleForcePettyCashChange(true)}
+                    disabled={savingForcePettyCash || forcePettyCash}
+                    className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+                      forcePettyCash
+                        ? "bg-emerald-500 cursor-not-allowed"
+                        : savingForcePettyCash
+                        ? "bg-slate-300 cursor-not-allowed"
+                        : "bg-slate-300 cursor-pointer hover:bg-slate-400"
+                    }`}
+                    title={
+                      forcePettyCash
+                        ? "Already converted to Petty Cash"
+                        : "Click to convert to Petty Cash"
+                    }
+                  >
+                    <span
+                      className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform duration-200 ${
+                        forcePettyCash ? "translate-x-7" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+              {forcePettyCash && (
+                <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <p className="text-xs text-emerald-700 flex items-center gap-2">
+                    <span className="text-base">✓</span>
+                    <span>
+                      This request has been converted to Petty Cash. All items
+                      are now Petty Cash type.
+                    </span>
+                  </p>
+                </div>
+              )}
+              {!forcePettyCash && (
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs text-amber-700 flex items-center gap-2">
+                    <span className="text-base">⚠️</span>
+                    <span>
+                      Warning: Once converted, this action cannot be reversed.
+                      The request will permanently become a Petty Cash request.
+                    </span>
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Items List - Role-based table */}
 
         {/* Items List - Role-based table */}
         {currentRequest?.items &&

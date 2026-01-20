@@ -26,7 +26,8 @@ const AdminSettings = ({
   const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = React.useRef(null);
   const [dragLogo, setDragLogo] = useState(false);
-   const [sla, setSla] = useState("");
+  const [sla, setSla] = useState("");
+  const [originalSla, setOriginalSla] = useState(""); // Track original fetched value
   const [slaLoading, setSlaLoading] = useState(false);
   const [slaSaving, setSlaSaving] = useState(false);
   const [slaError, setSlaError] = useState("");
@@ -102,7 +103,7 @@ const AdminSettings = ({
     if (logoInputRef.current) logoInputRef.current.click();
   };
 
-    useEffect(() => {
+  useEffect(() => {
     // fetch current SLA on mount
     const fetchSla = async () => {
       setSlaLoading(true);
@@ -113,11 +114,14 @@ const AdminSettings = ({
         const resp = await axios.get(`${API_BASE}/settings/sla`, { headers });
         if (resp.data && typeof resp.data.approvalSlaHours === "number") {
           setSla(resp.data.approvalSlaHours);
+          setOriginalSla(resp.data.approvalSlaHours); // Store original value
         } else {
           setSla(0);
+          setOriginalSla(0);
         }
       } catch (err) {
         setSla(0);
+        setOriginalSla(0);
         setSlaError("Could not load SLA value.");
       } finally {
         setSlaLoading(false);
@@ -127,7 +131,7 @@ const AdminSettings = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-   const handleSlaSave = async () => {
+  const handleSlaSave = async () => {
     setSlaError("");
     setSlaSuccess("");
     const val = Number(sla);
@@ -147,6 +151,7 @@ const AdminSettings = ({
       );
       if (resp.data && typeof resp.data.approvalSlaHours === "number") {
         setSla(resp.data.approvalSlaHours);
+        setOriginalSla(resp.data.approvalSlaHours); // Update original value after save
         setSlaSuccess("Approval SLA updated successfully");
         setTimeout(() => setSlaSuccess(""), 3000);
       } else {
@@ -245,6 +250,9 @@ const AdminSettings = ({
       setSaving(false);
     }
   };
+
+  // Check if SLA value has changed
+  const slaHasChanges = Number(sla) !== Number(originalSla);
 
   return (
     <div className="space-y-6">
@@ -378,8 +386,7 @@ const AdminSettings = ({
         </div>
       </div>
 
-
-        {/* Approval SLA Monitoring */}
+      {/* Approval SLA Monitoring */}
       <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
         <div className="flex items-center gap-2 mb-3">
           <h3 className="text-lg font-semibold">Request Monitoring Time</h3>
@@ -408,7 +415,7 @@ const AdminSettings = ({
           <div className="text-sm text-slate-500">Loading SLA…</div>
         ) : (
           <>
-          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4">
               <input
                 type="number"
                 min={0}
@@ -420,14 +427,14 @@ const AdminSettings = ({
               />
               <button
                 onClick={handleSlaSave}
-                disabled={slaSaving}
+                disabled={slaSaving || !slaHasChanges}
                 className={`px-4 py-2 rounded-xl ${
-                  slaSaving
+                  slaSaving || !slaHasChanges
                     ? "bg-slate-400 text-white cursor-not-allowed"
                     : "bg-[#036173] text-white"
                 }`}
               >
-                {slaSaving ? "Saving…" : "Save SLA"}
+                {slaSaving ? "Saving…" : "Save Changes"}
               </button>
               <span className={`ml-2 text-xs font-semibold ${sla === 0 || sla === "0" ? "text-rose-600" : "text-emerald-700"}`}>
                 {sla === 0 || sla === "0" ? "Monitoring is OFF" : `Monitoring: ${sla} hour${sla === 1 || sla === "1" ? "" : "s"}`}
@@ -441,7 +448,7 @@ const AdminSettings = ({
             )}
           </>
         )}
-        </div>
+      </div>
 
       <div className="bg-white/90 border-2 border-slate-200 rounded-2xl p-6 shadow-lg">
         <h3 className="text-lg font-semibold mb-3">Other Admin Settings</h3>

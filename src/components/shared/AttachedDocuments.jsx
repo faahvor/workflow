@@ -194,14 +194,16 @@ const AttachedDocuments = ({
               : "Request Form",
             vendorId: g.vendorId,
             vendorName: g.vendorName,
-            items: requestData?.doVendorSplit
-              ? g.items
-              : requestData &&
-                Array.isArray(requestData.originalItemsSnapshot) &&
-                requestData.originalItemsSnapshot.length > 0 &&
-                isAtOrPastProcurementManager(requestData)
-              ? requestData.originalItemsSnapshot
-              : g.items,
+                items: requestData?.doVendorSplit
+            ? g.items
+            : requestData?.containsDuplicateItems === true
+            ? requestData?.items || g.items
+            : requestData &&
+              Array.isArray(requestData.originalItemsSnapshot) &&
+              requestData.originalItemsSnapshot.length > 0 &&
+              isAtOrPastProcurementManager(requestData)
+            ? requestData.originalItemsSnapshot
+            : g.items,
           });
         });
       }
@@ -212,15 +214,17 @@ const AttachedDocuments = ({
         displayName: " Request Form",
         vendorId: null,
         vendorName: "Multiple Vendors",
-        items:
-          requestData &&
-          Array.isArray(requestData.originalItemsSnapshot) &&
-          requestData.originalItemsSnapshot.length > 0 &&
-          isAtOrPastProcurementManager(requestData)
-            ? requestData.originalItemsSnapshot
-            : requestData?.items || requestItems || [],
-      });
-    }
+      items:
+        requestData?.containsDuplicateItems === true
+          ? requestData?.items || requestItems || []
+          : requestData &&
+            Array.isArray(requestData.originalItemsSnapshot) &&
+            requestData.originalItemsSnapshot.length > 0 &&
+            isAtOrPastProcurementManager(requestData)
+          ? requestData.originalItemsSnapshot
+          : requestData?.items || requestItems || [],
+    });
+  }
 
     // Requisition(s)
     if (
@@ -236,15 +240,17 @@ const AttachedDocuments = ({
               displayName: `${g.vendorName} Requisition Preview`,
               vendorId: g.vendorId,
               vendorName: g.vendorName,
-              items: requestData?.doVendorSplit
-                ? g.items // Always use items for vendor split
-                : requestData &&
-                  Array.isArray(requestData.originalItemsSnapshot) &&
-                  requestData.originalItemsSnapshot.length > 0 &&
-                  isAtOrPastProcurementManager(requestData)
-                ? requestData.originalItemsSnapshot
-                : g.items,
-            });
+               items: requestData?.doVendorSplit
+              ? g.items
+              : requestData?.containsDuplicateItems === true
+              ? requestData?.items || g.items
+              : requestData &&
+                Array.isArray(requestData.originalItemsSnapshot) &&
+                requestData.originalItemsSnapshot.length > 0 &&
+                isAtOrPastProcurementManager(requestData)
+              ? requestData.originalItemsSnapshot
+              : g.items,
+          });
           });
         }
       } else if (vendorGroups && vendorGroups.length > 0) {
@@ -254,14 +260,16 @@ const AttachedDocuments = ({
           displayName: " Requisition File",
           vendorId: null,
           vendorName: "Multiple Vendors",
-          items:
-            requestData &&
-            Array.isArray(requestData.originalItemsSnapshot) &&
-            requestData.originalItemsSnapshot.length > 0 &&
-            isAtOrPastProcurementManager(requestData)
-              ? requestData.originalItemsSnapshot
-              : vendorGroups.flatMap((g) => g.items),
-        });
+      items:
+          requestData?.containsDuplicateItems === true
+            ? requestData?.items || vendorGroups.flatMap((g) => g.items)
+            : requestData &&
+              Array.isArray(requestData.originalItemsSnapshot) &&
+              requestData.originalItemsSnapshot.length > 0 &&
+              isAtOrPastProcurementManager(requestData)
+            ? requestData.originalItemsSnapshot
+            : vendorGroups.flatMap((g) => g.items),
+      });
       }
     }
 
@@ -1048,10 +1056,8 @@ const AttachedDocuments = ({
       } else if (m.type === "requestImage") {
         // ✅ ADD: Display name for request images
         // Count how many requestImages we've seen so far
-        const imageIndex = fileMeta
-          .slice(0, fileMeta.indexOf(m) + 1)
-          .filter((x) => x.type === "requestImage").length;
-        display = `Request Image ${imageIndex}`;
+         display = m.title || m.name || `Request Image ${imageIndex}`;
+
       } else if (["requisition", "purchaseOrder", "request"].includes(m.type)) {
         const vendor = m.vendor || "Vendor";
         const typeLabel =

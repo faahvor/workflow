@@ -21,6 +21,92 @@ const ShippingTable = ({
   const [shippingFees, setShippingFees] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [needsScroll, setNeedsScroll] = useState(false);
+  const [detachingItemId, setDetachingItemId] = useState(null);
+const hasAnyAttachedItems = () => {
+  // Check if the request itself is attached to inbound
+  const isRequestAttached = selectedRequest?.isAttachedToInbound === true;
+  
+  console.log("🔍 Action column check:", {
+    isAttachedToInbound: selectedRequest?.isAttachedToInbound,
+    shouldShowColumn: isRequestAttached
+  });
+  
+  return isRequestAttached;
+};
+
+const handleDetachItem = async (itemId) => {
+  const confirmed = await showPrompt("Confirm you want to Detach?");
+  if (!confirmed) return;
+
+  setDetachingItemId(itemId);
+  
+  try {
+    const token = getToken();
+    if (!token) throw new Error("Not authenticated");
+
+    // Find the item to get its source request ID
+    const item = editedRequests.find((it) => (it.itemId || it._id) === itemId);
+    if (!item) {
+      showAlert("Item not found");
+      return;
+    }
+
+    const sourceRequestId = item.movedFromRequestId || item.originRequestId;
+    if (!sourceRequestId) {
+      showAlert("Cannot detach: Original request ID not found");
+      return;
+    }
+
+    const targetRequestId = selectedRequest?.requestId;
+    if (!targetRequestId) {
+      showAlert("Cannot detach: Target request ID not found");
+      return;
+    }
+
+    // Call the detach API endpoint
+    const resp = await axios.post(
+      `${API_BASE_URL}/requests/${encodeURIComponent(targetRequestId)}/detach`,
+      {
+        sourceRequestId: sourceRequestId,
+        itemIds: [itemId],
+        purpose: "User detached item from shipping request"
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    console.log("✅ Detach successful:", resp.data);
+
+    // Show success message from server
+    showAlert(
+      resp.data?.message || 
+      `Item detached successfully. ${resp.data?.detachedItemCount || 1} item(s) moved back to ${sourceRequestId}`
+    );
+
+    // Remove item from local state (optimistic update)
+    setEditedRequests((prev) => prev.filter((it) => (it.itemId || it._id) !== itemId));
+    
+    // Notify parent to refresh
+    if (typeof onFilesChanged === "function") {
+      onFilesChanged();
+    }
+    
+  } catch (err) {
+    console.error("❌ Detach error:", err);
+    
+    // Show detailed error message
+    const errorMsg = 
+      err?.response?.data?.message || 
+      err?.response?.data?.error ||
+      "Failed to detach item. Please try again.";
+    
+    showAlert(errorMsg);
+    
+    // Keep item in table on error (don't remove from state)
+  } finally {
+    setDetachingItemId(null);
+  }
+};
+
   const tableRef = useRef(null);
   const [currencies, setCurrencies] = useState([
     { value: "NGN", label: "NGN" },
@@ -79,6 +165,7 @@ const ShippingTable = ({
         purchaseReqNumber: it.purchaseReqNumber || it.prn || "",
         shippingQuantity: it.shippingQuantity ?? it.shippingQty ?? 0,
         shippingFee: it.shippingFee ?? 0,
+            isAttached: it.isAttached ?? false,
         _dirty: false,
       }))
     );
@@ -408,6 +495,9 @@ const ShippingTable = ({
                   <th className="p-3 border border-slate-200 text-center">
                     PRN
                   </th>
+                  {hasAnyAttachedItems() && (
+      <th className="p-3 border border-slate-200 text-center">Action</th>
+    )}
                 </tr>
               </thead>
               <tbody>
@@ -570,6 +660,30 @@ const ShippingTable = ({
                           </span>
                         </td>
                       ) : null}
+{hasAnyAttachedItems() && (
+  <td className="border p-3 border-slate-200 text-center">
+    {(() => {
+      // Debug log for each item
+      console.log(`📌 Item ${itemId} attach status:`, {
+        itemId,
+        isAttached: it.isAttached,
+        name: it.name
+      });
+      
+      return it.isAttached === true ? (
+        <button
+          onClick={() => handleDetachItem(itemId)}
+          disabled={detachingItemId === itemId}
+          className="px-3 py-1 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {detachingItemId === itemId ? "Detaching..." : "Detach"}
+        </button>
+      ) : (
+        <span className="text-slate-400">-</span>
+      );
+    })()}
+  </td>
+)}
                     </tr>
                   );
                 })}

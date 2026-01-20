@@ -115,6 +115,11 @@ const Sidebar = ({
     roleLower === "procurement manager" || roleLower === "procurement officer";
   const isProcurementManager =
     String(user?.role || "") === "Procurement Manager";
+
+const isStoreRole =
+  ["store base", "store jetty", "store vessel"].includes(roleLower);
+
+
   const isAccountingLead = [
     "accountingofficer",
     "accounting officer",
@@ -632,7 +637,7 @@ const Sidebar = ({
               </button>
             )}
 
-            {isProcurementManager && (
+{(isProcurementManager || isStoreRole) && (
               <button
                 onClick={() => {
                   setActiveView("inventoryManagement");

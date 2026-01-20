@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { useGlobalAlert } from "../GlobalAlert";
+import { useGlobalPrompt } from "../GlobalPrompt"; 
+import { useAuth } from "../../context/AuthContext";
+import axios from "axios";
 
 const AccountTable = ({
   items = [],
@@ -16,10 +19,13 @@ const AccountTable = ({
   request = null,
 }) => {
   const { showAlert } = useGlobalAlert();
+    const { showPrompt } = useGlobalPrompt();
+    const { getToken } = useAuth();
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [detachingItemId, setDetachingItemId] = useState(null); // ✅ ADD THIS LINE
   const isSecondApproval =
     currentState === "PENDING_ACCOUNTING_OFFICER_APPROVAL_2";
   const isPettyCash = requestType === "pettyCash";
@@ -28,6 +34,98 @@ const AccountTable = ({
   const feeFieldName = tagLower === "shipping" ? "shippingFee" : "clearingFee";
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
   const showShippingFee = request?.logisticsType === "international";
+  // ✅ ADD THIS HELPER FUNCTION
+const hasAnyAttachedItems = () => {
+  // Check if the request itself is attached to inbound
+  const isRequestAttached = request?.isAttachedToInbound === true;
+  
+  console.log("🔍 AccountTable Action column check:", {
+    isAttachedToInbound: request?.isAttachedToInbound,
+    shouldShowColumn: isRequestAttached
+  });
+  
+  return isRequestAttached;
+};
+
+
+
+// ✅ ADD THIS DETACH HANDLER FUNCTION
+const handleDetachItem = async (itemId) => {
+  const confirmed = await showPrompt("Confirm you want to Detach?");
+  if (!confirmed) return;
+
+  setDetachingItemId(itemId);
+  
+  try {
+    const token = getToken();
+    if (!token) throw new Error("Not authenticated");
+
+    // Find the item to get its source request ID
+    const item = editedItems.find((it) => (it.itemId || it._id) === itemId);
+    if (!item) {
+      showAlert("Item not found");
+      return;
+    }
+
+    const sourceRequestId = item.movedFromRequestId || item.originRequestId;
+    if (!sourceRequestId) {
+      showAlert("Cannot detach: Original request ID not found");
+      return;
+    }
+
+    const targetRequestId = request?.requestId;
+    if (!targetRequestId) {
+      showAlert("Cannot detach: Target request ID not found");
+      return;
+    }
+
+    // Call the detach API endpoint
+    const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+    const resp = await axios.post(
+      `${API_BASE_URL}/requests/${encodeURIComponent(targetRequestId)}/detach`,
+      {
+        sourceRequestId: sourceRequestId,
+        itemIds: [itemId],
+        purpose: "User detached item from merged request"
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    console.log("✅ Detach successful:", resp.data);
+
+    // Show success message from server
+    showAlert(
+      resp.data?.message || 
+      `Item detached successfully. ${resp.data?.detachedItemCount || 1} item(s) moved back to ${sourceRequestId}`
+    );
+
+    // Remove item from local state (optimistic update)
+    setEditedItems((prev) => prev.filter((it) => (it.itemId || it._id) !== itemId));
+    
+    // Notify parent to refresh
+    if (typeof onRefreshRequest === "function") {
+      onRefreshRequest();
+    }
+    
+  } catch (err) {
+    console.error("❌ Detach error:", err);
+    
+    // Show detailed error message
+    const errorMsg = 
+      err?.response?.data?.message || 
+      err?.response?.data?.error ||
+      "Failed to detach item. Please try again.";
+    
+    showAlert(errorMsg);
+    
+    // Keep item in table on error (don't remove from state)
+  } finally {
+    setDetachingItemId(null);
+  }
+};
+
+
+
   React.useEffect(() => {
     setEditedItems(
       items.map((item) => {
@@ -557,6 +655,11 @@ const handlePercentagePaidChange = (index, value) => {
                   </th>
                 </>
               )}
+              {hasAnyAttachedItems() && (
+      <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+        Action
+      </th>
+    )}
             </tr>
           </thead>
           <tbody>
@@ -972,6 +1075,22 @@ const handlePercentagePaidChange = (index, value) => {
                       )}
                     </>
                   )}
+
+                  {hasAnyAttachedItems() && (
+  <td className="border border-slate-200 px-4 py-3 text-center">
+    {item.isAttached === true ? (
+      <button
+        onClick={() => handleDetachItem(item.itemId || item._id)}
+        disabled={detachingItemId === (item.itemId || item._id)}
+        className="px-3 py-1 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {detachingItemId === (item.itemId || item._id) ? "Detaching..." : "Detach"}
+      </button>
+    ) : (
+      <span className="text-slate-400">-</span>
+    )}
+  </td>
+)}
                 </tr>
               ))
             )}

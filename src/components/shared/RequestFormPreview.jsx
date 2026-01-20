@@ -222,8 +222,14 @@ const RequestFormPreview = forwardRef(
 
     const req = liveRequest || {};
     const usedItems =
-      Array.isArray(liveItems) && liveItems.length > 0
+  Array.isArray(liveItems) && liveItems.length > 0
         ? liveItems
+        : req.containsDuplicateItems === true
+        ? req.items || items || []
+        : Array.isArray(req.originalItemsSnapshot) &&
+          req.originalItemsSnapshot.length > 0 &&
+          isAtOrPastProcurementManager(req)
+        ? req.originalItemsSnapshot
         : items || [];
     const reqIdStr = req.requestId || req.id || requestId || "N/A";
     const createdAt = req.createdAt ? new Date(req.createdAt) : new Date();
@@ -283,7 +289,10 @@ const RequestFormPreview = forwardRef(
     const isInStock = req.requestType === "inStock";
 
     let filteredSignatures = signaturesPrepared;
-
+    
+if (req.containsDuplicateItems === true) {
+  filteredSignatures = signaturesPrepared;
+} else {
     // If marine department/destination, filter to allowed roles
     if (
       (String(req.department || "").toLowerCase() === "marine" ||
@@ -366,6 +375,24 @@ const RequestFormPreview = forwardRef(
         allowedRoles.includes(String(s.role).trim())
       );
     }
+    if (
+      (String(req.department || "").toLowerCase() === "operations" ||
+        String(req.department || "").toLowerCase() === "freight") &&
+      (String(req.destination || "").toLowerCase() === "operations" ||
+        String(req.destination || "").toLowerCase() === "freight")
+    ) {
+      const allowedRoles = [
+        "requester",
+        "operations manager",
+        "equipment manager",
+        "Requester",
+        "Operations Manager",
+        "Equipment Manager",
+      ];
+      filteredSignatures = signaturesPrepared.filter((s) =>
+        allowedRoles.includes(String(s.role).trim())
+      );
+    }
 
     // If inStock, always include procurement manager, store base, store jetty, store vessel signatures
     if (isInStock) {
@@ -406,6 +433,7 @@ const RequestFormPreview = forwardRef(
         }
       });
     }
+  }
 
     const isServicePettyCash = (req) =>
       req?.isService === true &&

@@ -13,14 +13,14 @@ import {
   MdDashboard,
 } from "react-icons/md";
 import Overview from "./Overview";
-import VendorManagement from "./VendorManagement";
-import InventoryManagement from "./InventoryManagement";
+import VendorManagement from "../VendorManagement";
 import RequestManagement from "./RequestManagment";
 import AdminSettings from "./AdminSettings";
 import AdminLogs from "./AdminLogs";
 import CompanyManagement from "./CompanyManagement"; // new companies page
 import ChatRoom from "../ChatRoom";
 import { useAuth } from "../../../context/AuthContext";
+import InventoryManagement from "../InventoryManagement";
 
 
 

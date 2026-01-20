@@ -9,19 +9,11 @@ import { useAuth } from "./components/context/AuthContext";
 import UserLogin from "./components/pages/auth/UserLogin";
 import ManagerDashboard from "./components/pages/dashboards/ManagerDashboard";
 import RequesterDashboard from "./components/pages/dashboards/RequesterDashboard";
-import NewDashboard from "./components/pages/NewDashboard";
-import NewDashboard2 from "./components/pages/NewDashboard2";
-import RequestDetailDemo from "./components/pages/RequestDetailDemo";
+
 import { isRequester } from "./components/utils/roles";
-import SignaturePage from "./components/pages/signature";
-import VendorPage from "./components/pages/vendor";
-import Inventory from "./components/pages/Inventory";
-import RequestDetailModal from "./components/pages/RequestDetailModal";
+
 import AdminLogin from "./components/pages/auth/Admin"; // admin login
 import AdminDashboard from "./components/pages/dashboards/Admin/AdminDashboard";
-import Notification from "./components/pages/dashboards/Notification";
-import ChatRoom from "./components/pages/dashboards/ChatRoom";
-import Support from "./components/pages/dashboards/Support";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -101,14 +93,6 @@ function App() {
 
         {/* Public Routes */}
         <Route path="/login" element={<UserLogin />} />
-        <Route path="/ndb" element={<NewDashboard />} />
-        <Route path="/ndb2" element={<NewDashboard2 />} />
-        <Route path="/request-demo" element={<RequestDetailDemo />} />
-        <Route path="/support" element={<Support />} />
-        <Route path="/notification" element={<Notification />} />
-        <Route path="/request" element={<RequestDetailModal />} />
-        <Route path="/vendor" element={<VendorPage />} />
-        <Route path="/inventory" element={<Inventory />} />
 
         {/* Protected Dashboard Route - Automatically routes to correct dashboard */}
         <Route

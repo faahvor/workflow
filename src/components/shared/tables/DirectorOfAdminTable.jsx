@@ -19,7 +19,8 @@ const DirectorOfAdminTable = ({
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
-  const isSecondApproval = currentState === "PENDING_DIRECTOR_OF_ADMIN_APPROVAL_2";
+  const isSecondApproval =
+    currentState === "PENDING_DIRECTOR_OF_ADMIN_APPROVAL_2";
   const isPettyCash = requestType === "pettyCash";
   const tagLower = String(tag || "").toLowerCase();
   const showFeeColumns = tagLower === "shipping" || tagLower === "clearing";
@@ -147,7 +148,9 @@ const DirectorOfAdminTable = ({
 
   React.useEffect(() => {
     const checkScroll = () => {
-      const container = document.getElementById("director-admin-table-container");
+      const container = document.getElementById(
+        "director-admin-table-container"
+      );
       if (container) {
         setNeedsScroll(container.scrollWidth > container.clientWidth);
       }
@@ -175,6 +178,26 @@ const DirectorOfAdminTable = ({
         ))
     );
   }
+  const allSameVendor =
+    editedItems.length > 0 &&
+    editedItems.every(
+      (it) =>
+        (it.vendorId ?? it.vendor) ===
+        (editedItems[0].vendorId ?? editedItems[0].vendor)
+    );
+  const singleVendorName = resolveVendorName(
+    editedItems[0]?.vendor || editedItems[0]?.vendorName
+  );
+  const groupByVendor = (list) => {
+    const groups = {};
+    list.forEach((it, index) => {
+      const key = it.vendorId ?? it.vendor ?? "No Vendor";
+      if (!groups[key]) groups[key] = { items: [], order: index };
+      groups[key].items.push({ ...it, _groupIndex: index });
+    });
+    return Object.values(groups).sort((a, b) => a.order - b.order);
+  };
+  const groups = groupByVendor(editedItems);
 
   return (
     <div className="relative">
@@ -317,7 +340,7 @@ const DirectorOfAdminTable = ({
                     </span>
                   </td>
                 )}
-                {showFeeColumns && !isSecondApproval && (
+                {showFeeColumns && !isSecondApproval && !allSameVendor && (
                   <td className="border border-slate-200 px-4 py-[5px] text-right text-sm text-slate-700">
                     {item.currency || "NGN"}{" "}
                     {Number(getFeeValue(item) || 0).toLocaleString(undefined, {
@@ -376,14 +399,19 @@ const DirectorOfAdminTable = ({
                     )}
                   </>
                 )}
-                {(isSecondApproval ||
-                  (showFeeColumns && !isSecondApproval)) && (
-                  <td className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700">
-                    {item.purchaseRequisitionNumber ||
-                      item.purchaseRequisitionNumber ||
-                      "N/A"}
-                  </td>
-                )}
+                {(isSecondApproval || (showFeeColumns && !isSecondApproval)) &&
+                  index === 0 && (
+                    <td
+                      className="border border-slate-200 px-4 py-[5px] text-sm text-slate-700"
+                      rowSpan={g.items.length}
+                      style={{ verticalAlign: "middle" }}
+                    >
+                      {item.purchaseRequisitionNumber ||
+                        item.purchaseReqNumber ||
+                        item.prn ||
+                        "N/A"}
+                    </td>
+                  )}
                 {!isReadOnly &&
                   !isSecondApproval &&
                   !isPettyCash &&
