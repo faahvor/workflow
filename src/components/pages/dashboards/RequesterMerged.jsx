@@ -16,7 +16,7 @@ const RequesterMerged = ({ searchQuery = "", filterType = "all" }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedMergedRequest, setSelectedMergedRequest] = useState(null);
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const [page, setPage] = useState(1);
   const pageSize = 10;

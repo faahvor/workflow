@@ -49,7 +49,7 @@ const StatusPillSmall = ({ status }) => {
 
 const AdminUserManagement = () => {
   const { getToken, user } = useAuth();
-  const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
   // table + query state
   const [users, setUsers] = useState([]);

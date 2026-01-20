@@ -43,7 +43,7 @@ import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 const ManagerDashboard = () => {
   const { user, getToken } = useAuth();
   const navigate = useNavigate();
-const { showAlert } = useGlobalAlert();
+  const { showAlert } = useGlobalAlert();
   const { showPrompt } = useGlobalPrompt();
   const [activeView, setActiveView] = useState("overview");
   const [view, setView] = useState("list");
@@ -65,18 +65,18 @@ const { showAlert } = useGlobalAlert();
   const [rejectedUnreadCount, setRejectedUnreadCount] = useState(0);
 
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
-const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("sidebarCollapsed") === "true";
-  }
-  return false;
-});
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sidebarCollapsed") === "true";
+    }
+    return false;
+  });
   const fetchChatUnreadCount = async () => {
     try {
       const token = getToken();
       if (!token) return;
       const resp = await axios.get(
-        "https://hdp-backend-1vcl.onrender.com/api/chat/unread-count",
+        `${import.meta.env.VITE_API_BASE_URL}/chat/unread-count`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setChatUnreadCount(resp.data?.unreadCount || 0);
@@ -142,7 +142,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   const replaceInPending = replaceRequestIn(setPendingRequests);
   const replaceInCompleted = replaceRequestIn(setCompletedRequests);
 
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   // Handle detail back navigation and list updates
   const handleDetailBack = (updatedRequest) => {
@@ -170,17 +170,21 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
   };
 
   // Open request detail and fetch flow
-  const handleOpenDetail = async (request,opts={}) => {
+  const handleOpenDetail = async (request, opts = {}) => {
     const flow = await fetchRequestFlow(request.requestId);
     setSelectedRequest({ ...request, flow });
     // set readOnly for both completed and approved views
-     if (opts.readOnly) {
-    setDetailReadOnly(true);
-  } else {
-    setDetailReadOnly(activeView === "completed" || activeView === "approved" || activeView === "myrequests");
-  }
-  setView("detail");
-};
+    if (opts.readOnly) {
+      setDetailReadOnly(true);
+    } else {
+      setDetailReadOnly(
+        activeView === "completed" ||
+          activeView === "approved" ||
+          activeView === "myrequests"
+      );
+    }
+    setView("detail");
+  };
 
   // Fetch pending requests
   const fetchPendingRequests = async () => {
@@ -216,7 +220,7 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       const token = getToken();
       if (!token) return;
       const resp = await axios.get(
-        "https://hdp-backend-1vcl.onrender.com/api/notifications/unread-count",
+        `${import.meta.env.VITE_API_BASE_URL}/notifications/unread-count`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setUnreadCount(resp.data?.unreadCount || 0);
@@ -324,10 +328,10 @@ const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       ? "Confirm you want to approve this query request?"
       : "Are you sure you want to approve this request?";
 
-   const ok = await showPrompt(confirmMsg);
-if (!ok) {
-  return;
-}
+    const ok = await showPrompt(confirmMsg);
+    if (!ok) {
+      return;
+    }
 
     try {
       setActionLoading(true);
@@ -382,9 +386,9 @@ if (!ok) {
     }
 
     const ok = await showPrompt(
-    "Are you sure you want to reject this request?"
-  );
-  if (!ok) return;
+      "Are you sure you want to reject this request?"
+    );
+    if (!ok) return;
 
     try {
       setActionLoading(true);
@@ -502,8 +506,7 @@ if (!ok) {
     }
   };
 
-  const isServiceRequest = (request) =>
-  request?.isService === true;
+  const isServiceRequest = (request) => request?.isService === true;
 
   const getInStockColor = () => {
     return "bg-green-100 text-green-700 border-green-200";
@@ -646,8 +649,7 @@ if (!ok) {
             rejectedCount={rejectedUnreadCount}
             notificationCount={unreadCount}
             isRequester={false}
-              setCollapsed={setSidebarCollapsed}
-
+            setCollapsed={setSidebarCollapsed}
           />
 
           <div className="flex-1 overflow-auto">
@@ -696,8 +698,7 @@ if (!ok) {
           chatUnreadCount={chatUnreadCount}
           notificationCount={unreadCount}
           isRequester={false}
-            setCollapsed={setSidebarCollapsed}
-
+          setCollapsed={setSidebarCollapsed}
         />
 
         {activeView === "chatRoom" && <ChatRoom />}
@@ -911,26 +912,29 @@ if (!ok) {
                                   </span>
                                 </span>
                               )}
-                             {request.isService === true && (
-  <span
-    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 ml-1"
-    style={{ marginLeft: 4 }}
-  >
-    <MdHelpOutline className="text-sm" />
-    <span>Services</span>
-  </span>
-)}
+                              {request.isService === true && (
+                                <span
+                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 ml-1"
+                                  style={{ marginLeft: 4 }}
+                                >
+                                  <MdHelpOutline className="text-sm" />
+                                  <span>Services</span>
+                                </span>
+                              )}
 
-                            {request.requestType === "inStock" || hasProcurementOfficerApproved(request) ? (
-  <span
-    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
-      request.requestType
-    )}`}
-  >
-    {getTypeIcon(request.requestType)}
-    <span>{getTypeLabel(request.requestType)}</span>
-  </span>
-) : null}
+                              {request.requestType === "inStock" ||
+                              hasProcurementOfficerApproved(request) ? (
+                                <span
+                                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getTypeColor(
+                                    request.requestType
+                                  )}`}
+                                >
+                                  {getTypeIcon(request.requestType)}
+                                  <span>
+                                    {getTypeLabel(request.requestType)}
+                                  </span>
+                                </span>
+                              ) : null}
                               {request.offshoreReqNumber && (
                                 <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
                                   <MdDirectionsBoat className="text-sm" />

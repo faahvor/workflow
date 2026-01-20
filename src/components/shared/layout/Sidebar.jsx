@@ -99,7 +99,7 @@ const Sidebar = ({
     const fetchLogo = async () => {
       try {
         const resp = await fetch(
-          "https://hdp-backend-1vcl.onrender.com/api/settings/logo"
+         `${import.meta.env.VITE_API_BASE_URL}/settings/logo`
         );
         const data = await resp.json();
         if (data && data.url) setLogoUrl(data.url);

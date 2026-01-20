@@ -15,7 +15,7 @@ import {
 import RequestDetailView from "../../pages/dashboards/RequestDetailView";
 import { HiClock } from "react-icons/hi";
 
-const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const CompletedRequests = ({
   searchQuery = "",

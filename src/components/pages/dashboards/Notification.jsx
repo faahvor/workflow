@@ -14,7 +14,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
 const PAGE_SIZE = 20;
-const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 const getTypeColor = (type) => {
   switch (type) {

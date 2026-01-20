@@ -32,7 +32,7 @@ const StatusBadge = ({ status }) => {
 
 const VesselManagement = () => {
   const { getToken, user } = useAuth();
-  const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
   const { showAlert } = useGlobalAlert();
   const [vessels, setVessels] = useState([]);
   const [tab, setTab] = useState("Active"); // Active | Maintenance | Archived | All

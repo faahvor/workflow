@@ -36,7 +36,7 @@ const RequestManagement = () => {
   const [newComment, setNewComment] = useState("");
   const [postingComment, setPostingComment] = useState(false);
   const { getToken } = useAuth();
-  const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 const { showAlert } = useGlobalAlert();
   // server-backed list state / pagination
   const [page, setPage] = useState(1);

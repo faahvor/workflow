@@ -90,7 +90,7 @@ function ServiceTable({
         const token = await getToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const resp = await axios.get(
-          "https://hdp-backend-1vcl.onrender.com/api/vendors",
+          `${import.meta.env.VITE_API_BASE_URL}/vendors`,
           { headers }
         );
         const data = resp.data?.data || resp.data || [];
@@ -113,7 +113,7 @@ function ServiceTable({
     const fetchVat = async () => {
       try {
         const resp = await axios.get(
-          "https://hdp-backend-1vcl.onrender.com/api/vat"
+          `${import.meta.env.VITE_API_BASE_URL}/api/vat`
         );
         const value = resp?.data?.value;
         setVatRate(typeof value === "number" ? value / 100 : 0.075);
@@ -843,7 +843,8 @@ const RequesterDashboard = () => {
     { description: "", quantity: "" },
   ]);
 
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   const fetchChatUnreadCount = async () => {
@@ -851,7 +852,7 @@ const RequesterDashboard = () => {
       const token = getToken();
       if (!token) return;
       const resp = await axios.get(
-        "https://hdp-backend-1vcl.onrender.com/api/chat/unread-count",
+        `${import.meta.env.VITE_API_BASE_URL}/chat/unread-count`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setChatUnreadCount(resp.data?.unreadCount || 0);
@@ -960,7 +961,7 @@ const RequesterDashboard = () => {
       const token = getToken();
       if (!token) return;
       const resp = await axios.get(
-        "https://hdp-backend-1vcl.onrender.com/api/notifications/unread-count",
+        `${import.meta.env.VITE_API_BASE_URL}/notifications/unread-count`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setUnreadCount(resp.data?.unreadCount || 0);
@@ -1128,7 +1129,7 @@ const RequesterDashboard = () => {
       }
 
       const response = await axios.get(
-        "https://hdp-backend-1vcl.onrender.com/api/user/project-managers",
+        `${import.meta.env.VITE_API_BASE_URL}/user/project-managers`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -1388,7 +1389,7 @@ const RequesterDashboard = () => {
   );
 
   // Submit new request
-   const handleSubmitRequest = async (e) => {
+  const handleSubmitRequest = async (e) => {
     e.preventDefault();
 
     // Validation
@@ -1584,7 +1585,10 @@ const RequesterDashboard = () => {
         }
 
         // UPDATED: Check if there are ANY files (images, invoices, or quotations)
-        const hasAnyFiles = requestImages.length > 0 || invoiceFiles.length > 0 || quotationFiles.length > 0;
+        const hasAnyFiles =
+          requestImages.length > 0 ||
+          invoiceFiles.length > 0 ||
+          quotationFiles.length > 0;
 
         if (hasAnyFiles) {
           const fd = new FormData();
@@ -1595,53 +1599,55 @@ const RequesterDashboard = () => {
               fd.append(key, value);
             }
           });
-          
-         
-requestImages.forEach((f) => {
-  if (f && f.file) {
-    fd.append("requestImages", f.file);
-  }
-});
 
-// UPDATED: Conditionally attach invoice OR quotation files (NOT BOTH)
-if (requestType === "services" && isPurchaseOrder) {
-  // For service purchase orders, ONLY send quotation files
-  quotationFiles.forEach((f) => {
-    if (f && f.file) {
-      fd.append("quotationFiles", f.file);
-    }
-  });
-} else {
-  // For all other cases (petty cash, simple service, inventory), ONLY send invoice files
-  invoiceFiles.forEach((f) => {
-    if (f && f.file) {
-      fd.append("invoiceFiles", f.file);
-    }
-  });
-}
+          requestImages.forEach((f) => {
+            if (f && f.file) {
+              fd.append("requestImages", f.file);
+            }
+          });
 
-// UPDATED: Attach image titles
-requestImages.forEach((f, index) => {
-  if (f && f.file) {
-    fd.append(`requestImageTitles[${index}]`, f.title || "");
-  }
-});
-console.log("📤 FormData contents being sent:");
-for (let [key, value] of fd.entries()) {
-  if (value instanceof File) {
-    console.log(`${key}:`, value.name, `(${value.type})`);
-  } else {
-    console.log(`${key}:`, value);
-  }
-}
+          // UPDATED: Conditionally attach invoice OR quotation files (NOT BOTH)
+          if (requestType === "services" && isPurchaseOrder) {
+            // For service purchase orders, ONLY send quotation files
+            quotationFiles.forEach((f) => {
+              if (f && f.file) {
+                fd.append("quotationFiles", f.file);
+              }
+            });
+          } else {
+            // For all other cases (petty cash, simple service, inventory), ONLY send invoice files
+            invoiceFiles.forEach((f) => {
+              if (f && f.file) {
+                fd.append("invoiceFiles", f.file);
+              }
+            });
+          }
 
-const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
-  headers: {
-    Authorization: `Bearer ${token}`,
-  },
-});
+          // UPDATED: Attach image titles
+          requestImages.forEach((f, index) => {
+            if (f && f.file) {
+              fd.append(`requestImageTitles[${index}]`, f.title || "");
+            }
+          });
+          console.log("📤 FormData contents being sent:");
+          for (let [key, value] of fd.entries()) {
+            if (value instanceof File) {
+              console.log(`${key}:`, value.name, `(${value.type})`);
+            } else {
+              console.log(`${key}:`, value);
+            }
+          }
 
-          console.log("✅ Service Request Created (with files):", response.data);
+          const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          console.log(
+            "✅ Service Request Created (with files):",
+            response.data
+          );
           showAlert("Service request created successfully!");
         } else {
           const response = await axios.post(
@@ -1713,7 +1719,10 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
       });
 
       // UPDATED: Check if there are ANY files
-      const hasFiles = invoiceFiles.length > 0 || requestImages.length > 0 || quotationFiles.length > 0;
+      const hasFiles =
+        invoiceFiles.length > 0 ||
+        requestImages.length > 0 ||
+        quotationFiles.length > 0;
 
       if (hasFiles) {
         const fd = new FormData();
@@ -1743,7 +1752,7 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
         if (formData.additionalInformation) {
           fd.append("additionalInformation", formData.additionalInformation);
         }
-        
+
         if (formData.destination === "Marine" && offShoreNumber) {
           fd.append("offshoreReqNumber", offShoreNumber);
         }
@@ -1767,13 +1776,13 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
           }
         });
 
-     requestImages.forEach((f, index) => {
-  if (f && f.file) {
-    fd.append("requestImages", f.file);
-    // Append title for each image individually
-    fd.append(`requestImageTitles[${index}]`, f.title || "");
-  }
-});
+        requestImages.forEach((f, index) => {
+          if (f && f.file) {
+            fd.append("requestImages", f.file);
+            // Append title for each image individually
+            fd.append(`requestImageTitles[${index}]`, f.title || "");
+          }
+        });
 
         const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
           headers: {
@@ -1791,7 +1800,7 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
           purpose: formData.purpose,
           items: items,
         };
-        
+
         if (formData.requestType === "pettyCash") {
           payload.requestType = "pettyCash";
         } else if (
@@ -1800,7 +1809,7 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
         ) {
           payload.requestType = "purchaseOrder";
         }
-        
+
         if (formData.vesselId) {
           payload.vesselId = formData.vesselId;
         }
@@ -1866,24 +1875,23 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
       setOffShoreNumber("");
 
       setActiveView("myRequests");
-   } catch (err) {
-  console.error("❌ Error creating request:", err);
-  
-  // ADD THIS: Log the full error response
-  console.log("Full error details:", {
-    message: err.message,
-    status: err.response?.status,
-    statusText: err.response?.statusText,
-    data: err.response?.data,
-    headers: err.response?.headers
-  });
-  
-  showAlert(err.response?.data?.message || "Failed to create request");
-} finally {
-  setSubmitting(false);
-}
-  };
+    } catch (err) {
+      console.error("❌ Error creating request:", err);
 
+      // ADD THIS: Log the full error response
+      console.log("Full error details:", {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        headers: err.response?.headers,
+      });
+
+      showAlert(err.response?.data?.message || "Failed to create request");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Fetch my requests
   const fetchMyRequests = async () => {
@@ -2912,49 +2920,6 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
                   {/* Upload Section - ALWAYS SHOW */}
                   {formData.destination && (
                     <div className="mb-4">
-                      {(formData.requestType === "pettyCash" ||
-                        (requestType === "services" &&
-                          (formData.department?.toLowerCase() ===
-                            "operations" ||
-                            formData.department?.toLowerCase() ===
-                              "project"))) && (
-                        <div className="mb-4 flex flex-col gap-4">
-                          <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                            Upload Type
-                          </label>
-                          <div className="flex gap-8">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="radio"
-                                name="uploadType"
-                                value="image"
-                                checked={uploadType === "image"}
-                                onChange={() => setUploadType("image")}
-                                className="w-4 h-4 text-emerald-500 border-2 border-slate-300"
-                              />
-                              <span className="text-sm font-medium text-slate-700">
-                                Image Upload
-                              </span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="radio"
-                                name="uploadType"
-                                value="invoice"
-                                checked={uploadType === "invoice"}
-                                onChange={() => setUploadType("invoice")}
-                                className="w-4 h-4 text-emerald-500 border-2 border-slate-300"
-                              />
-                              <span className="text-sm font-medium text-slate-700">
-                                {requestType === "services" && isPurchaseOrder
-                                  ? "Quotation Upload"
-                                  : "Invoice Upload"}
-                              </span>
-                            </label>
-                          </div>
-                        </div>
-                      )}
-
                       {/* UPDATED: Combined File Display - Always show all uploaded files */}
                       {allUploadedFiles.length > 0 && (
                         <div className="mb-4">
@@ -3057,14 +3022,7 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
                       )}
 
                       {/* Upload Buttons - Controlled by radio selection */}
-                      {(!(
-                        formData.requestType === "pettyCash" ||
-                        (requestType === "services" &&
-                          (formData.department?.toLowerCase() ===
-                            "operations" ||
-                            formData.department?.toLowerCase() === "project"))
-                      ) ||
-                        uploadType === "image") && (
+                      {true && (
                         <>
                           <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
                             Upload Images
@@ -3101,71 +3059,64 @@ const response = await axios.post(`${API_BASE_URL}/requests`, fd, {
                         </>
                       )}
 
-                      {(formData.requestType === "pettyCash" ||
-                        (requestType === "services" &&
-                          (formData.department?.toLowerCase() ===
-                            "operations" ||
-                            formData.department?.toLowerCase() ===
-                              "project"))) &&
-                        uploadType === "invoice" && (
-                          <>
-                            <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-                              {requestType === "services" && isPurchaseOrder
-                                ? "Upload Quotation Files"
-                                : "Upload Invoice Files"}
-                            </label>
-                            <div className="w-full rounded-2xl p-4 flex items-center justify-between gap-4 border-2 border-dashed border-slate-200 bg-white/50">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
-                                  📎
-                                </div>
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {requestType === "services" &&
-                                    isPurchaseOrder
-                                      ? "Click 'Add Files' to select quotation file(s)"
-                                      : "Click 'Add Files' to select invoice file(s)"}
-                                  </p>
-                                  <p className="text-xs text-slate-500 mt-1">
-                                    Supported: PDF, DOC, DOCX, Images
-                                  </p>
-                                </div>
+                      {true && (
+                        <>
+                          <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                            {requestType === "services" && isPurchaseOrder
+                              ? "Upload Quotation Files"
+                              : "Upload Invoice Files"}
+                          </label>
+                          <div className="w-full rounded-2xl p-4 flex items-center justify-between gap-4 border-2 border-dashed border-slate-200 bg-white/50">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-2xl">
+                                📎
                               </div>
-
-                              <button
-                                type="button"
-                                onClick={
-                                  requestType === "services" && isPurchaseOrder
-                                    ? handleQuotationBrowseClick
-                                    : handleBrowseClick
-                                }
-                                className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
-                              >
-                                Add Files
-                              </button>
-
-                              <input
-                                ref={
-                                  requestType === "services" && isPurchaseOrder
-                                    ? quotationInputRef
-                                    : fileInputRef
-                                }
-                                type="file"
-                                accept=".pdf,.doc,.docx,image/*"
-                                multiple
-                                onChange={
-                                  requestType === "services" && isPurchaseOrder
-                                    ? handleQuotationInputChange
-                                    : handleInvoiceInputChange
-                                }
-                                className="hidden"
-                              />
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  {requestType === "services" && isPurchaseOrder
+                                    ? "Click 'Add Files' to select quotation file(s)"
+                                    : "Click 'Add Files' to select invoice file(s)"}
+                                </p>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Supported: PDF, DOC, DOCX, Images
+                                </p>
+                              </div>
                             </div>
-                          </>
-                        )}
+
+                            <button
+                              type="button"
+                              onClick={
+                                requestType === "services" && isPurchaseOrder
+                                  ? handleQuotationBrowseClick
+                                  : handleBrowseClick
+                              }
+                              className="px-3 py-2 bg-[#036173] text-white rounded-md hover:bg-[#024f56] text-sm"
+                            >
+                              Add Files
+                            </button>
+
+                            <input
+                              ref={
+                                requestType === "services" && isPurchaseOrder
+                                  ? quotationInputRef
+                                  : fileInputRef
+                              }
+                              type="file"
+                              accept=".pdf,.doc,.docx,image/*"
+                              multiple
+                              onChange={
+                                requestType === "services" && isPurchaseOrder
+                                  ? handleQuotationInputChange
+                                  : handleInvoiceInputChange
+                              }
+                              className="hidden"
+                            />
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
-                  
+
                   {/* Submit Button */}
                   <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-slate-200">
                     <button

@@ -42,7 +42,7 @@ const fetchChatUnreadCount = async () => {
     const token = getToken();
     if (!token) return;
     const resp = await axios.get(
-      "https://hdp-backend-1vcl.onrender.com/api/chat/unread-count",
+      `${import.meta.env.VITE_API_BASE_URL}/chat/unread-count`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     setChatUnreadCount(resp.data?.unreadCount || 0);

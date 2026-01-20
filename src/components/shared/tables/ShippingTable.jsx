@@ -22,90 +22,97 @@ const ShippingTable = ({
   const [isSaving, setIsSaving] = useState(false);
   const [needsScroll, setNeedsScroll] = useState(false);
   const [detachingItemId, setDetachingItemId] = useState(null);
-const hasAnyAttachedItems = () => {
-  // Check if the request itself is attached to inbound
-  const isRequestAttached = selectedRequest?.isAttachedToInbound === true;
-  
-  console.log("🔍 Action column check:", {
-    isAttachedToInbound: selectedRequest?.isAttachedToInbound,
-    shouldShowColumn: isRequestAttached
-  });
-  
-  return isRequestAttached;
-};
+  const hasAnyAttachedItems = () => {
+    // Check if the request itself is attached to inbound
+    const isRequestAttached = selectedRequest?.isAttachedToInbound === true;
 
-const handleDetachItem = async (itemId) => {
-  const confirmed = await showPrompt("Confirm you want to Detach?");
-  if (!confirmed) return;
+    console.log("🔍 Action column check:", {
+      isAttachedToInbound: selectedRequest?.isAttachedToInbound,
+      shouldShowColumn: isRequestAttached,
+    });
 
-  setDetachingItemId(itemId);
-  
-  try {
-    const token = getToken();
-    if (!token) throw new Error("Not authenticated");
+    return isRequestAttached;
+  };
 
-    // Find the item to get its source request ID
-    const item = editedRequests.find((it) => (it.itemId || it._id) === itemId);
-    if (!item) {
-      showAlert("Item not found");
-      return;
+  const handleDetachItem = async (itemId) => {
+    const confirmed = await showPrompt("Confirm you want to Detach?");
+    if (!confirmed) return;
+
+    setDetachingItemId(itemId);
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+
+      // Find the item to get its source request ID
+      const item = editedRequests.find(
+        (it) => (it.itemId || it._id) === itemId
+      );
+      if (!item) {
+        showAlert("Item not found");
+        return;
+      }
+
+      const sourceRequestId = item.movedFromRequestId || item.originRequestId;
+      if (!sourceRequestId) {
+        showAlert("Cannot detach: Original request ID not found");
+        return;
+      }
+
+      const targetRequestId = selectedRequest?.requestId;
+      if (!targetRequestId) {
+        showAlert("Cannot detach: Target request ID not found");
+        return;
+      }
+
+      // Call the detach API endpoint
+      const resp = await axios.post(
+        `${API_BASE_URL}/requests/${encodeURIComponent(
+          targetRequestId
+        )}/detach`,
+        {
+          sourceRequestId: sourceRequestId,
+          itemIds: [itemId],
+          purpose: "User detached item from shipping request",
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      console.log("✅ Detach successful:", resp.data);
+
+      // Show success message from server
+      showAlert(
+        resp.data?.message ||
+          `Item detached successfully. ${
+            resp.data?.detachedItemCount || 1
+          } item(s) moved back to ${sourceRequestId}`
+      );
+
+      // Remove item from local state (optimistic update)
+      setEditedRequests((prev) =>
+        prev.filter((it) => (it.itemId || it._id) !== itemId)
+      );
+
+      // Notify parent to refresh
+      if (typeof onFilesChanged === "function") {
+        onFilesChanged();
+      }
+    } catch (err) {
+      console.error("❌ Detach error:", err);
+
+      // Show detailed error message
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to detach item. Please try again.";
+
+      showAlert(errorMsg);
+
+      // Keep item in table on error (don't remove from state)
+    } finally {
+      setDetachingItemId(null);
     }
-
-    const sourceRequestId = item.movedFromRequestId || item.originRequestId;
-    if (!sourceRequestId) {
-      showAlert("Cannot detach: Original request ID not found");
-      return;
-    }
-
-    const targetRequestId = selectedRequest?.requestId;
-    if (!targetRequestId) {
-      showAlert("Cannot detach: Target request ID not found");
-      return;
-    }
-
-    // Call the detach API endpoint
-    const resp = await axios.post(
-      `${API_BASE_URL}/requests/${encodeURIComponent(targetRequestId)}/detach`,
-      {
-        sourceRequestId: sourceRequestId,
-        itemIds: [itemId],
-        purpose: "User detached item from shipping request"
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    console.log("✅ Detach successful:", resp.data);
-
-    // Show success message from server
-    showAlert(
-      resp.data?.message || 
-      `Item detached successfully. ${resp.data?.detachedItemCount || 1} item(s) moved back to ${sourceRequestId}`
-    );
-
-    // Remove item from local state (optimistic update)
-    setEditedRequests((prev) => prev.filter((it) => (it.itemId || it._id) !== itemId));
-    
-    // Notify parent to refresh
-    if (typeof onFilesChanged === "function") {
-      onFilesChanged();
-    }
-    
-  } catch (err) {
-    console.error("❌ Detach error:", err);
-    
-    // Show detailed error message
-    const errorMsg = 
-      err?.response?.data?.message || 
-      err?.response?.data?.error ||
-      "Failed to detach item. Please try again.";
-    
-    showAlert(errorMsg);
-    
-    // Keep item in table on error (don't remove from state)
-  } finally {
-    setDetachingItemId(null);
-  }
-};
+  };
 
   const tableRef = useRef(null);
   const [currencies, setCurrencies] = useState([
@@ -120,7 +127,8 @@ const handleDetachItem = async (itemId) => {
   ]);
   const [currency, setCurrency] = useState({});
 
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
   const { showAlert } = useGlobalAlert();
   const { showPrompt } = useGlobalPrompt(); // Add this line
 
@@ -146,10 +154,7 @@ const handleDetachItem = async (itemId) => {
     const currenciesMap = {};
     (items || []).forEach((it) => {
       const key = it.vendorId ?? it.vendor ?? "No Vendor";
-      if (
-        it.currency !== undefined &&
-        currenciesMap[key] === undefined
-      ) {
+      if (it.currency !== undefined && currenciesMap[key] === undefined) {
         currenciesMap[key] = it.currency;
       }
     });
@@ -165,7 +170,7 @@ const handleDetachItem = async (itemId) => {
         purchaseReqNumber: it.purchaseReqNumber || it.prn || "",
         shippingQuantity: it.shippingQuantity ?? it.shippingQty ?? 0,
         shippingFee: it.shippingFee ?? 0,
-            isAttached: it.isAttached ?? false,
+        isAttached: it.isAttached ?? false,
         _dirty: false,
       }))
     );
@@ -496,8 +501,10 @@ const handleDetachItem = async (itemId) => {
                     PRN
                   </th>
                   {hasAnyAttachedItems() && (
-      <th className="p-3 border border-slate-200 text-center">Action</th>
-    )}
+                    <th className="p-3 border border-slate-200 text-center">
+                      Action
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -660,30 +667,32 @@ const handleDetachItem = async (itemId) => {
                           </span>
                         </td>
                       ) : null}
-{hasAnyAttachedItems() && (
-  <td className="border p-3 border-slate-200 text-center">
-    {(() => {
-      // Debug log for each item
-      console.log(`📌 Item ${itemId} attach status:`, {
-        itemId,
-        isAttached: it.isAttached,
-        name: it.name
-      });
-      
-      return it.isAttached === true ? (
-        <button
-          onClick={() => handleDetachItem(itemId)}
-          disabled={detachingItemId === itemId}
-          className="px-3 py-1 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {detachingItemId === itemId ? "Detaching..." : "Detach"}
-        </button>
-      ) : (
-        <span className="text-slate-400">-</span>
-      );
-    })()}
-  </td>
-)}
+                      {hasAnyAttachedItems() && (
+                        <td className="border p-3 border-slate-200 text-center">
+                          {(() => {
+                            // Debug log for each item
+                            console.log(`📌 Item ${itemId} attach status:`, {
+                              itemId,
+                              isAttached: it.isAttached,
+                              name: it.name,
+                            });
+
+                            return it.isAttached === true ? (
+                              <button
+                                onClick={() => handleDetachItem(itemId)}
+                                disabled={detachingItemId === itemId}
+                                className="px-3 py-1 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {detachingItemId === itemId
+                                  ? "Detaching..."
+                                  : "Detach"}
+                              </button>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            );
+                          })()}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -698,83 +707,81 @@ const handleDetachItem = async (itemId) => {
                   >
                     Shipping Fee - {vendorLabel}
                   </td>
-               
-<td
-  colSpan={3}
-  className="border p-3 border-slate-200 text-center"
->
-  <div className="flex items-center gap-2 justify-center">
-    <Select
-      options={currencies}
-      value={
-        currencies.find(
-          (c) =>
-            c.value === (currency[vendorKey] || "NGN")
-        ) || currencies[0]
-      }
-      onChange={(selected) => {
-        const currency = selected?.value || "NGN";
-        setCurrency((prev) => ({
-          ...prev,
-          [vendorKey]: currency,
-        }));
-        setEditedRequests((prev) =>
-          prev.map((it) =>
-            (it.vendorId ?? it.vendor ?? "No Vendor") === vendorKey
-              ? {
-                  ...it,
-                  currency: currency,
-                  _dirty: true,
-                }
-              : it
-          )
-        );
-      }}
-      className="w-24"
-      menuPortalTarget={document.body}
-      styles={{
-    menuPortal: (base) => ({ ...base, zIndex: 500 }),
-  }}
-    />
 
-    <input
-      type="number"
-      min="0"
-      step="0.01"
-      placeholder="0"
-      value={
-        shippingFees[vendorKey] === 0 ||
-        shippingFees[vendorKey] === undefined ||
-        shippingFees[vendorKey] === null
-          ? ""
-          : shippingFees[vendorKey]
-      }
-      onChange={(e) => {
-        const val =
-          e.target.value === ""
-            ? ""
-            : parseFloat(e.target.value) || 0;
-        const vkey = vendorKey;
-        setShippingFees((prev) => ({ ...prev, [vkey]: val }));
-        setEditedRequests((prev) =>
-          prev.map((it) =>
-            (it.vendorId ?? it.vendor ?? "No Vendor") === vkey
-              ? {
-                  ...it,
-                  shippingFee: val === "" ? 0 : val,
-                  currency:
-                    currency[vkey] || "NGN",
-                  _dirty: true,
-                }
-              : it
-          )
-        );
-      }}
-      className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
-    />
-  </div>
-</td>
+                  <td
+                    colSpan={3}
+                    className="border p-3 border-slate-200 text-center"
+                  >
+                    <div className="flex items-center gap-2 justify-center">
+                      <Select
+                        options={currencies}
+                        value={
+                          currencies.find(
+                            (c) => c.value === (currency[vendorKey] || "NGN")
+                          ) || currencies[0]
+                        }
+                        onChange={(selected) => {
+                          const currency = selected?.value || "NGN";
+                          setCurrency((prev) => ({
+                            ...prev,
+                            [vendorKey]: currency,
+                          }));
+                          setEditedRequests((prev) =>
+                            prev.map((it) =>
+                              (it.vendorId ?? it.vendor ?? "No Vendor") ===
+                              vendorKey
+                                ? {
+                                    ...it,
+                                    currency: currency,
+                                    _dirty: true,
+                                  }
+                                : it
+                            )
+                          );
+                        }}
+                        className="w-24"
+                        menuPortalTarget={document.body}
+                        styles={{
+                          menuPortal: (base) => ({ ...base, zIndex: 500 }),
+                        }}
+                      />
 
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0"
+                        value={
+                          shippingFees[vendorKey] === 0 ||
+                          shippingFees[vendorKey] === undefined ||
+                          shippingFees[vendorKey] === null
+                            ? ""
+                            : shippingFees[vendorKey]
+                        }
+                        onChange={(e) => {
+                          const val =
+                            e.target.value === ""
+                              ? ""
+                              : parseFloat(e.target.value) || 0;
+                          const vkey = vendorKey;
+                          setShippingFees((prev) => ({ ...prev, [vkey]: val }));
+                          setEditedRequests((prev) =>
+                            prev.map((it) =>
+                              (it.vendorId ?? it.vendor ?? "No Vendor") === vkey
+                                ? {
+                                    ...it,
+                                    shippingFee: val === "" ? 0 : val,
+                                    currency: currency[vkey] || "NGN",
+                                    _dirty: true,
+                                  }
+                                : it
+                            )
+                          );
+                        }}
+                        className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
+                      />
+                    </div>
+                  </td>
                 </tr>
               </tbody>
             </table>

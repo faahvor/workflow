@@ -162,7 +162,7 @@ Procurement`;
     });
 
     const response = await fetch(
-      "https://hdp-backend-1vcl.onrender.com/api/mail/send",
+      `${import.meta.env.VITE_API_BASE_URL}/mail/send`,
       {
         method: "POST",
         headers: {

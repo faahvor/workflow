@@ -19,7 +19,7 @@ const ClearingTable = ({
   const { getToken } = useAuth();
   const { showAlert } = useGlobalAlert();
   const { showPrompt } = useGlobalPrompt();
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   useEffect(() => {
     setEditedRequests(
@@ -44,20 +44,17 @@ const ClearingTable = ({
   };
 
   const handleSaveAll = async () => {
- const ok = await showPrompt(
-    "Save clearing fee changes?"
-  );
-  if (!ok) return;
+    const ok = await showPrompt("Save clearing fee changes?");
+    if (!ok) return;
     setIsSaving(true);
     try {
       // Save clearingFee at request-level
-      if (
-        selectedRequest &&
-        typeof selectedRequest.requestId !== "undefined"
-      ) {
+      if (selectedRequest && typeof selectedRequest.requestId !== "undefined") {
         const token = await getToken();
         const url = `${API_BASE_URL}/requests/${selectedRequest.requestId}`;
-        const body = { clearingFee: clearingFee === "" ? 0 : Number(clearingFee) };
+        const body = {
+          clearingFee: clearingFee === "" ? 0 : Number(clearingFee),
+        };
         const resp = await fetch(url, {
           method: "PATCH",
           headers: {
@@ -114,38 +111,68 @@ const ClearingTable = ({
         <thead>
           <tr className="bg-gradient-to-r from-[#036173] to-teal-600 text-white">
             <th className="p-3 border border-slate-200 text-center">SN</th>
-            <th className="p-3 border border-slate-200 text-left">Description</th>
+            <th className="p-3 border border-slate-200 text-left">
+              Description
+            </th>
             <th className="p-3 border border-slate-200 text-left">Item Type</th>
             <th className="p-3 border border-slate-200 text-left">Maker</th>
-            <th className="p-3 border border-slate-200 text-left">Maker's Part No</th>
+            <th className="p-3 border border-slate-200 text-left">
+              Maker's Part No
+            </th>
             <th className="p-3 border border-slate-200 text-center">Vendor</th>
-            <th className="p-3 border border-slate-200 text-center">Quantity</th>
-            <th className="p-3 border border-slate-200 text-center">Shipping Quantity</th>
-            <th className="p-3 border border-slate-200 text-center">Shipping Fee</th>
-         
+            <th className="p-3 border border-slate-200 text-center">
+              Quantity
+            </th>
+            <th className="p-3 border border-slate-200 text-center">
+              Shipping Quantity
+            </th>
+            <th className="p-3 border border-slate-200 text-center">
+              Shipping Fee
+            </th>
           </tr>
         </thead>
         <tbody>
           {editedRequests.map((it, idx) => (
-            <tr key={it.itemId} className="hover:bg-emerald-50 transition-colors duration-150">
-              <td className="border p-3 border-slate-200 text-center">{idx + 1}</td>
+            <tr
+              key={it.itemId}
+              className="hover:bg-emerald-50 transition-colors duration-150"
+            >
+              <td className="border p-3 border-slate-200 text-center">
+                {idx + 1}
+              </td>
               <td className="border border-slate-200 p-3 text-sm text-slate-900 max-w-[200px] md:max-w-[300px] break-words whitespace-normal">
                 {it.name || "N/A"}
               </td>
-              <td className="border p-3 border-slate-200">{it.itemType || "N/A"}</td>
-              <td className="border p-3 border-slate-200">{it.maker || "N/A"}</td>
-              <td className="border p-3 border-slate-200">{it.makersPartNo || "N/A"}</td>
-              <td className="border p-3 border-slate-200 text-center">{it.vendor || "N/A"}</td>
-              <td className="border p-3 border-slate-200 text-center">{it.quantity ?? it.qty ?? "0"}</td>
-              <td className="border p-3 border-slate-200 text-center">{it.shippingQuantity ?? it.qty ?? "0"}</td>
-              <td className="border p-3 border-slate-200 text-center">{selectedRequest?.shippingFee ?? "N/A"}</td>
-          
+              <td className="border p-3 border-slate-200">
+                {it.itemType || "N/A"}
+              </td>
+              <td className="border p-3 border-slate-200">
+                {it.maker || "N/A"}
+              </td>
+              <td className="border p-3 border-slate-200">
+                {it.makersPartNo || "N/A"}
+              </td>
+              <td className="border p-3 border-slate-200 text-center">
+                {it.vendor || "N/A"}
+              </td>
+              <td className="border p-3 border-slate-200 text-center">
+                {it.quantity ?? it.qty ?? "0"}
+              </td>
+              <td className="border p-3 border-slate-200 text-center">
+                {it.shippingQuantity ?? it.qty ?? "0"}
+              </td>
+              <td className="border p-3 border-slate-200 text-center">
+                {selectedRequest?.shippingFee ?? "N/A"}
+              </td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={8} className="border p-3 border-slate-200 text-right font-semibold">
+            <td
+              colSpan={8}
+              className="border p-3 border-slate-200 text-right font-semibold"
+            >
               Clearing Fee:
             </td>
             <td className="border p-3 border-slate-200 text-center">
@@ -154,7 +181,9 @@ const ClearingTable = ({
                 min="0"
                 step="0.01"
                 placeholder="0"
-                value={clearingFee === 0 || clearingFee === "" ? "" : clearingFee}
+                value={
+                  clearingFee === 0 || clearingFee === "" ? "" : clearingFee
+                }
                 onChange={(e) => handleChangeFee(e.target.value)}
                 className="border border-slate-200 px-2 py-1 rounded w-24 text-center"
               />

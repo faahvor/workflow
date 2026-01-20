@@ -7,7 +7,6 @@ import { useAuth } from "../../context/AuthContext";
 import ProcurementSelectionTable from "../../shared/tables/ProcurementSelectionTable";
 import { useGlobalAlert } from "../../shared/GlobalAlert";
 
-
 // --- ServiceTable and MaterialTable (copied from RequesterDashboard) ---
 function ServiceTable({ rows, setRows }) {
   const handleChange = (idx, field, value) => {
@@ -158,14 +157,14 @@ function MaterialTable({ rows, setRows }) {
 }
 
 const ProcurementCreateRequest = ({ onRequestCreated }) => {
-    const { showAlert } = useGlobalAlert();
+  const { showAlert } = useGlobalAlert();
 
   const { user, getToken } = useAuth();
   const dropdownRef = useRef(null);
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
 
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   // Destinations/Departments list
   const departments = [
@@ -237,7 +236,7 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
   const [dragActive, setDragActive] = useState(false);
   const [requestImages, setRequestImages] = useState([]);
   const [imageDragActive, setImageDragActive] = useState(false);
- 
+
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
   const [invName, setInvName] = useState("");
   const [invMaker, setInvMaker] = useState("");
@@ -299,13 +298,13 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     }
   };
 
-   useEffect(() => {
+  useEffect(() => {
     const fetchVat = async () => {
       try {
         const token = await getToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const resp = await axios.get(
-          "https://hdp-backend-1vcl.onrender.com/api/vat",
+          `${import.meta.env.VITE_API_BASE_URL}/vat`,
           { headers }
         );
         const value = resp?.data?.value;
@@ -352,17 +351,17 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     }
   };
 
-   // Fetch category by code
+  // Fetch category by code
   const fetchCategoryByCode = async (code) => {
     try {
       const token = await getToken();
       if (!token) return null;
-      
+
       const response = await axios.get(
         `${API_BASE_URL}/categories/code/${encodeURIComponent(code)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       return response.data?.data || response.data || null;
     } catch (err) {
       console.error("Error fetching category by code:", err);
@@ -370,17 +369,17 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     }
   };
 
- // Handle Enter key in search to lookup category code
+  // Handle Enter key in search to lookup category code
   const handleSearchKeyDown = async (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
       const code = searchTerm.trim().toUpperCase();
-      
+
       if (!code) return;
-      
+
       // Try to fetch category by code
       const category = await fetchCategoryByCode(code);
-      
+
       if (category) {
         // Add category as item
         setSelectedItems((prev) => [
@@ -402,11 +401,11 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
             isCategory: true, // Flag to identify category items
           },
         ]);
-        
+
         // Close dropdown and clear search
         setShowInventoryDropdown(false);
         setSearchTerm("");
-        
+
         showAlert(`Category "${category.name}" added successfully!`);
       } else {
         showAlert(`Category code "${code}" not found.`);
@@ -414,32 +413,32 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
     }
   };
 
- const fetchProjectManagers = async () => {
-  try {
-    setLoadingProjectManagers(true);
-    const token = getToken();
+  const fetchProjectManagers = async () => {
+    try {
+      setLoadingProjectManagers(true);
+      const token = getToken();
 
-    if (!token) {
-      console.error("No token found");
-      return;
-    }
-
-    const response = await axios.get(
-      "https://hdp-backend-1vcl.onrender.com/api/user/project-managers",
-      {
-        headers: { Authorization: `Bearer ${token}` },
+      if (!token) {
+        console.error("No token found");
+        return;
       }
-    );
 
-    console.log("Project Managers API response:", response.data); // <-- Add this line
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/user/project-managers`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-    setProjectManagers(response.data || []);
-  } catch (err) {
-    console.error("❌ Error fetching project managers:", err);
-  } finally {
-    setLoadingProjectManagers(false);
-  }
-};
+      console.log("Project Managers API response:", response.data); // <-- Add this line
+
+      setProjectManagers(response.data || []);
+    } catch (err) {
+      console.error("❌ Error fetching project managers:", err);
+    } finally {
+      setLoadingProjectManagers(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -538,7 +537,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       name === "requestType" ? value : formData.requestType || "";
     const shouldShowApprovalPick =
       newDestination === "Marine" && newRequestType === "pettyCash";
-
   };
 
   const openAddInventoryModal = () => {
@@ -685,7 +683,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       return;
     }
 
-
     // --- SERVICES REQUEST VALIDATION ---
     if (requestType === "services") {
       const hasService = serviceRows.some(
@@ -773,7 +770,6 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
         if (formData.destination === "Marine" && deckOrEngine) {
           payload.deckOrEngine = deckOrEngine;
         }
-       
 
         // If there are images, use FormData
         if (requestImages.length > 0) {
@@ -788,14 +784,14 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
           requestImages.forEach((f) => {
             if (f && f.file) fd.append("requestImages", f.file);
           });
-                  console.log("FormData keys:", Array.from(fd.keys()));
+          console.log("FormData keys:", Array.from(fd.keys()));
 
           await axios.post(`${API_BASE_URL}/procurement/create`, fd, {
             headers: { Authorization: `Bearer ${token}` },
           });
         } else {
-             console.log("Payload keys:", Object.keys(payload));
-        console.log("Payload:", payload);
+          console.log("Payload keys:", Object.keys(payload));
+          console.log("Payload:", payload);
           await axios.post(`${API_BASE_URL}/procurement/create`, payload, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -827,88 +823,88 @@ const ProcurementCreateRequest = ({ onRequestCreated }) => {
       }
 
       // --- INVENTORY REQUEST LOGIC ---
-const items = selectedItems.map((item) => {
-  const qty = Number(item.quantity || 0);
-  const unit = Number(item.unitPrice || 0);
-  const discount = Number(item.discount || 0);
-  const vatted = !!item.vatted;
-  
-  // Calculate subtotal
-  let total = qty * unit;
-  
-  // Apply discount
-  if (discount > 0) {
-    total = total - (total * discount) / 100;
-  }
-  
-  // Calculate VAT amount
-  const vatAmount = vatted ? total * vatRate : 0;
-  
-  // Add VAT to total
-  total = total + vatAmount;
+      const items = selectedItems.map((item) => {
+        const qty = Number(item.quantity || 0);
+        const unit = Number(item.unitPrice || 0);
+        const discount = Number(item.discount || 0);
+        const vatted = !!item.vatted;
 
-  const itemPayload = {
-    name: item.name,
-    quantity: qty,
-    unitPrice: unit,
-    totalPrice: Math.round(total), // Now includes discount and VAT
-    inventoryId: item._id || item.itemId || null,
-  };
+        // Calculate subtotal
+        let total = qty * unit;
 
-  // Add vendorId (NOT vendor)
-  if (item.vendorId) {
-    itemPayload.vendorId = item.vendorId;
-  }
+        // Apply discount
+        if (discount > 0) {
+          total = total - (total * discount) / 100;
+        }
 
-  // Add currency
-  if (item.currency) {
-    itemPayload.currency = item.currency;
-  }
+        // Calculate VAT amount
+        const vatAmount = vatted ? total * vatRate : 0;
 
-  // Add VAT flag
-  if (item.vatted !== undefined) {
-    itemPayload.vatted = item.vatted;
-  }
-  
-  // Add VAT amount
-  if (vatAmount > 0) {
-    itemPayload.vatAmount = Math.round(vatAmount);
-  }
+        // Add VAT to total
+        total = total + vatAmount;
 
-  // Add discount
-  if (item.discount !== undefined && item.discount > 0) {
-    itemPayload.discount = item.discount;
-  }
+        const itemPayload = {
+          name: item.name,
+          quantity: qty,
+          unitPrice: unit,
+          totalPrice: Math.round(total), // Now includes discount and VAT
+          inventoryId: item._id || item.itemId || null,
+        };
 
-  // Add logistics type
-  if (item.logisticsType) {
-    itemPayload.logisticsType = item.logisticsType;
-  }
+        // Add vendorId (NOT vendor)
+        if (item.vendorId) {
+          itemPayload.vendorId = item.vendorId;
+        }
 
-  // Add shipping quantity (for international logistics)
-  if (item.shippingQuantity !== undefined && item.shippingQuantity > 0) {
-    itemPayload.shippingQuantity = item.shippingQuantity;
-  }
+        // Add currency
+        if (item.currency) {
+          itemPayload.currency = item.currency;
+        }
 
-  // Add shipping fee (for international logistics)
-  if (item.shippingFee !== undefined && item.shippingFee > 0) {
-    itemPayload.shippingFee = item.shippingFee;
-  }
+        // Add VAT flag
+        if (item.vatted !== undefined) {
+          itemPayload.vatted = item.vatted;
+        }
 
-  // Add item type, maker, makersPartNo if they exist
-  if (item.itemType) itemPayload.itemType = item.itemType;
-  if (item.maker) itemPayload.maker = item.maker;
-  if (item.makersPartNo) itemPayload.makersPartNo = item.makersPartNo;
+        // Add VAT amount
+        if (vatAmount > 0) {
+          itemPayload.vatAmount = Math.round(vatAmount);
+        }
 
-  // Add category fields if it's a category item
-  if (item.isCategory) {
-    if (item.categoryId) itemPayload.categoryId = item.categoryId;
-    if (item.categoryCode) itemPayload.categoryCode = item.categoryCode;
-    if (item.accountClass) itemPayload.accountClass = item.accountClass;
-  }
+        // Add discount
+        if (item.discount !== undefined && item.discount > 0) {
+          itemPayload.discount = item.discount;
+        }
 
-  return itemPayload;
-});
+        // Add logistics type
+        if (item.logisticsType) {
+          itemPayload.logisticsType = item.logisticsType;
+        }
+
+        // Add shipping quantity (for international logistics)
+        if (item.shippingQuantity !== undefined && item.shippingQuantity > 0) {
+          itemPayload.shippingQuantity = item.shippingQuantity;
+        }
+
+        // Add shipping fee (for international logistics)
+        if (item.shippingFee !== undefined && item.shippingFee > 0) {
+          itemPayload.shippingFee = item.shippingFee;
+        }
+
+        // Add item type, maker, makersPartNo if they exist
+        if (item.itemType) itemPayload.itemType = item.itemType;
+        if (item.maker) itemPayload.maker = item.maker;
+        if (item.makersPartNo) itemPayload.makersPartNo = item.makersPartNo;
+
+        // Add category fields if it's a category item
+        if (item.isCategory) {
+          if (item.categoryId) itemPayload.categoryId = item.categoryId;
+          if (item.categoryCode) itemPayload.categoryCode = item.categoryCode;
+          if (item.accountClass) itemPayload.accountClass = item.accountClass;
+        }
+
+        return itemPayload;
+      });
 
       const hasFiles =
         (formData.requestType === "purchaseOrder"
@@ -916,18 +912,18 @@ const items = selectedItems.map((item) => {
           : invoiceFiles.length > 0) || requestImages.length > 0;
 
       // Build procurement payload for inventory
-    const basePayload = {
-  department: "Purchase",
-  destinationDepartment: formData.destination,
-  companyId: formData.company,
-  vessel: formData.vesselId || "none", // Change vesselId to vessel
-  purpose: formData.purpose,
-  priority: formData.priority,
-  reference: formData.reference,
-  items: items,
-  workflowId: "PROCUREMENT_WORKFLOW",
-  requestType: formData.requestType || "purchaseOrder",
-};
+      const basePayload = {
+        department: "Purchase",
+        destinationDepartment: formData.destination,
+        companyId: formData.company,
+        vessel: formData.vesselId || "none", // Change vesselId to vessel
+        purpose: formData.purpose,
+        priority: formData.priority,
+        reference: formData.reference,
+        items: items,
+        workflowId: "PROCUREMENT_WORKFLOW",
+        requestType: formData.requestType || "purchaseOrder",
+      };
       if (formData.projectManager)
         basePayload.projectManager = formData.projectManager;
       if (formData.additionalInformation)
@@ -939,10 +935,8 @@ const items = selectedItems.map((item) => {
       if (formData.destination === "Marine" && deckOrEngine) {
         basePayload.deckOrEngine = deckOrEngine;
       }
-     
 
       if (hasFiles) {
-        
         const fd = new FormData();
         Object.entries(basePayload).forEach(([key, value]) => {
           if (Array.isArray(value) || typeof value === "object") {
@@ -965,42 +959,42 @@ const items = selectedItems.map((item) => {
         requestImages.forEach((f) => {
           if (f && f.file) fd.append("requestImages", f.file);
         });
-  const allowedFields = [
-    "department",
-    "destinationDepartment",
-    "companyId",
-    "vesselId",
-    "purpose",
-    "priority",
-    "items",
-    "workflowId",
-    "requestType",
-    "serviceItems",
-    "materialItems",
-    "isService",
-    "reference",
-    "projectManager",
-    "additionalInformation",
-    "jobNumber",
-    "offshoreReqNumber",
-    "deckOrEngine",
-    "quotationFiles",
-    "invoiceFiles",
-    "requestImages"
-  ];
-  const fdKeys = Array.from(fd.keys());
-  const unexpected = fdKeys.filter((k) => !allowedFields.includes(k));
-  if (unexpected.length > 0) {
-    console.warn("UNEXPECTED FIELDS in FormData:", unexpected);
-  }
-  console.log("FormData keys:", fdKeys);
+        const allowedFields = [
+          "department",
+          "destinationDepartment",
+          "companyId",
+          "vesselId",
+          "purpose",
+          "priority",
+          "items",
+          "workflowId",
+          "requestType",
+          "serviceItems",
+          "materialItems",
+          "isService",
+          "reference",
+          "projectManager",
+          "additionalInformation",
+          "jobNumber",
+          "offshoreReqNumber",
+          "deckOrEngine",
+          "quotationFiles",
+          "invoiceFiles",
+          "requestImages",
+        ];
+        const fdKeys = Array.from(fd.keys());
+        const unexpected = fdKeys.filter((k) => !allowedFields.includes(k));
+        if (unexpected.length > 0) {
+          console.warn("UNEXPECTED FIELDS in FormData:", unexpected);
+        }
+        console.log("FormData keys:", fdKeys);
 
-  await axios.post(`${API_BASE_URL}/procurement/create`, fd, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-} else {
-             console.log("Payload keys:", Object.keys(basePayload));
-      console.log("Payload:", basePayload);
+        await axios.post(`${API_BASE_URL}/procurement/create`, fd, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } else {
+        console.log("Payload keys:", Object.keys(basePayload));
+        console.log("Payload:", basePayload);
         await axios.post(`${API_BASE_URL}/procurement/create`, basePayload, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -1025,7 +1019,7 @@ const items = selectedItems.map((item) => {
       setRequestImages([]);
       setOffShoreNumber("");
       if (typeof onRequestCreated === "function") onRequestCreated();
-   } catch (err) {
+    } catch (err) {
       // Log the full error object for detailed debugging
       console.error("Detailed error:", err);
       if (err.response) {
@@ -1443,36 +1437,34 @@ const items = selectedItems.map((item) => {
               </select>
             </div>
 
-            
-
-           {(formData.destination === "Marine" ||
-  formData.destination === "Project") && (
-  <div>
-    <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
-      Vessel *
-    </label>
-    <select
-      name="vesselId"
-      value={formData.vesselId}
-      onChange={handleInputChange}
-      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
-      required
-      disabled={loadingVessels}
-    >
-      <option value="">
-        {loadingVessels ? "Loading vessels..." : "Select Vessel"}
-      </option>
-      <option value="none">None</option>
-      {vessels
-        .filter((vessel) => vessel.status === "active")
-        .map((vessel) => (
-          <option key={vessel.vesselId} value={vessel.vesselId}>
-            {vessel.name}
-          </option>
-        ))}
-    </select>
-  </div>
-)}
+            {(formData.destination === "Marine" ||
+              formData.destination === "Project") && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+                  Vessel *
+                </label>
+                <select
+                  name="vesselId"
+                  value={formData.vesselId}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-400 hover:border-slate-300 transition-all duration-200 text-sm appearance-none bg-white"
+                  required
+                  disabled={loadingVessels}
+                >
+                  <option value="">
+                    {loadingVessels ? "Loading vessels..." : "Select Vessel"}
+                  </option>
+                  <option value="none">None</option>
+                  {vessels
+                    .filter((vessel) => vessel.status === "active")
+                    .map((vessel) => (
+                      <option key={vessel.vesselId} value={vessel.vesselId}>
+                        {vessel.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {formData.destination === "Project" && (
@@ -1560,18 +1552,18 @@ const items = selectedItems.map((item) => {
                   {showInventoryDropdown && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden flex flex-col overflow-x-hidden">
                       <div className="p-3 border-b border-slate-200">
-  <input
-    type="text"
-    value={searchTerm}
-    onChange={(e) => setSearchTerm(e.target.value)}
-    onKeyDown={handleSearchKeyDown}
-    placeholder="Search items or enter category code..."
-    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-400 text-sm"
-  />
-  <p className="text-xs text-slate-500 mt-1">
-    Press Enter to lookup category by code
-  </p>
-</div>
+                        <input
+                          type="text"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          onKeyDown={handleSearchKeyDown}
+                          placeholder="Search items or enter category code..."
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-400 text-sm"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          Press Enter to lookup category by code
+                        </p>
+                      </div>
                       <div className="overflow-y-auto flex-1">
                         {loadingInventory ? (
                           <div className="p-4 text-center text-slate-500">
@@ -1643,12 +1635,12 @@ const items = selectedItems.map((item) => {
                       });
                     }}
                     onVendorChange={(index, value) => {
-  setSelectedItems((prev) => {
-    const updated = [...prev];
-    updated[index].vendorId = value; // Change vendor to vendorId
-    return updated;
-  });
-}}
+                      setSelectedItems((prev) => {
+                        const updated = [...prev];
+                        updated[index].vendorId = value; // Change vendor to vendorId
+                        return updated;
+                      });
+                    }}
                     vendors={[]} // You can fetch and pass your vendor list here
                     currencies={currencies.map((c) => c.value)}
                   />

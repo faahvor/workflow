@@ -83,7 +83,7 @@ const RequestDetailView = ({
   const [doVendorSplit, setDoVendorSplit] = useState(false);
   const [savingVendorSplit, setSavingVendorSplit] = useState(false);
   const [vendors, setVendors] = useState([]);
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const { getToken } = useAuth();
   const [canApproveDelivery, setCanApproveDelivery] = useState(true);
   const [filesRefreshCounter, setFilesRefreshCounter] = useState(0);
@@ -791,8 +791,7 @@ const RequestDetailView = ({
     !isReadOnly &&
     (userRole === "accountingofficer" || userRole === "accounting officer") &&
     (currentAccountState === "PENDING_PARALLEL_ACCOUNTING_DELIVERY_APPROVAL" ||
-     currentAccountState === "PENDING_ACCOUNTING_OFFICER_APPROVAL");
-
+      currentAccountState === "PENDING_ACCOUNTING_OFFICER_APPROVAL");
 
   const openRejectModal = () => {
     setRejectComment("");
@@ -1258,7 +1257,7 @@ const RequestDetailView = ({
           return;
         }
         const response = await axios.get(
-          "https://hdp-backend-1vcl.onrender.com/api/vendors",
+          `${import.meta.env.VITE_API_BASE_URL}/vendors`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         setVendors(response.data.data || []);

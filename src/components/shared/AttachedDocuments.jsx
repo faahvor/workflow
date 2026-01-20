@@ -52,7 +52,7 @@ const AttachedDocuments = ({
 }) => {
   const failedHeadUrlsRef = useRef(new Set());
   const { getToken, user } = useAuth();
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const [fileMeta, setFileMeta] = useState([]);
   const [active, setActive] = useState(null);
@@ -194,16 +194,16 @@ const AttachedDocuments = ({
               : "Request Form",
             vendorId: g.vendorId,
             vendorName: g.vendorName,
-                items: requestData?.doVendorSplit
-            ? g.items
-            : requestData?.containsDuplicateItems === true
-            ? requestData?.items || g.items
-            : requestData &&
-              Array.isArray(requestData.originalItemsSnapshot) &&
-              requestData.originalItemsSnapshot.length > 0 &&
-              isAtOrPastProcurementManager(requestData)
-            ? requestData.originalItemsSnapshot
-            : g.items,
+            items: requestData?.doVendorSplit
+              ? g.items
+              : requestData?.containsDuplicateItems === true
+              ? requestData?.items || g.items
+              : requestData &&
+                Array.isArray(requestData.originalItemsSnapshot) &&
+                requestData.originalItemsSnapshot.length > 0 &&
+                isAtOrPastProcurementManager(requestData)
+              ? requestData.originalItemsSnapshot
+              : g.items,
           });
         });
       }
@@ -214,17 +214,17 @@ const AttachedDocuments = ({
         displayName: " Request Form",
         vendorId: null,
         vendorName: "Multiple Vendors",
-      items:
-        requestData?.containsDuplicateItems === true
-          ? requestData?.items || requestItems || []
-          : requestData &&
-            Array.isArray(requestData.originalItemsSnapshot) &&
-            requestData.originalItemsSnapshot.length > 0 &&
-            isAtOrPastProcurementManager(requestData)
-          ? requestData.originalItemsSnapshot
-          : requestData?.items || requestItems || [],
-    });
-  }
+        items:
+          requestData?.containsDuplicateItems === true
+            ? requestData?.items || requestItems || []
+            : requestData &&
+              Array.isArray(requestData.originalItemsSnapshot) &&
+              requestData.originalItemsSnapshot.length > 0 &&
+              isAtOrPastProcurementManager(requestData)
+            ? requestData.originalItemsSnapshot
+            : requestData?.items || requestItems || [],
+      });
+    }
 
     // Requisition(s)
     if (
@@ -240,17 +240,17 @@ const AttachedDocuments = ({
               displayName: `${g.vendorName} Requisition Preview`,
               vendorId: g.vendorId,
               vendorName: g.vendorName,
-               items: requestData?.doVendorSplit
-              ? g.items
-              : requestData?.containsDuplicateItems === true
-              ? requestData?.items || g.items
-              : requestData &&
-                Array.isArray(requestData.originalItemsSnapshot) &&
-                requestData.originalItemsSnapshot.length > 0 &&
-                isAtOrPastProcurementManager(requestData)
-              ? requestData.originalItemsSnapshot
-              : g.items,
-          });
+              items: requestData?.doVendorSplit
+                ? g.items
+                : requestData?.containsDuplicateItems === true
+                ? requestData?.items || g.items
+                : requestData &&
+                  Array.isArray(requestData.originalItemsSnapshot) &&
+                  requestData.originalItemsSnapshot.length > 0 &&
+                  isAtOrPastProcurementManager(requestData)
+                ? requestData.originalItemsSnapshot
+                : g.items,
+            });
           });
         }
       } else if (vendorGroups && vendorGroups.length > 0) {
@@ -260,16 +260,16 @@ const AttachedDocuments = ({
           displayName: " Requisition File",
           vendorId: null,
           vendorName: "Multiple Vendors",
-      items:
-          requestData?.containsDuplicateItems === true
-            ? requestData?.items || vendorGroups.flatMap((g) => g.items)
-            : requestData &&
-              Array.isArray(requestData.originalItemsSnapshot) &&
-              requestData.originalItemsSnapshot.length > 0 &&
-              isAtOrPastProcurementManager(requestData)
-            ? requestData.originalItemsSnapshot
-            : vendorGroups.flatMap((g) => g.items),
-      });
+          items:
+            requestData?.containsDuplicateItems === true
+              ? requestData?.items || vendorGroups.flatMap((g) => g.items)
+              : requestData &&
+                Array.isArray(requestData.originalItemsSnapshot) &&
+                requestData.originalItemsSnapshot.length > 0 &&
+                isAtOrPastProcurementManager(requestData)
+              ? requestData.originalItemsSnapshot
+              : vendorGroups.flatMap((g) => g.items),
+        });
       }
     }
 
@@ -935,8 +935,11 @@ const AttachedDocuments = ({
         : [];
 
       const buildMeta = (arr, typeKey) =>
-        (arr || []).map((url) => {
-          const name = getFileNameFromUrl(url);
+        (arr || []).map((item) => {
+          // ✅ FIX: For requestImages, item is an object with { url, title, ... }
+          // For other types, item is just a URL string
+          const urlString = typeof item === "string" ? item : item.url || item;
+          const name = getFileNameFromUrl(urlString);
           const ext = (name.split(".").pop() || "").toLowerCase();
           const vendor =
             typeKey === "requisition" ||
@@ -944,7 +947,20 @@ const AttachedDocuments = ({
             typeKey === "request"
               ? extractVendorFromFilename(name, typeKey)
               : null;
-          return { url, name, size: null, ext, type: typeKey, vendor };
+
+          // ✅ If it's an object (like requestImages), preserve its properties
+          if (typeof item === "object" && item !== null) {
+            return { ...item, name, size: null, ext, type: typeKey, vendor };
+          }
+
+          return {
+            url: urlString,
+            name,
+            size: null,
+            ext,
+            type: typeKey,
+            vendor,
+          };
         });
 
       const rawRequisitions = buildMeta(requisitionFiles, "requisition");
@@ -954,6 +970,20 @@ const AttachedDocuments = ({
       const rawPaymentAdvice = buildMeta(paymentAdviceFiles, "paymentAdvice");
       const rawInvoices = buildMeta(invoiceFiles, "invoice");
       const rawRequestImages = buildMeta(requestImages, "requestImage");
+      const rawRequestImagesWithTitles = rawRequestImages.map((img, idx) => {
+        const original = requestImages[idx];
+        // Extract extension from URL if not present
+        let ext = img.ext;
+        if (!ext && img.url) {
+          const urlExt = img.url.split(".").pop().split("?")[0].toLowerCase();
+          ext = urlExt;
+        }
+        return {
+          ...img,
+          ext: ext || "png", // default to png if no extension found
+          title: original?.title || img.name || `Request Image ${idx + 1}`,
+        };
+      });
       const rawJobCompletion = buildMeta(jobCompletionFiles, "jobCompletion");
 
       const dedupeByVendor = (list) => {
@@ -979,7 +1009,7 @@ const AttachedDocuments = ({
         ...rawQuotations,
         ...rawPaymentAdvice,
         ...rawInvoices,
-        ...rawRequestImages,
+        ...rawRequestImagesWithTitles,
         ...rawJobCompletion,
       ];
 
@@ -990,7 +1020,12 @@ const AttachedDocuments = ({
         meta.map(async (m) => {
           if (failedHeadUrlsRef.current.has(m.url)) return;
           // skip HEAD for requisition files to avoid immediate 403 noise
-          if (m.type === "requisition" || m.type === "purchaseOrder") return;
+          if (
+            m.type === "requisition" ||
+            m.type === "purchaseOrder" ||
+            m.type === "requestImage"
+          )
+            return;
           try {
             const size = await fetchHeadSize(m.url);
             if (!mounted) return;
@@ -1054,10 +1089,8 @@ const AttachedDocuments = ({
       } else if (m.type === "jobCompletion") {
         display = "Waybill ";
       } else if (m.type === "requestImage") {
-        // ✅ ADD: Display name for request images
-        // Count how many requestImages we've seen so far
-         display = m.title || m.name || `Request Image ${imageIndex}`;
-
+        // Use the title from the database if available
+        display = m.title || m.name || "Request Image";
       } else if (["requisition", "purchaseOrder", "request"].includes(m.type)) {
         const vendor = m.vendor || "Vendor";
         const typeLabel =
@@ -1894,11 +1927,12 @@ const AttachedDocuments = ({
                     />
                   ) : ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(
                       active.ext
-                    ) ? (
+                    ) || active.type === "requestImage" ? (
                     <img
                       src={active.url}
                       alt={active.name}
                       className="w-full max-h-[70vh] object-contain"
+                      crossOrigin="anonymous"
                     />
                   ) : (
                     <p></p>
@@ -2004,7 +2038,7 @@ const AttachedDocuments = ({
                                 ? { Authorization: `Bearer ${token}` }
                                 : {};
                               const resp = await axios.get(
-                                "https://hdp-backend-1vcl.onrender.com/api/user/profile",
+                                `${import.meta.env.VITE_API_BASE_URL}/user/profile`,
                                 { headers }
                               );
                               const profile = resp.data || {};
@@ -2205,14 +2239,43 @@ const AttachedDocuments = ({
                   if (
                     ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(
                       doc.ext
-                    )
+                    ) ||
+                    doc.type === "requestImage" ||
+                    (doc.url &&
+                      (doc.url.toLowerCase().includes(".png") ||
+                        doc.url.toLowerCase().includes(".jpg") ||
+                        doc.url.toLowerCase().includes(".jpeg") ||
+                        doc.url.toLowerCase().includes(".gif") ||
+                        doc.url.toLowerCase().includes(".webp")))
                   ) {
                     return (
-                      <img
-                        src={doc.url}
-                        alt={doc.name}
-                        className="w-full max-h-[70vh] object-contain"
-                      />
+                      <div
+                        className="w-full flex items-center justify-center"
+                        style={{ minHeight: "70vh" }}
+                      >
+                        <img
+                          src={doc.url}
+                          alt={doc.name || doc.title || "Request Image"}
+                          className="max-w-full max-h-[70vh] object-contain"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            console.error("Image load failed. URL:", doc.url);
+                            console.error("Document object:", doc);
+                            e.target.style.display = "none";
+                            const errorDiv = document.createElement("div");
+                            errorDiv.className = "text-center p-8";
+                            errorDiv.innerHTML = `
+            <div class="text-red-600 font-semibold mb-2">Failed to load image</div>
+            <div class="text-sm text-slate-600 mb-4">The image URL may have CORS restrictions</div>
+            <a href="${doc.url}" target="_blank" class="text-emerald-600 underline">Open image in new tab</a>
+          `;
+                            e.target.parentElement.appendChild(errorDiv);
+                          }}
+                          onLoad={() => {
+                            console.log("Image loaded successfully:", doc.url);
+                          }}
+                        />
+                      </div>
                     );
                   }
                   return (

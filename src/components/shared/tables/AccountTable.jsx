@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 import { useGlobalAlert } from "../GlobalAlert";
-import { useGlobalPrompt } from "../GlobalPrompt"; 
+import { useGlobalPrompt } from "../GlobalPrompt";
 import { useAuth } from "../../context/AuthContext";
 import axios from "axios";
 
@@ -19,8 +19,8 @@ const AccountTable = ({
   request = null,
 }) => {
   const { showAlert } = useGlobalAlert();
-    const { showPrompt } = useGlobalPrompt();
-    const { getToken } = useAuth();
+  const { showPrompt } = useGlobalPrompt();
+  const { getToken } = useAuth();
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedItems, setEditedItems] = useState(items);
   const [needsScroll, setNeedsScroll] = useState(false);
@@ -35,96 +35,98 @@ const AccountTable = ({
   const feeLabel = tagLower === "shipping" ? "Shipping Fee" : "Clearing Fee";
   const showShippingFee = request?.logisticsType === "international";
   // ✅ ADD THIS HELPER FUNCTION
-const hasAnyAttachedItems = () => {
-  // Check if the request itself is attached to inbound
-  const isRequestAttached = request?.isAttachedToInbound === true;
-  
-  console.log("🔍 AccountTable Action column check:", {
-    isAttachedToInbound: request?.isAttachedToInbound,
-    shouldShowColumn: isRequestAttached
-  });
-  
-  return isRequestAttached;
-};
+  const hasAnyAttachedItems = () => {
+    // Check if the request itself is attached to inbound
+    const isRequestAttached = request?.isAttachedToInbound === true;
 
+    console.log("🔍 AccountTable Action column check:", {
+      isAttachedToInbound: request?.isAttachedToInbound,
+      shouldShowColumn: isRequestAttached,
+    });
 
+    return isRequestAttached;
+  };
 
-// ✅ ADD THIS DETACH HANDLER FUNCTION
-const handleDetachItem = async (itemId) => {
-  const confirmed = await showPrompt("Confirm you want to Detach?");
-  if (!confirmed) return;
+  // ✅ ADD THIS DETACH HANDLER FUNCTION
+  const handleDetachItem = async (itemId) => {
+    const confirmed = await showPrompt("Confirm you want to Detach?");
+    if (!confirmed) return;
 
-  setDetachingItemId(itemId);
-  
-  try {
-    const token = getToken();
-    if (!token) throw new Error("Not authenticated");
+    setDetachingItemId(itemId);
 
-    // Find the item to get its source request ID
-    const item = editedItems.find((it) => (it.itemId || it._id) === itemId);
-    if (!item) {
-      showAlert("Item not found");
-      return;
+    try {
+      const token = getToken();
+      if (!token) throw new Error("Not authenticated");
+
+      // Find the item to get its source request ID
+      const item = editedItems.find((it) => (it.itemId || it._id) === itemId);
+      if (!item) {
+        showAlert("Item not found");
+        return;
+      }
+
+      const sourceRequestId = item.movedFromRequestId || item.originRequestId;
+      if (!sourceRequestId) {
+        showAlert("Cannot detach: Original request ID not found");
+        return;
+      }
+
+      const targetRequestId = request?.requestId;
+      if (!targetRequestId) {
+        showAlert("Cannot detach: Target request ID not found");
+        return;
+      }
+
+      // Call the detach API endpoint
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+      const resp = await axios.post(
+        `${API_BASE_URL}/requests/${encodeURIComponent(
+          targetRequestId
+        )}/detach`,
+        {
+          sourceRequestId: sourceRequestId,
+          itemIds: [itemId],
+          purpose: "User detached item from merged request",
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      console.log("✅ Detach successful:", resp.data);
+
+      // Show success message from server
+      showAlert(
+        resp.data?.message ||
+          `Item detached successfully. ${
+            resp.data?.detachedItemCount || 1
+          } item(s) moved back to ${sourceRequestId}`
+      );
+
+      // Remove item from local state (optimistic update)
+      setEditedItems((prev) =>
+        prev.filter((it) => (it.itemId || it._id) !== itemId)
+      );
+
+      // Notify parent to refresh
+      if (typeof onRefreshRequest === "function") {
+        onRefreshRequest();
+      }
+    } catch (err) {
+      console.error("❌ Detach error:", err);
+
+      // Show detailed error message
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to detach item. Please try again.";
+
+      showAlert(errorMsg);
+
+      // Keep item in table on error (don't remove from state)
+    } finally {
+      setDetachingItemId(null);
     }
-
-    const sourceRequestId = item.movedFromRequestId || item.originRequestId;
-    if (!sourceRequestId) {
-      showAlert("Cannot detach: Original request ID not found");
-      return;
-    }
-
-    const targetRequestId = request?.requestId;
-    if (!targetRequestId) {
-      showAlert("Cannot detach: Target request ID not found");
-      return;
-    }
-
-    // Call the detach API endpoint
-    const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
-    const resp = await axios.post(
-      `${API_BASE_URL}/requests/${encodeURIComponent(targetRequestId)}/detach`,
-      {
-        sourceRequestId: sourceRequestId,
-        itemIds: [itemId],
-        purpose: "User detached item from merged request"
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    console.log("✅ Detach successful:", resp.data);
-
-    // Show success message from server
-    showAlert(
-      resp.data?.message || 
-      `Item detached successfully. ${resp.data?.detachedItemCount || 1} item(s) moved back to ${sourceRequestId}`
-    );
-
-    // Remove item from local state (optimistic update)
-    setEditedItems((prev) => prev.filter((it) => (it.itemId || it._id) !== itemId));
-    
-    // Notify parent to refresh
-    if (typeof onRefreshRequest === "function") {
-      onRefreshRequest();
-    }
-    
-  } catch (err) {
-    console.error("❌ Detach error:", err);
-    
-    // Show detailed error message
-    const errorMsg = 
-      err?.response?.data?.message || 
-      err?.response?.data?.error ||
-      "Failed to detach item. Please try again.";
-    
-    showAlert(errorMsg);
-    
-    // Keep item in table on error (don't remove from state)
-  } finally {
-    setDetachingItemId(null);
-  }
-};
-
-
+  };
 
   React.useEffect(() => {
     setEditedItems(
@@ -345,87 +347,87 @@ const handleDetachItem = async (itemId) => {
   }, [items]);
 
   const handlePaymentStatusChange = (index, value) => {
-  const newItems = [...editedItems];
-  const item = newItems[index];
+    const newItems = [...editedItems];
+    const item = newItems[index];
 
-  // Find the vendor key for grouping
-  const vendorKey = item.vendorId ?? item.vendor ?? "No Vendor";
+    // Find the vendor key for grouping
+    const vendorKey = item.vendorId ?? item.vendor ?? "No Vendor";
 
-  // If columns are merged (shipping/clearing), update all items in the group
-  if (hidePrices) {
-    newItems.forEach((it, idx) => {
-      const itVendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
-      if (itVendorKey === vendorKey) {
-        it.paymentStatus = value;
-        const total = getFeeForItem(it);
-        if (value === "paid") {
-          it.paid = total;
-          it.balance = 0;
-          it.percentagePaid = 100;
-        } else if (value === "notpaid") {
-          it.paid = 0;
-          it.balance = total;
-          it.percentagePaid = 0;
-        } else if (value === "partpayment") {
-          const percentage = parseInt(it.percentagePaid || 0, 10) || 0;
-          it.percentagePaid = Math.max(0, Math.min(100, percentage));
-          it.paid = Math.round((it.percentagePaid / 100) * total * 100) / 100;
+    // If columns are merged (shipping/clearing), update all items in the group
+    if (hidePrices) {
+      newItems.forEach((it, idx) => {
+        const itVendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
+        if (itVendorKey === vendorKey) {
+          it.paymentStatus = value;
+          const total = getFeeForItem(it);
+          if (value === "paid") {
+            it.paid = total;
+            it.balance = 0;
+            it.percentagePaid = 100;
+          } else if (value === "notpaid") {
+            it.paid = 0;
+            it.balance = total;
+            it.percentagePaid = 0;
+          } else if (value === "partpayment") {
+            const percentage = parseInt(it.percentagePaid || 0, 10) || 0;
+            it.percentagePaid = Math.max(0, Math.min(100, percentage));
+            it.paid = Math.round((it.percentagePaid / 100) * total * 100) / 100;
+            it.balance = Math.round((total - it.paid) * 100) / 100;
+          }
+        }
+      });
+    } else {
+      // Default: update only the selected item
+      item.paymentStatus = value;
+      const total =
+        Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
+      if (value === "paid") {
+        item.paid = total;
+        item.balance = 0;
+        item.percentagePaid = 100;
+      } else if (value === "notpaid") {
+        item.paid = 0;
+        item.balance = total;
+        item.percentagePaid = 0;
+      } else if (value === "partpayment") {
+        const percentage = parseInt(item.percentagePaid || 0, 10) || 0;
+        item.percentagePaid = Math.max(0, Math.min(100, percentage));
+        item.paid = Math.round((item.percentagePaid / 100) * total * 100) / 100;
+        item.balance = Math.round((total - item.paid) * 100) / 100;
+      }
+    }
+
+    setEditedItems(newItems);
+  };
+  const handlePercentagePaidChange = (index, value) => {
+    const newItems = [...editedItems];
+    const item = newItems[index];
+    const percentage =
+      value === "" ? 0 : Math.max(0, Math.min(100, parseInt(value) || 0));
+    const vendorKey = item.vendorId ?? item.vendor ?? "No Vendor";
+
+    if (hidePrices) {
+      // Update all items in the vendor group
+      newItems.forEach((it) => {
+        const itVendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
+        if (itVendorKey === vendorKey) {
+          it.percentagePaid = percentage;
+          const total = getFeeForItem(it);
+          it.paid = Math.round((percentage / 100) * total * 100) / 100;
           it.balance = Math.round((total - it.paid) * 100) / 100;
         }
-      }
-    });
-  } else {
-    // Default: update only the selected item
-    item.paymentStatus = value;
-    const total =
-      Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
-    if (value === "paid") {
-      item.paid = total;
-      item.balance = 0;
-      item.percentagePaid = 100;
-    } else if (value === "notpaid") {
-      item.paid = 0;
-      item.balance = total;
-      item.percentagePaid = 0;
-    } else if (value === "partpayment") {
-      const percentage = parseInt(item.percentagePaid || 0, 10) || 0;
-      item.percentagePaid = Math.max(0, Math.min(100, percentage));
-      item.paid = Math.round((item.percentagePaid / 100) * total * 100) / 100;
+      });
+    } else {
+      // Update only the selected item
+      item.percentagePaid = percentage;
+      const total =
+        Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
+      item.paid = Math.round((percentage / 100) * total * 100) / 100;
       item.balance = Math.round((total - item.paid) * 100) / 100;
     }
-  }
 
-  setEditedItems(newItems);
-};
-const handlePercentagePaidChange = (index, value) => {
-  const newItems = [...editedItems];
-  const item = newItems[index];
-  const percentage =
-    value === "" ? 0 : Math.max(0, Math.min(100, parseInt(value) || 0));
-  const vendorKey = item.vendorId ?? item.vendor ?? "No Vendor";
-
-  if (hidePrices) {
-    // Update all items in the vendor group
-    newItems.forEach((it) => {
-      const itVendorKey = it.vendorId ?? it.vendor ?? "No Vendor";
-      if (itVendorKey === vendorKey) {
-        it.percentagePaid = percentage;
-        const total = getFeeForItem(it);
-        it.paid = Math.round((percentage / 100) * total * 100) / 100;
-        it.balance = Math.round((total - it.paid) * 100) / 100;
-      }
-    });
-  } else {
-    // Update only the selected item
-    item.percentagePaid = percentage;
-    const total =
-      Number(item.totalPrice ?? item.total ?? calculateTotal(item)) || 0;
-    item.paid = Math.round((percentage / 100) * total * 100) / 100;
-    item.balance = Math.round((total - item.paid) * 100) / 100;
-  }
-
-  setEditedItems(newItems);
-};
+    setEditedItems(newItems);
+  };
 
   const handleFeeChange = (index, value) => {
     const newItems = [...editedItems];
@@ -598,7 +600,7 @@ const handlePercentagePaidChange = (index, value) => {
                   Shipping Qty
                 </th>
               )}
-              {showShippingFee &&!hidePrices && (
+              {showShippingFee && !hidePrices && (
                 <th className="border border-slate-300 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                   Shipping Fee
                 </th>
@@ -630,19 +632,19 @@ const handlePercentagePaidChange = (index, value) => {
               )}
               {showPaymentStatus && (
                 <>
-                    {!hidePrices && (
-          <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
-            Discount (%)
-          </th>
-        )}
+                  {!hidePrices && (
+                    <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[100px]">
+                      Discount (%)
+                    </th>
+                  )}
                   <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
                     Total Price
                   </th>
-                {!hidePrices && (
-          <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-            VAT Amount
-          </th>
-        )}
+                  {!hidePrices && (
+                    <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                      VAT Amount
+                    </th>
+                  )}
                 </>
               )}
               {requestType !== "pettyCash" && (
@@ -656,10 +658,10 @@ const handlePercentagePaidChange = (index, value) => {
                 </>
               )}
               {hasAnyAttachedItems() && (
-      <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
-        Action
-      </th>
-    )}
+                <th className="border border-slate-300 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px]">
+                  Action
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -1031,25 +1033,24 @@ const handlePercentagePaidChange = (index, value) => {
                           )}
                         </td>
                       )}
-                                  {!hidePrices && (
-
-                      <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
-                        {item.vatted ? (
-                          <span>
-                            {item.currency || "NGN"}{" "}
-                            {Number(calculateVatAmount(item)).toLocaleString(
-                              undefined,
-                              {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              }
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">N/A</span>
-                        )}
-                      </td>
-                                  )}
+                      {!hidePrices && (
+                        <td className="border border-slate-200 px-4 py-3 text-center text-sm text-slate-700">
+                          {item.vatted ? (
+                            <span>
+                              {item.currency || "NGN"}{" "}
+                              {Number(calculateVatAmount(item)).toLocaleString(
+                                undefined,
+                                {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                }
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">N/A</span>
+                          )}
+                        </td>
+                      )}
                     </>
                   )}
 
@@ -1077,20 +1078,26 @@ const handlePercentagePaidChange = (index, value) => {
                   )}
 
                   {hasAnyAttachedItems() && (
-  <td className="border border-slate-200 px-4 py-3 text-center">
-    {item.isAttached === true ? (
-      <button
-        onClick={() => handleDetachItem(item.itemId || item._id)}
-        disabled={detachingItemId === (item.itemId || item._id)}
-        className="px-3 py-1 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {detachingItemId === (item.itemId || item._id) ? "Detaching..." : "Detach"}
-      </button>
-    ) : (
-      <span className="text-slate-400">-</span>
-    )}
-  </td>
-)}
+                    <td className="border border-slate-200 px-4 py-3 text-center">
+                      {item.isAttached === true ? (
+                        <button
+                          onClick={() =>
+                            handleDetachItem(item.itemId || item._id)
+                          }
+                          disabled={
+                            detachingItemId === (item.itemId || item._id)
+                          }
+                          className="px-3 py-1 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {detachingItemId === (item.itemId || item._id)
+                            ? "Detaching..."
+                            : "Detach"}
+                        </button>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))
             )}

@@ -15,7 +15,7 @@ import WaybillUpload from "./WaybillUpload";
 import Select from "react-select";
 import CommentThread from "../../shared/CommentThread";
 import { useGlobalAlert } from "../../shared/GlobalAlert";
-const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const formatCurrency = (v, currency = "NGN") => {
   const n = Number(v || 0).toFixed(2);

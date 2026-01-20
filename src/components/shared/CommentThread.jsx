@@ -6,7 +6,7 @@ import { FcComments } from "react-icons/fc";
 import { useGlobalAlert } from "./GlobalAlert";
 
 const COMMENTS_PER_PAGE = 3;
-const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function flattenComments(comments, parentCommentId = null) {
   let flat = [];

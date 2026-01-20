@@ -4,7 +4,7 @@ import { MdAttachFile } from "react-icons/md";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobalAlert } from "../../shared/GlobalAlert";
 
-const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const UsersSignature = () => {
   const { user, getToken } = useAuth();

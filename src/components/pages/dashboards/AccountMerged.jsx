@@ -16,7 +16,7 @@ const AccountMerged = ({ searchQuery = "", filterType = "all", onBack }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedMergedRequest, setSelectedMergedRequest] = useState(null);
-  const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -93,7 +93,7 @@ const AccountMerged = ({ searchQuery = "", filterType = "all", onBack }) => {
   return (
     <div>
       <h2 className="text-3xl font-extrabold mb-[2rem] text-slate-900">
-        Merged Request 
+        Merged Request
       </h2>
 
       {!selectedMergedRequest && (
@@ -108,7 +108,6 @@ const AccountMerged = ({ searchQuery = "", filterType = "all", onBack }) => {
                 className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 rounded-xl"
               />
             </div>
-            
           </div>
         </div>
       )}

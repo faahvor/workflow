@@ -67,7 +67,7 @@ const Overview = ({
   onOpenSection = () => {},
 }) => {
   const { getToken } = useAuth();
-  const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
   const [countsLoading, setCountsLoading] = useState(false);
   const [totalUsersFetched, setTotalUsersFetched] = useState(null);

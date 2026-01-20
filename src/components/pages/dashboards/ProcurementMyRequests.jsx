@@ -16,7 +16,7 @@ import {
 import { HiClock } from "react-icons/hi";
 import { useAuth } from "../../context/AuthContext";
 
-const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const ProcurementMyRequests = ({ onOpenDetail = () => {} }) => {
   const { getToken } = useAuth();

@@ -39,7 +39,7 @@ const ProcurementSelectionTable = ({
         const token = await getToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const resp = await axios.get(
-          "https://hdp-backend-1vcl.onrender.com/api/vat",
+          `${import.meta.env.VITE_API_BASE_URL}/vat`,
           { headers }
         );
         const value = resp?.data?.value;
@@ -57,7 +57,7 @@ const ProcurementSelectionTable = ({
       const token = await getToken();
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const resp = await axios.get(
-        "https://hdp-backend-1vcl.onrender.com/api/vendors",
+        `${import.meta.env.VITE_API_BASE_URL}/vendors`,
         { headers }
       );
       const data = resp.data?.data || resp.data || [];

@@ -4,7 +4,7 @@ import { MdPerson, MdSend } from "react-icons/md";
 import { io } from "socket.io-client";
 import { useAuth } from "../../context/AuthContext";
 
-const API_BASE = "https://hdp-backend-1vcl.onrender.com/api/chat";
+const API_BASE = `${import.meta.env.VITE_API_BASE_URL}/chat`;
 const ChatRoom = () => {
   const { user, getToken } = useAuth();
   const [conversations, setConversations] = useState([]);

@@ -8,7 +8,7 @@ const WaybillPreview = forwardRef(
       items = [],
       requestId = null,
       token = null,
-      apiBase = "https://hdp-backend-1vcl.onrender.com/api",
+      apiBase = import.meta.env.VITE_API_BASE_URL,
     },
     ref
   ) => {

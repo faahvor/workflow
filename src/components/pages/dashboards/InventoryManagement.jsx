@@ -22,7 +22,7 @@ import {
 import { useGlobalAlert } from "../../shared/GlobalAlert";
 import { useGlobalPrompt } from "../../shared/GlobalPrompt";
 
-const API_BASE = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 const PAGE_SIZE = 50;
 const LOWSTOCK_PAGE_SIZE = 20;
 

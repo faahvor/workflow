@@ -11,7 +11,7 @@ import {
 } from "react-icons/md";
 import { HiClock } from "react-icons/hi";
 
-const API_BASE_URL = "https://hdp-backend-1vcl.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const RejectedRequest = ({
   searchQuery = "",
